@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8' />
+<title>Umbraco.Benchmarking.ContentTests-20220526-160307</title>
+
+<style type="text/css">
+	table { border-collapse: collapse; display: block; width: 100%; overflow: auto; }
+	td, th { padding: 6px 13px; border: 1px solid #ddd; text-align: right; }
+	tr { background-color: #fff; border-top: 1px solid #ccc; }
+	tr:nth-child(even) { background: #f8f8f8; }
+</style>
+</head>
+<body>
+<pre><code>
+BenchmarkDotNet=v0.13.1, OS=Windows 10.0.19043.1706 (21H1/May2021Update)
+AMD FX(tm)-8350, 1 CPU, 8 logical and 4 physical cores
+.NET SDK=6.0.202
+  [Host]     : .NET 6.0.4 (6.0.422.16404), X64 RyuJIT
+  DefaultJob : .NET 6.0.4 (6.0.422.16404), X64 RyuJIT
+</code></pre>
+<pre><code></code></pre>
+
+<table>
+<thead><tr><th>                   Method</th><th>Mean</th><th>Error</th><th>StdDev</th>
+</tr>
+</thead><tbody><tr><td>ContentSaveAndPublishSingle</td><td>142.7 ms</td><td>2.83 ms</td><td>7.80 ms</td>
+</tr><tr><td>BulkContentSaveAndPublishSingle</td><td>140.2 ms</td><td>2.79 ms</td><td>7.14 ms</td>
+</tr><tr><td>ContentSaveAndPublishTen</td><td>1,265.5 ms</td><td>25.08 ms</td><td>49.50 ms</td>
+</tr><tr><td>BulkContentSaveAndPublishTen</td><td>1,239.9 ms</td><td>24.52 ms</td><td>46.06 ms</td>
+</tr><tr><td>ContentSaveAndPublishTwenty</td><td>2,810.7 ms</td><td>88.46 ms</td><td>260.82 ms</td>
+</tr><tr><td>BulkContenSaveAndPublishTwenty</td><td>2,532.6 ms</td><td>70.60 ms</td><td>208.17 ms</td>
+</tr><tr><td>ContentSaveAndPublishFifty</td><td>8,508.8 ms</td><td>412.43 ms</td><td>1,216.05 ms</td>
+</tr><tr><td>BulkContentSaveAndPublishFifty</td><td>7,576.4 ms</td><td>389.91 ms</td><td>1,149.67 ms</td>
+</tr></tbody></table>
+</body>
+</html>

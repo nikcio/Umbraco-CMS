@@ -267,6 +267,16 @@ namespace Umbraco.Cms.Core.Services
         /// </remarks>
         OperationResult Delete(IContent content, int userId = Constants.Security.SuperUserId);
 
+
+        /// <summary>
+        /// Deletes a document.
+        /// </summary>
+        /// <remarks>
+        /// <para>This method will also delete associated media files, child content and possibly associated domains.</para>
+        /// <para>This method entirely clears the content from the database.</para>
+        /// </remarks>
+        OperationResult BulkDelete(IEnumerable<IContent> contentItems, int userId = Constants.Security.SuperUserId);
+
         /// <summary>
         /// Deletes all documents of a given document type.
         /// </summary>
@@ -364,6 +374,21 @@ namespace Umbraco.Cms.Core.Services
         /// <param name="culture">The culture to publish.</param>
         /// <param name="userId">The identifier of the user performing the action.</param>
         PublishResult SaveAndPublish(IContent content, string culture = "*", int userId = Constants.Security.SuperUserId);
+
+        /// <summary>
+        /// Saves and publishes a document.
+        /// </summary>
+        /// <remarks>
+        /// <para>By default, publishes all variations of the document, but it is possible to specify a culture to be published.</para>
+        /// <para>When a culture is being published, it includes all varying values along with all invariant values.</para>
+        /// <para>The document is *always* saved, even when publishing fails.</para>
+        /// <para>If the content type is variant, then culture can be either '*' or an actual culture, but neither 'null' nor
+        /// 'empty'. If the content type is invariant, then culture can be either '*' or null or empty.</para>
+        /// </remarks>
+        /// <param name="content">The document to publish.</param>
+        /// <param name="culture">The culture to publish.</param>
+        /// <param name="userId">The identifier of the user performing the action.</param>
+        IEnumerable<PublishResult> BulkSaveAndPublish(IEnumerable<IContent> contentItems, string culture = "*", int userId = Constants.Security.SuperUserId);
 
         /// <summary>
         /// Saves and publishes a document.

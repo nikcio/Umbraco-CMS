@@ -4,6 +4,7 @@ using System.Linq;
 using Microsoft.Extensions.Logging;
 using Umbraco.Cms.Core.Events;
 using Umbraco.Cms.Core.Exceptions;
+using Umbraco.Cms.Core.Logging;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Models.Entities;
 using Umbraco.Cms.Core.Models.Membership;
@@ -33,6 +34,7 @@ namespace Umbraco.Cms.Core.Services
         private readonly Lazy<IPropertyValidationService> _propertyValidationService;
         private readonly IShortStringHelper _shortStringHelper;
         private IQuery<IContent>? _queryNotTrashed;
+        private readonly IProfilingLogger _profilingLogger;
 
         #region Constructors
 
@@ -42,7 +44,7 @@ namespace Umbraco.Cms.Core.Services
             IAuditRepository auditRepository,
             IContentTypeRepository contentTypeRepository, IDocumentBlueprintRepository documentBlueprintRepository,
             ILanguageRepository languageRepository,
-            Lazy<IPropertyValidationService> propertyValidationService, IShortStringHelper shortStringHelper)
+            Lazy<IPropertyValidationService> propertyValidationService, IShortStringHelper shortStringHelper, IProfilingLogger profilingLogger)
             : base(provider, loggerFactory, eventMessagesFactory)
         {
             _documentRepository = documentRepository;
@@ -54,6 +56,7 @@ namespace Umbraco.Cms.Core.Services
             _propertyValidationService = propertyValidationService;
             _shortStringHelper = shortStringHelper;
             _logger = loggerFactory.CreateLogger<ContentService>();
+            _profilingLogger = profilingLogger;
         }
 
         #endregion
@@ -1148,6 +1151,101 @@ namespace Umbraco.Cms.Core.Services
             }
         }
 
+
+        /// <inheritdoc />
+        public IEnumerable<PublishResult> BulkSaveAndPublish(IEnumerable<IContent> contentItems, string culture = "*",
+            int userId = Constants.Security.SuperUserId)
+        {
+            EventMessages evtMsgs = EventMessagesFactory.Get();
+
+            using(_profilingLogger.TraceDuration<ContentService>("Validating content", "Completed content valid")){
+                foreach (var content in contentItems)
+                {
+                    EnsureContentIsValid(content, culture);
+                }
+            }
+
+            using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+            {
+                List<ILanguage> allLangs = new();
+                ContentSavingNotification? savingNotification = null;
+                using(_profilingLogger.TraceDuration<ContentService>("Prepare publish", "Done prepareing publish"))
+                {
+                    scope.WriteLock(Constants.Locks.ContentTree);
+
+                    allLangs = _languageRepository.GetMany().ToList();
+
+                    savingNotification = new ContentSavingNotification(contentItems, evtMsgs);
+                    if (scope.Notifications.PublishCancelable(savingNotification))
+                    {
+                        return new List<PublishResult> { new PublishResult(PublishResultType.FailedPublishCancelledByEvent, evtMsgs, null) };
+                    }
+                }
+
+                List<PublishResult> results = new();
+
+                using(_profilingLogger.TraceDuration<ContentService>("Publish contentItems", "Done publishing contentItems"))
+                {
+                    foreach (var content in contentItems)
+                    {
+                        results.Add(Publish(content, culture, userId, evtMsgs, scope, allLangs, savingNotification));
+                    }
+                }
+
+                scope.Complete();
+                return results;
+            }
+        }
+
+        private PublishResult Publish(IContent content, string culture, int userId, EventMessages evtMsgs, ICoreScope scope, List<ILanguage> allLangs, ContentSavingNotification savingNotification)
+        {
+            // if culture is specific, first publish the invariant values, then publish the culture itself.
+            // if culture is '*', then publish them all (including variants)
+
+            //this will create the correct culture impact even if culture is * or null
+            var impact = CultureImpact.Create(culture, IsDefaultCulture(allLangs, culture), content);
+
+            // publish the culture(s)
+            // we don't care about the response here, this response will be rechecked below but we need to set the culture info values now.
+            content.PublishCulture(impact);
+
+            return CommitDocumentChangesInternal(scope, content, evtMsgs, allLangs, savingNotification.State, userId);
+        }
+
+        private static void EnsureContentIsValid(IContent content, string culture)
+        {
+            PublishedState publishedState = content.PublishedState;
+            if (publishedState != PublishedState.Published && publishedState != PublishedState.Unpublished)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot save-and-publish (un)publishing content, use the dedicated {nameof(CommitDocumentChanges)} method.");
+            }
+
+            // cannot accept invariant (null or empty) culture for variant content type
+            // cannot accept a specific culture for invariant content type (but '*' is ok)
+            if (content.ContentType.VariesByCulture())
+            {
+                if (culture.IsNullOrWhiteSpace())
+                {
+                    throw new NotSupportedException("Invariant culture is not supported by variant content types.");
+                }
+            }
+            else
+            {
+                if (!culture.IsNullOrWhiteSpace() && culture != "*")
+                {
+                    throw new NotSupportedException(
+                        $"Culture \"{culture}\" is not supported by invariant content types.");
+                }
+            }
+
+            if (content.Name != null && content.Name.Length > 255)
+            {
+                throw new InvalidOperationException("Name cannot be more than 255 characters in length.");
+            }
+        }
+
+
         /// <inheritdoc />
         public PublishResult SaveAndPublish(IContent content, string[] cultures,
             int userId = Constants.Security.SuperUserId)
@@ -2241,6 +2339,60 @@ namespace Umbraco.Cms.Core.Services
                 scope.Notifications.Publish(
                     new ContentTreeChangeNotification(content, TreeChangeTypes.Remove, eventMessages));
                 Audit(AuditType.Delete, userId, content.Id);
+
+                scope.Complete();
+            }
+
+            return OperationResult.Succeed(eventMessages);
+        }
+
+        /// <inheritdoc />
+        public OperationResult BulkDelete(IEnumerable<IContent> contentItems, int userId = Constants.Security.SuperUserId)
+        {
+            EventMessages eventMessages = EventMessagesFactory.Get();
+
+            using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+            {
+                using (_profilingLogger.TraceDuration<ContentService>("Prepare delete", "Done prepare delete"))
+                {
+                    if (scope.Notifications.PublishCancelable(new ContentDeletingNotification(contentItems, eventMessages)))
+                    {
+                        scope.Complete();
+                        return OperationResult.Cancel(eventMessages);
+                    }
+
+                    scope.WriteLock(Constants.Locks.ContentTree);
+
+                    // if it's not trashed yet, and published, we should unpublish
+                    // but... Unpublishing event makes no sense (not going to cancel?) and no need to save
+                    // just raise the event
+
+                    var nonTrashedPublishContent = contentItems.Where(content => content.Trashed == false && content.Published);
+
+                    if (nonTrashedPublishContent.Any())
+                    {
+                        scope.Notifications.Publish(new ContentUnpublishedNotification(nonTrashedPublishContent, eventMessages));
+                    }
+                }
+
+                using(_profilingLogger.TraceDuration<ContentService>("Deleting content", "Done deleting content"))
+                {
+                    foreach (var content in contentItems)
+                    {
+                        DeleteLocked(scope, content, eventMessages);
+                    }
+                }
+
+                using(_profilingLogger.TraceDuration<ContentService>("Completing delete", "Done delete completion"))
+                {
+                    scope.Notifications.Publish(
+                        new ContentTreeChangeNotification(contentItems, TreeChangeTypes.Remove, eventMessages));
+
+                    foreach (var content in contentItems)
+                    {
+                        Audit(AuditType.Delete, userId, content.Id);
+                    }
+                }
 
                 scope.Complete();
             }
