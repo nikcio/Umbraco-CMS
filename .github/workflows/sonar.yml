@@ -15,10 +15,10 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v2
         with:
-          dotnet-version: 6.0.x
+          dotnet-version: 7.0.x
       - name: Restore dependencies
         run: dotnet restore
-      - name: SonarScanner for .NET 6 with pull request decoration support
+      - name: SonarScanner
         uses: highbyte/sonarscan-dotnet@v2.1.2
         with:
           # The key of the SonarQube project
