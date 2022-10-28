@@ -18,7 +18,6 @@ jobs:
           dotnet-version: 6.0.x
       - name: Restore dependencies
         run: dotnet restore
-        working-directory: ./src
       - name: SonarScanner for .NET 6 with pull request decoration support
         uses: highbyte/sonarscan-dotnet@v2.1.2
         with:
@@ -36,4 +35,3 @@ jobs:
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
- 
