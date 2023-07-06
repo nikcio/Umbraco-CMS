@@ -10,4 +10,11 @@ public interface IKeyValueRepository : IReadRepository<string, IKeyValue>, IWrit
     /// <param name="keyPrefix"></param>
     /// <returns></returns>
     IReadOnlyDictionary<string, string?>? FindByKeyPrefix(string keyPrefix);
+
+    /// <summary>
+    ///     Returns key/value pairs for all keys with the specified prefix.
+    /// </summary>
+    /// <param name="keyPrefix"></param>
+    /// <returns></returns>
+    Task<IReadOnlyDictionary<string, string?>?> FindByKeyPrefixAsync(string keyPrefix, CancellationToken? cancellationToken = null);
 }
