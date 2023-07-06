@@ -290,6 +290,18 @@ internal class ExternalLoginRepository : EntityRepositoryBase<int, IIdentityUser
         entity.ResetDirtyProperties();
     }
 
+    protected override async Task PersistNewItemAsync(IIdentityUserLogin entity)
+    {
+        entity.AddingEntity();
+
+        ExternalLoginDto dto = ExternalLoginFactory.BuildDto(entity);
+
+        var id = Convert.ToInt32(await Database.InsertAsync(dto));
+        entity.Id = id;
+
+        entity.ResetDirtyProperties();
+    }
+
     protected override void PersistUpdatedItem(IIdentityUserLogin entity)
     {
         entity.UpdatingEntity();

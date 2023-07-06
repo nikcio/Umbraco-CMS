@@ -270,6 +270,59 @@ internal class DataTypeRepository : EntityRepositoryBase<int, IDataType>, IDataT
         entity.ResetDirtyProperties();
     }
 
+    protected override async Task PersistNewItemAsync(IDataType entity)
+    {
+        entity.AddingEntity();
+
+        // ensure a datatype has a unique name before creating it
+        entity.Name = EnsureUniqueNodeName(entity.Name)!;
+
+        // TODO: should the below be removed?
+        // Cannot add a duplicate data type
+        Sql<ISqlContext> existsSql = Sql()
+            .SelectCount()
+            .From<DataTypeDto>()
+            .InnerJoin<NodeDto>().On<DataTypeDto, NodeDto>((left, right) => left.NodeId == right.NodeId)
+            .Where<NodeDto>(x => x.Text == entity.Name);
+        var exists = await Database.ExecuteScalarAsync<int>(existsSql) > 0;
+        if (exists)
+        {
+            throw new DuplicateNameException("A data type with the name " + entity.Name + " already exists");
+        }
+
+        DataTypeDto dto = DataTypeFactory.BuildDto(entity, _serializer);
+
+        // Logic for setting Path, Level and SortOrder
+        NodeDto? parent = await Database.FirstAsync<NodeDto>("WHERE id = @ParentId", new { entity.ParentId });
+        var level = parent.Level + 1;
+        var sortOrder =
+            await Database.ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM umbracoNode WHERE parentID = @ParentId AND nodeObjectType = @NodeObjectType",
+                new { entity.ParentId, NodeObjectType = NodeObjectTypeId });
+
+        // Create the (base) node data - umbracoNode
+        NodeDto nodeDto = dto.NodeDto;
+        nodeDto.Path = parent.Path;
+        nodeDto.Level = short.Parse(level.ToString(CultureInfo.InvariantCulture));
+        nodeDto.SortOrder = sortOrder;
+        var o = await Database.IsNewAsync(nodeDto) ? Convert.ToInt32(await Database.InsertAsync(nodeDto)) : await Database.UpdateAsync(nodeDto);
+
+        // Update with new correct path
+        nodeDto.Path = string.Concat(parent.Path, ",", nodeDto.NodeId);
+        await Database.UpdateAsync(nodeDto);
+
+        // Update entity with correct values
+        entity.Id = nodeDto.NodeId; // Set Id on entity to ensure an Id is set
+        entity.Path = nodeDto.Path;
+        entity.SortOrder = sortOrder;
+        entity.Level = level;
+
+        dto.NodeId = nodeDto.NodeId;
+        await Database.InsertAsync(dto);
+
+        entity.ResetDirtyProperties();
+    }
+
     protected override void PersistUpdatedItem(IDataType entity)
     {
         entity.Name = EnsureUniqueNodeName(entity.Name, entity.Id)!;

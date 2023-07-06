@@ -101,6 +101,36 @@ internal class PublicAccessRepository : EntityRepositoryBase<Guid, PublicAccessE
         entity.ResetDirtyProperties();
     }
 
+    protected override async Task PersistNewItemAsync(PublicAccessEntry entity)
+    {
+        entity.AddingEntity();
+        foreach (PublicAccessRule rule in entity.Rules)
+        {
+            rule.AddingEntity();
+        }
+
+        AccessDto dto = PublicAccessEntryFactory.BuildDto(entity);
+
+        await Database.InsertAsync(dto);
+
+        // update the id so HasEntity is correct
+        entity.Id = entity.Key.GetHashCode();
+
+        foreach (AccessRuleDto rule in dto.Rules)
+        {
+            rule.AccessId = entity.Key;
+            await Database.InsertAsync(rule);
+        }
+
+        // update the id so HasEntity is correct
+        foreach (PublicAccessRule rule in entity.Rules)
+        {
+            rule.Id = rule.Key.GetHashCode();
+        }
+
+        entity.ResetDirtyProperties();
+    }
+
     protected override void PersistUpdatedItem(PublicAccessEntry entity)
     {
         entity.UpdatingEntity();

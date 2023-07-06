@@ -448,6 +448,58 @@ internal class TemplateRepository : EntityRepositoryBase<int, ITemplate>, ITempl
         }
     }
 
+    protected override async Task PersistNewItemAsync(ITemplate entity)
+    {
+        EnsureValidAlias(entity);
+
+        //Save to db
+        var template = (Template)entity;
+        template.AddingEntity();
+
+        TemplateDto dto = TemplateFactory.BuildDto(template, NodeObjectTypeId, template.Id);
+
+        //Create the (base) node data - umbracoNode
+        NodeDto nodeDto = dto.NodeDto;
+        nodeDto.Path = "-1," + dto.NodeDto.NodeId;
+        var o = await Database.IsNewAsync(nodeDto) ? Convert.ToInt32(await Database.InsertAsync(nodeDto)) : await Database.UpdateAsync(nodeDto);
+
+        //Update with new correct path
+        ITemplate? parent = Get(template.MasterTemplateId!.Value);
+        if (parent != null)
+        {
+            nodeDto.Path = string.Concat(parent.Path, ",", nodeDto.NodeId);
+        }
+        else
+        {
+            nodeDto.Path = "-1," + dto.NodeDto.NodeId;
+        }
+
+        await Database.UpdateAsync(nodeDto);
+
+        //Insert template dto
+        dto.NodeId = nodeDto.NodeId;
+        await Database.InsertAsync(dto);
+
+        //Update entity with correct values
+        template.Id = nodeDto.NodeId; //Set Id on entity to ensure an Id is set
+        template.Path = nodeDto.Path;
+
+        // Only save file when not in production runtime mode
+        if (_runtimeSettings.CurrentValue.Mode != RuntimeMode.Production)
+        {
+            //now do the file work
+            SaveFile(template);
+        }
+
+        template.ResetDirtyProperties();
+
+        // ensure that from now on, content is lazy-loaded
+        if (template.GetFileContent == null)
+        {
+            template.GetFileContent = file => GetFileContent((Template)file, false);
+        }
+    }
+
     protected override void PersistUpdatedItem(ITemplate entity)
     {
         EnsureValidAlias(entity);

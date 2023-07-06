@@ -127,6 +127,18 @@ internal class AuditRepository : EntityRepositoryBase<int, IAuditItem>, IAuditRe
             Parameters = entity.Parameters,
         });
 
+    protected override async Task PersistNewItemAsync(IAuditItem entity) =>
+        await Database.InsertAsync(new LogDto
+        {
+            Comment = entity.Comment,
+            Datestamp = DateTime.Now,
+            Header = entity.AuditType.ToString(),
+            NodeId = entity.Id,
+            UserId = entity.UserId,
+            EntityType = entity.EntityType,
+            Parameters = entity.Parameters,
+        });
+
     protected override void PersistUpdatedItem(IAuditItem entity) =>
 
         // inserting when updating because we never update a log entry, perhaps this should throw?

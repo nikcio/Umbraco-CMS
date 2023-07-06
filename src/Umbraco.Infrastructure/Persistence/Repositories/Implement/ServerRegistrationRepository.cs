@@ -99,6 +99,18 @@ internal class ServerRegistrationRepository : EntityRepositoryBase<int, IServerR
         entity.ResetDirtyProperties();
     }
 
+    protected override async Task PersistNewItemAsync(IServerRegistration entity)
+    {
+        entity.AddingEntity();
+
+        ServerRegistrationDto dto = ServerRegistrationFactory.BuildDto(entity);
+
+        var id = Convert.ToInt32(await Database.InsertAsync(dto));
+        entity.Id = id;
+
+        entity.ResetDirtyProperties();
+    }
+
     protected override void PersistUpdatedItem(IServerRegistration entity)
     {
         entity.UpdatingEntity();

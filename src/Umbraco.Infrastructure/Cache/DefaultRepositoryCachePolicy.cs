@@ -66,6 +66,41 @@ public class DefaultRepositoryCachePolicy<TEntity, TId> : RepositoryCachePolicyB
     }
 
     /// <inheritdoc />
+    public override async Task CreateAsync(TEntity entity, Func<TEntity, Task> persistNewAsync)
+    {
+        if (entity == null)
+        {
+            throw new ArgumentNullException(nameof(entity));
+        }
+
+        try
+        {
+            await persistNewAsync(entity);
+
+            // just to be safe, we cannot cache an item without an identity
+            if (entity.HasIdentity)
+            {
+                Cache.Insert(GetEntityCacheKey(entity.Id), () => entity, TimeSpan.FromMinutes(5), true);
+            }
+
+            // if there's a GetAllCacheAllowZeroCount cache, ensure it is cleared
+            Cache.Clear(EntityTypeCacheKey);
+        }
+        catch
+        {
+            // if an exception is thrown we need to remove the entry from cache,
+            // this is ONLY a work around because of the way
+            // that we cache entities: http://issues.umbraco.org/issue/U4-4259
+            Cache.Clear(GetEntityCacheKey(entity.Id));
+
+            // if there's a GetAllCacheAllowZeroCount cache, ensure it is cleared
+            Cache.Clear(EntityTypeCacheKey);
+
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
     public override void Update(TEntity entity, Action<TEntity> persistUpdated)
     {
         if (entity == null)

@@ -1,3 +1,5 @@
+using System.Drawing.Drawing2D;
+using System.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Umbraco.Cms.Core.DependencyInjection;
@@ -161,6 +163,63 @@ public class ContentService : RepositoryService, IContentService
         return rollbackSaveResult;
     }
 
+    public async Task<OperationResult> RollbackAsync(int id, int versionId, string culture = "*", int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        EventMessages evtMsgs = EventMessagesFactory.Get();
+
+        // Get the current copy of the node
+        IContent? content = await GetByIdAsync(id, cancellationToken);
+
+        // Get the version
+        IContent? version = await GetVersionAsync(versionId, cancellationToken);
+
+        // Good old null checks
+        if (content == null || version == null || content.Trashed)
+        {
+            return new OperationResult(OperationResultType.FailedCannot, evtMsgs);
+        }
+
+        // Store the result of doing the save of content for the rollback
+        OperationResult rollbackSaveResult;
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+        {
+            var rollingBackNotification = new ContentRollingBackNotification(content, evtMsgs);
+            if (scope.Notifications.PublishCancelable(rollingBackNotification))
+            {
+                scope.Complete();
+                return OperationResult.Cancel(evtMsgs);
+            }
+
+            // Copy the changes from the version
+            content.CopyFrom(version, culture);
+
+            // Save the content for the rollback
+            rollbackSaveResult = await SaveAsync(content, userId, cancellationToken);
+
+            // Depending on the save result - is what we log & audit along with what we return
+            if (rollbackSaveResult.Success == false)
+            {
+                // Log the error/warning
+                _logger.LogError(
+                    "User '{UserId}' was unable to rollback content '{ContentId}' to version '{VersionId}'", userId, id, versionId);
+            }
+            else
+            {
+                scope.Notifications.Publish(
+                    new ContentRolledBackNotification(content, evtMsgs).WithStateFrom(rollingBackNotification));
+
+                // Logging & Audit message
+                _logger.LogInformation("User '{UserId}' rolled back content '{ContentId}' to version '{VersionId}'", userId, id, versionId);
+                Audit(AuditType.RollBack, userId, id, $"Content '{content.Name}' was rolled back to version '{versionId}'");
+            }
+
+            scope.Complete();
+        }
+
+        return rollbackSaveResult;
+    }
+
     #endregion
 
     #region Count
@@ -174,12 +233,30 @@ public class ContentService : RepositoryService, IContentService
         }
     }
 
+    public async Task<int> CountPublished(string? contentTypeAlias = null, CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+            return await _documentRepository.CountPublishedAsync(contentTypeAlias, cancellationToken);
+        }
+    }
+
     public int Count(string? contentTypeAlias = null)
     {
         using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
         {
             scope.ReadLock(Constants.Locks.ContentTree);
             return _documentRepository.Count(contentTypeAlias);
+        }
+    }
+
+    public async Task<int> CountAsync(string? contentTypeAlias = null, CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+            return await _documentRepository.CountAsync(contentTypeAlias, cancellationToken);
         }
     }
 
@@ -192,12 +269,30 @@ public class ContentService : RepositoryService, IContentService
         }
     }
 
+    public async Task<int> CountChildrenAsync(int parentId, string? contentTypeAlias = null, CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+            return await _documentRepository.CountChildrenAsync(parentId, contentTypeAlias, cancellationToken);
+        }
+    }
+
     public int CountDescendants(int parentId, string? contentTypeAlias = null)
     {
         using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
         {
             scope.ReadLock(Constants.Locks.ContentTree);
             return _documentRepository.CountDescendants(parentId, contentTypeAlias);
+        }
+    }
+
+    public async Task<int> CountDescendantsAsync(int parentId, string? contentTypeAlias = null, CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+            return await _documentRepository.CountDescendantsAsync(parentId, contentTypeAlias, cancellationToken);
         }
     }
 
@@ -221,6 +316,21 @@ public class ContentService : RepositoryService, IContentService
     }
 
     /// <summary>
+    ///     Used to bulk update the permissions set for a content item. This will replace all permissions
+    ///     assigned to an entity with a list of user id & permission pairs.
+    /// </summary>
+    /// <param name="permissionSet"></param>
+    public async Task SetPermissionsAsync(EntityPermissionSet permissionSet, CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+        {
+            scope.WriteLock(Constants.Locks.ContentTree);
+            await _documentRepository.ReplaceContentPermissionsAsync(permissionSet, cancellationToken);
+            scope.Complete();
+        }
+    }
+
+    /// <summary>
     ///     Assigns a single permission to the current content item for the specified group ids
     /// </summary>
     /// <param name="entity"></param>
@@ -237,6 +347,22 @@ public class ContentService : RepositoryService, IContentService
     }
 
     /// <summary>
+    ///     Assigns a single permission to the current content item for the specified group ids
+    /// </summary>
+    /// <param name="entity"></param>
+    /// <param name="permission"></param>
+    /// <param name="groupIds"></param>
+    public async Task SetPermissionAsync(IContent entity, char permission, IEnumerable<int> groupIds, CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+        {
+            scope.WriteLock(Constants.Locks.ContentTree);
+            await _documentRepository.AssignEntityPermissionAsync(entity, permission, groupIds, cancellationToken);
+            scope.Complete();
+        }
+    }
+
+    /// <summary>
     ///     Returns implicit/inherited permissions assigned to the content item for all user groups
     /// </summary>
     /// <param name="content"></param>
@@ -247,6 +373,20 @@ public class ContentService : RepositoryService, IContentService
         {
             scope.ReadLock(Constants.Locks.ContentTree);
             return _documentRepository.GetPermissionsForEntity(content.Id);
+        }
+    }
+
+    /// <summary>
+    ///     Returns implicit/inherited permissions assigned to the content item for all user groups
+    /// </summary>
+    /// <param name="content"></param>
+    /// <returns></returns>
+    public async Task<EntityPermissionCollection> GetPermissionsAsync(IContent content, CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+            return await _documentRepository.GetPermissionsForEntityAsync(content.Id, cancellationToken);
         }
     }
 
@@ -278,6 +418,29 @@ public class ContentService : RepositoryService, IContentService
     }
 
     /// <summary>
+    ///     Creates an <see cref="IContent" /> object using the alias of the <see cref="IContentType" />
+    ///     that this Content should based on.
+    /// </summary>
+    /// <remarks>
+    ///     Note that using this method will simply return a new IContent without any identity
+    ///     as it has not yet been persisted. It is intended as a shortcut to creating new content objects
+    ///     that does not invoke a save operation against the database.
+    /// </remarks>
+    /// <param name="name">Name of the Content object</param>
+    /// <param name="parentId">Id of Parent for the new Content</param>
+    /// <param name="contentTypeAlias">Alias of the <see cref="IContentType" /></param>
+    /// <param name="userId">Optional id of the user creating the content</param>
+    /// <returns>
+    ///     <see cref="IContent" />
+    /// </returns>
+    public async Task<IContent> CreateAsync(string name, Guid parentId, string contentTypeAlias, int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        // TODO: what about culture?
+        IContent? parent = await GetByIdAsync(parentId, cancellationToken);
+        return await CreateAsync(name, parent, contentTypeAlias, userId, cancellationToken);
+    }
+
+    /// <summary>
     ///     Creates an <see cref="IContent" /> object of a specified content type.
     /// </summary>
     /// <remarks>
@@ -295,6 +458,26 @@ public class ContentService : RepositoryService, IContentService
         // TODO: what about culture?
         IContentType contentType = GetContentType(contentTypeAlias);
         return Create(name, parentId, contentType, userId);
+    }
+
+    /// <summary>
+    ///     Creates an <see cref="IContent" /> object of a specified content type.
+    /// </summary>
+    /// <remarks>
+    ///     This method simply returns a new, non-persisted, IContent without any identity. It
+    ///     is intended as a shortcut to creating new content objects that does not invoke a save
+    ///     operation against the database.
+    /// </remarks>
+    /// <param name="name">The name of the content object.</param>
+    /// <param name="parentId">The identifier of the parent, or -1.</param>
+    /// <param name="contentTypeAlias">The alias of the content type.</param>
+    /// <param name="userId">The optional id of the user creating the content.</param>
+    /// <returns>The content object.</returns>
+    public async Task<IContent> CreateAsync(string name, int parentId, string contentTypeAlias, int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        // TODO: what about culture?
+        IContentType contentType = await GetContentTypeAsync(contentTypeAlias, cancellationToken);
+        return await CreateAsync(name, parentId, contentType, userId, cancellationToken);
     }
 
     /// <summary>
@@ -329,6 +512,37 @@ public class ContentService : RepositoryService, IContentService
     }
 
     /// <summary>
+    ///     Creates an <see cref="IContent" /> object of a specified content type.
+    /// </summary>
+    /// <remarks>
+    ///     This method simply returns a new, non-persisted, IContent without any identity. It
+    ///     is intended as a shortcut to creating new content objects that does not invoke a save
+    ///     operation against the database.
+    /// </remarks>
+    /// <param name="name">The name of the content object.</param>
+    /// <param name="parentId">The identifier of the parent, or -1.</param>
+    /// <param name="contentType">The content type of the content</param>
+    /// <param name="userId">The optional id of the user creating the content.</param>
+    /// <returns>The content object.</returns>
+    public async Task<IContent> CreateAsync(string name, int parentId, IContentType contentType, int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        if (contentType is null)
+        {
+            throw new ArgumentException("Content type must be specified", nameof(contentType));
+        }
+
+        IContent? parent = parentId > 0 ? await GetByIdAsync(parentId, cancellationToken) : null;
+        if (parentId > 0 && parent is null)
+        {
+            throw new ArgumentException("No content with that id.", nameof(parentId));
+        }
+
+        var content = new Content(name, parentId, contentType, userId);
+
+        return content;
+    }
+
+    /// <summary>
     ///     Creates an <see cref="IContent" /> object of a specified content type, under a parent.
     /// </summary>
     /// <remarks>
@@ -350,6 +564,38 @@ public class ContentService : RepositoryService, IContentService
         }
 
         IContentType contentType = GetContentType(contentTypeAlias);
+        if (contentType == null)
+        {
+            throw new ArgumentException("No content type with that alias.", nameof(contentTypeAlias)); // causes rollback
+        }
+
+        var content = new Content(name, parent, contentType, userId);
+
+        return content;
+    }
+
+    /// <summary>
+    ///     Creates an <see cref="IContent" /> object of a specified content type, under a parent.
+    /// </summary>
+    /// <remarks>
+    ///     This method simply returns a new, non-persisted, IContent without any identity. It
+    ///     is intended as a shortcut to creating new content objects that does not invoke a save
+    ///     operation against the database.
+    /// </remarks>
+    /// <param name="name">The name of the content object.</param>
+    /// <param name="parent">The parent content object.</param>
+    /// <param name="contentTypeAlias">The alias of the content type.</param>
+    /// <param name="userId">The optional id of the user creating the content.</param>
+    /// <returns>The content object.</returns>
+    public async Task<IContent> CreateAsync(string name, IContent? parent, string contentTypeAlias, int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        // TODO: what about culture?
+        if (parent == null)
+        {
+            throw new ArgumentNullException(nameof(parent));
+        }
+
+        IContentType contentType = await GetContentTypeAsync(contentTypeAlias, cancellationToken);
         if (contentType == null)
         {
             throw new ArgumentException("No content type with that alias.", nameof(contentTypeAlias)); // causes rollback
@@ -400,6 +646,45 @@ public class ContentService : RepositoryService, IContentService
     }
 
     /// <summary>
+    ///     Creates an <see cref="IContent" /> object of a specified content type.
+    /// </summary>
+    /// <remarks>This method returns a new, persisted, IContent with an identity.</remarks>
+    /// <param name="name">The name of the content object.</param>
+    /// <param name="parentId">The identifier of the parent, or -1.</param>
+    /// <param name="contentTypeAlias">The alias of the content type.</param>
+    /// <param name="userId">The optional id of the user creating the content.</param>
+    /// <returns>The content object.</returns>
+    public async Task<IContent> CreateAndSaveAsync(string name, int parentId, string contentTypeAlias, int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        // TODO: what about culture?
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            // locking the content tree secures content types too
+            scope.WriteLock(Constants.Locks.ContentTree);
+
+            IContentType contentType = await GetContentTypeAsync(contentTypeAlias, cancellationToken); // + locks
+            if (contentType == null)
+            {
+                throw new ArgumentException("No content type with that alias.", nameof(contentTypeAlias)); // causes rollback
+            }
+
+            IContent? parent = parentId > 0 ? await GetByIdAsync(parentId, cancellationToken) : null; // + locks
+            if (parentId > 0 && parent == null)
+            {
+                throw new ArgumentException("No content with that id.", nameof(parentId)); // causes rollback
+            }
+
+            Content content = parentId > 0
+                ? new Content(name, parent!, contentType, userId)
+                : new Content(name, parentId, contentType, userId);
+
+            await SaveAsync(content, userId, cancellationToken);
+
+            return content;
+        }
+    }
+
+    /// <summary>
     ///     Creates an <see cref="IContent" /> object of a specified content type, under a parent.
     /// </summary>
     /// <remarks>This method returns a new, persisted, IContent with an identity.</remarks>
@@ -435,6 +720,42 @@ public class ContentService : RepositoryService, IContentService
         }
     }
 
+    /// <summary>
+    ///     Creates an <see cref="IContent" /> object of a specified content type, under a parent.
+    /// </summary>
+    /// <remarks>This method returns a new, persisted, IContent with an identity.</remarks>
+    /// <param name="name">The name of the content object.</param>
+    /// <param name="parent">The parent content object.</param>
+    /// <param name="contentTypeAlias">The alias of the content type.</param>
+    /// <param name="userId">The optional id of the user creating the content.</param>
+    /// <returns>The content object.</returns>
+    public async Task<IContent> CreateAndSaveAsync(string name, IContent parent, string contentTypeAlias, int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        // TODO: what about culture?
+        if (parent == null)
+        {
+            throw new ArgumentNullException(nameof(parent));
+        }
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            // locking the content tree secures content types too
+            scope.WriteLock(Constants.Locks.ContentTree);
+
+            IContentType contentType = await GetContentTypeAsync(contentTypeAlias, cancellationToken); // + locks
+            if (contentType == null)
+            {
+                throw new ArgumentException("No content type with that alias.", nameof(contentTypeAlias)); // causes rollback
+            }
+
+            var content = new Content(name, parent, contentType, userId);
+
+            await SaveAsync(content, userId, cancellationToken);
+
+            return content;
+        }
+    }
+
     #endregion
 
     #region Get, Has, Is
@@ -452,6 +773,22 @@ public class ContentService : RepositoryService, IContentService
         {
             scope.ReadLock(Constants.Locks.ContentTree);
             return _documentRepository.Get(id);
+        }
+    }
+
+    /// <summary>
+    ///     Gets an <see cref="IContent" /> object by Id
+    /// </summary>
+    /// <param name="id">Id of the Content to retrieve</param>
+    /// <returns>
+    ///     <see cref="IContent" />
+    /// </returns>
+    public async Task<IContent?> GetByIdAsync(int id, CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+            return await _documentRepository.GetAsync(id, cancellationToken);
         }
     }
 
@@ -480,6 +817,30 @@ public class ContentService : RepositoryService, IContentService
     }
 
     /// <summary>
+    ///     Gets an <see cref="IContent" /> object by Id
+    /// </summary>
+    /// <param name="ids">Ids of the Content to retrieve</param>
+    /// <returns>
+    ///     <see cref="IContent" />
+    /// </returns>
+    public async Task<IEnumerable<IContent>> GetByIdsAsync(IEnumerable<int> ids, CancellationToken? cancellationToken = null)
+    {
+        var idsA = ids.ToArray();
+        if (idsA.Length == 0)
+        {
+            return Enumerable.Empty<IContent>();
+        }
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+            IEnumerable<IContent> items = await _documentRepository.GetManyAsync(idsA, cancellationToken);
+            var index = items.ToDictionary(x => x.Id, x => x);
+            return idsA.Select(x => index.TryGetValue(x, out IContent? c) ? c : null).WhereNotNull();
+        }
+    }
+
+    /// <summary>
     ///     Gets an <see cref="IContent" /> object by its 'UniqueId'
     /// </summary>
     /// <param name="key">Guid key of the Content to retrieve</param>
@@ -495,6 +856,22 @@ public class ContentService : RepositoryService, IContentService
         }
     }
 
+    /// <summary>
+    ///     Gets an <see cref="IContent" /> object by its 'UniqueId'
+    /// </summary>
+    /// <param name="key">Guid key of the Content to retrieve</param>
+    /// <returns>
+    ///     <see cref="IContent" />
+    /// </returns>
+    public async Task<IContent?> GetByIdAsync(Guid key, CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+            return await _documentRepository.GetAsync(key, cancellationToken);
+        }
+    }
+
     /// <inheritdoc />
     public ContentScheduleCollection GetContentScheduleByContentId(int contentId)
     {
@@ -502,6 +879,16 @@ public class ContentService : RepositoryService, IContentService
         {
             scope.ReadLock(Constants.Locks.ContentTree);
             return _documentRepository.GetContentSchedule(contentId);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<ContentScheduleCollection> GetContentScheduleByContentIdAsync(int contentId, CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+            return await _documentRepository.GetContentScheduleAsync(contentId, cancellationToken);
         }
     }
 
@@ -515,6 +902,16 @@ public class ContentService : RepositoryService, IContentService
         }
     }
 
+    /// <inheritdoc />
+    public async Task PersistContentScheduleAsync(IContent content, ContentScheduleCollection contentSchedule, CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.WriteLock(Constants.Locks.ContentTree);
+            await _documentRepository.PersistContentScheduleAsync(content, contentSchedule, cancellationToken);
+        }
+    }
+
     /// <summary>
     /// </summary>
     /// <param name="contents"></param>
@@ -522,6 +919,14 @@ public class ContentService : RepositoryService, IContentService
     /// <returns></returns>
     Attempt<OperationResult?> IContentServiceBase<IContent>.Save(IEnumerable<IContent> contents, int userId) =>
         Attempt.Succeed(Save(contents, userId));
+
+    /// <summary>
+    /// </summary>
+    /// <param name="contents"></param>
+    /// <param name="userId"></param>
+    /// <returns></returns>
+    async Task<Attempt<OperationResult?>> IContentServiceBase<IContent>.SaveAsync(IEnumerable<IContent> contents, int userId, CancellationToken? cancellationToken = null) =>
+        Attempt.Succeed(SaveAsync(contents, userId, cancellationToken));
 
     /// <summary>
     ///     Gets <see cref="IContent" /> objects by Ids
@@ -542,6 +947,37 @@ public class ContentService : RepositoryService, IContentService
         {
             scope.ReadLock(Constants.Locks.ContentTree);
             IEnumerable<IContent>? items = _documentRepository.GetMany(idsA);
+
+            if (items is not null)
+            {
+                var index = items.ToDictionary(x => x.Key, x => x);
+
+                return idsA.Select(x => index.TryGetValue(x, out IContent? c) ? c : null).WhereNotNull();
+            }
+
+            return Enumerable.Empty<IContent>();
+        }
+    }
+
+    /// <summary>
+    ///     Gets <see cref="IContent" /> objects by Ids
+    /// </summary>
+    /// <param name="ids">Ids of the Content to retrieve</param>
+    /// <returns>
+    ///     <see cref="IContent" />
+    /// </returns>
+    public async Task<IEnumerable<IContent>> GetByIdsAsync(IEnumerable<Guid> ids, CancellationToken? cancellationToken = null)
+    {
+        Guid[] idsA = ids.ToArray();
+        if (idsA.Length == 0)
+        {
+            return Enumerable.Empty<IContent>();
+        }
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+            IEnumerable<IContent>? items = await _documentRepository.GetManyAsync(idsA, cancellationToken);
 
             if (items is not null)
             {
@@ -592,6 +1028,45 @@ public class ContentService : RepositoryService, IContentService
     }
 
     /// <inheritdoc />
+    public async Task<IEnumerable<IContent>> GetPagedOfTypeAsync(
+        int contentTypeId,
+        long pageIndex,
+        int pageSize,
+        out long totalRecords,
+        IQuery<IContent>? filter = null,
+        Ordering? ordering = null,
+        CancellationToken? cancellationToken = null)
+    {
+        if (pageIndex < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pageIndex));
+        }
+
+        if (pageSize <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pageSize));
+        }
+
+        if (ordering == null)
+        {
+            ordering = Ordering.By("sortOrder");
+        }
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+            return await _documentRepository.GetPageAsync(
+                Query<IContent>()?.Where(x => x.ContentTypeId == contentTypeId),
+                pageIndex,
+                pageSize,
+                out totalRecords,
+                filter,
+                ordering,
+                cancellationToken);
+        }
+    }
+
+    /// <inheritdoc />
     public IEnumerable<IContent> GetPagedOfTypes(int[] contentTypeIds, long pageIndex, int pageSize, out long totalRecords, IQuery<IContent>? filter, Ordering? ordering = null)
     {
         if (pageIndex < 0)
@@ -622,6 +1097,38 @@ public class ContentService : RepositoryService, IContentService
         }
     }
 
+    /// <inheritdoc />
+    public async Task<IEnumerable<IContent>> GetPagedOfTypesAsync(int[] contentTypeIds, long pageIndex, int pageSize, out long totalRecords, IQuery<IContent>? filter, Ordering? ordering = null, CancellationToken? cancellationToken = null)
+    {
+        if (pageIndex < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pageIndex));
+        }
+
+        if (pageSize <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pageSize));
+        }
+
+        if (ordering == null)
+        {
+            ordering = Ordering.By("sortOrder");
+        }
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+            return await _documentRepository.GetPageAsync(
+                Query<IContent>()?.Where(x => contentTypeIds.Contains(x.ContentTypeId)),
+                pageIndex,
+                pageSize,
+                out totalRecords,
+                filter,
+                ordering,
+                cancellationToken);
+        }
+    }
+
     /// <summary>
     ///     Gets a collection of <see cref="IContent" /> objects by Level
     /// </summary>
@@ -639,6 +1146,22 @@ public class ContentService : RepositoryService, IContentService
     }
 
     /// <summary>
+    ///     Gets a collection of <see cref="IContent" /> objects by Level
+    /// </summary>
+    /// <param name="level">The level to retrieve Content from</param>
+    /// <returns>An Enumerable list of <see cref="IContent" /> objects</returns>
+    /// <remarks>Contrary to most methods, this method filters out trashed content items.</remarks>
+    public async Task<IEnumerable<IContent>> GetByLevelAsync(int level, CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+            IQuery<IContent>? query = Query<IContent>().Where(x => x.Level == level && x.Trashed == false);
+            return await _documentRepository.GetAsync(query, cancellationToken);
+        }
+    }
+
+    /// <summary>
     ///     Gets a specific version of an <see cref="IContent" /> item.
     /// </summary>
     /// <param name="versionId">Id of the version to retrieve</param>
@@ -649,6 +1172,20 @@ public class ContentService : RepositoryService, IContentService
         {
             scope.ReadLock(Constants.Locks.ContentTree);
             return _documentRepository.GetVersion(versionId);
+        }
+    }
+
+    /// <summary>
+    ///     Gets a specific version of an <see cref="IContent" /> item.
+    /// </summary>
+    /// <param name="versionId">Id of the version to retrieve</param>
+    /// <returns>An <see cref="IContent" /> item</returns>
+    public async Task<IContent?> GetVersionAsync(int versionId, CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+            return await _documentRepository.GetVersionAsync(versionId, cancellationToken);
         }
     }
 
@@ -669,6 +1206,20 @@ public class ContentService : RepositoryService, IContentService
     /// <summary>
     ///     Gets a collection of an <see cref="IContent" /> objects versions by Id
     /// </summary>
+    /// <param name="id"></param>
+    /// <returns>An Enumerable list of <see cref="IContent" /> objects</returns>
+    public async Task<IEnumerable<IContent>> GetVersionsAsync(int id, CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+            return await _documentRepository.GetAllVersionsAsync(id, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    ///     Gets a collection of an <see cref="IContent" /> objects versions by Id
+    /// </summary>
     /// <returns>An Enumerable list of <see cref="IContent" /> objects</returns>
     public IEnumerable<IContent> GetVersionsSlim(int id, int skip, int take)
     {
@@ -676,6 +1227,19 @@ public class ContentService : RepositoryService, IContentService
         {
             scope.ReadLock(Constants.Locks.ContentTree);
             return _documentRepository.GetAllVersionsSlim(id, skip, take);
+        }
+    }
+
+    /// <summary>
+    ///     Gets a collection of an <see cref="IContent" /> objects versions by Id
+    /// </summary>
+    /// <returns>An Enumerable list of <see cref="IContent" /> objects</returns>
+    public async Task<IEnumerable<IContent>> GetVersionsSlimAsync(int id, int skip, int take, CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+            return await _documentRepository.GetAllVersionsSlimAsync(id, skip, take, cancellationToken);
         }
     }
 
@@ -694,6 +1258,20 @@ public class ContentService : RepositoryService, IContentService
     }
 
     /// <summary>
+    ///     Gets a list of all version Ids for the given content item ordered so latest is first
+    /// </summary>
+    /// <param name="id"></param>
+    /// <param name="maxRows">The maximum number of rows to return</param>
+    /// <returns></returns>
+    public async Task<IEnumerable<int>> GetVersionIdsAsync(int id, int maxRows, CancellationToken? cancellationToken = null)
+    {
+        using (ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            return await _documentRepository.GetVersionIdsAsync(id, maxRows, cancellationToken);
+        }
+    }
+
+    /// <summary>
     ///     Gets a collection of <see cref="IContent" /> objects, which are ancestors of the current content.
     /// </summary>
     /// <param name="id">Id of the <see cref="IContent" /> to retrieve ancestors for</param>
@@ -708,6 +1286,23 @@ public class ContentService : RepositoryService, IContentService
         }
 
         return GetAncestors(content);
+    }
+
+    /// <summary>
+    ///     Gets a collection of <see cref="IContent" /> objects, which are ancestors of the current content.
+    /// </summary>
+    /// <param name="id">Id of the <see cref="IContent" /> to retrieve ancestors for</param>
+    /// <returns>An Enumerable list of <see cref="IContent" /> objects</returns>
+    public async Task<IEnumerable<IContent>> GetAncestorsAsync(int id, CancellationToken? cancellationToken = null)
+    {
+        // intentionally not locking
+        IContent? content = await GetByIdAsync(id, cancellationToken);
+        if (content is null)
+        {
+            return Enumerable.Empty<IContent>();
+        }
+
+        return await GetAncestorsAsync(content, cancellationToken);
     }
 
     /// <summary>
@@ -737,6 +1332,32 @@ public class ContentService : RepositoryService, IContentService
     }
 
     /// <summary>
+    ///     Gets a collection of <see cref="IContent" /> objects, which are ancestors of the current content.
+    /// </summary>
+    /// <param name="content"><see cref="IContent" /> to retrieve ancestors for</param>
+    /// <returns>An Enumerable list of <see cref="IContent" /> objects</returns>
+    public async Task<IEnumerable<IContent>> GetAncestorsAsync(IContent content, CancellationToken? cancellationToken = null)
+    {
+        // null check otherwise we get exceptions
+        if (content.Path.IsNullOrWhiteSpace())
+        {
+            return Enumerable.Empty<IContent>();
+        }
+
+        var ids = content.GetAncestorIds()?.ToArray();
+        if (ids?.Any() == false)
+        {
+            return new List<IContent>();
+        }
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+            return await _documentRepository.GetManyAsync(ids!, cancellationToken);
+        }
+    }
+
+    /// <summary>
     ///     Gets a collection of published <see cref="IContent" /> objects by Parent Id
     /// </summary>
     /// <param name="id">Id of the Parent to retrieve Children from</param>
@@ -748,6 +1369,21 @@ public class ContentService : RepositoryService, IContentService
             scope.ReadLock(Constants.Locks.ContentTree);
             IQuery<IContent>? query = Query<IContent>().Where(x => x.ParentId == id && x.Published);
             return _documentRepository.Get(query).OrderBy(x => x.SortOrder);
+        }
+    }
+
+    /// <summary>
+    ///     Gets a collection of published <see cref="IContent" /> objects by Parent Id
+    /// </summary>
+    /// <param name="id">Id of the Parent to retrieve Children from</param>
+    /// <returns>An Enumerable list of published <see cref="IContent" /> objects</returns>
+    public async Task<IEnumerable<IContent>> GetPublishedChildrenAsync(int id, CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+            IQuery<IContent>? query = Query<IContent>().Where(x => x.ParentId == id && x.Published);
+            return (await _documentRepository.GetAsync(query, cancellationToken)).OrderBy(x => x.SortOrder);
         }
     }
 
@@ -779,6 +1415,33 @@ public class ContentService : RepositoryService, IContentService
     }
 
     /// <inheritdoc />
+    public async Task<IEnumerable<IContent>> GetPagedChildrenAsync(int id, long pageIndex, int pageSize, out long totalChildren, IQuery<IContent>? filter = null, Ordering? ordering = null, CancellationToken? cancellationToken = null)
+    {
+        if (pageIndex < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pageIndex));
+        }
+
+        if (pageSize <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pageSize));
+        }
+
+        if (ordering == null)
+        {
+            ordering = Ordering.By("sortOrder");
+        }
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+
+            IQuery<IContent>? query = Query<IContent>()?.Where(x => x.ParentId == id);
+            return await _documentRepository.GetPageAsync(query, pageIndex, pageSize, out totalChildren, filter, ordering, cancellationToken);
+        }
+    }
+
+    /// <inheritdoc />
     public IEnumerable<IContent> GetPagedDescendants(int id, long pageIndex, int pageSize, out long totalChildren, IQuery<IContent>? filter = null, Ordering? ordering = null)
     {
         if (ordering == null)
@@ -805,6 +1468,36 @@ public class ContentService : RepositoryService, IContentService
             }
 
             return GetPagedLocked(null, pageIndex, pageSize, out totalChildren, filter, ordering);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<IEnumerable<IContent>> GetPagedDescendantsAsync(int id, long pageIndex, int pageSize, out long totalChildren, IQuery<IContent>? filter = null, Ordering? ordering = null, CancellationToken? cancellationToken = null)
+    {
+        if (ordering == null)
+        {
+            ordering = Ordering.By("Path");
+        }
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+
+            // if the id is System Root, then just get all
+            if (id != Constants.System.Root)
+            {
+                TreeEntityPath[] contentPath =
+                    (await _entityRepository.GetAllPathsAsync(Constants.ObjectTypes.Document, id, cancellationToken)).ToArray();
+                if (contentPath.Length == 0)
+                {
+                    totalChildren = 0;
+                    return Enumerable.Empty<IContent>();
+                }
+
+                return await GetPagedLockedAsync(GetPagedDescendantQuery(contentPath[0].Path), pageIndex, pageSize, out totalChildren, filter, ordering);
+            }
+
+            return await GetPagedLockedAsync(null, pageIndex, pageSize, out totalChildren, filter, ordering, cancellationToken);
         }
     }
 
@@ -839,6 +1532,26 @@ public class ContentService : RepositoryService, IContentService
         return _documentRepository.GetPage(query, pageIndex, pageSize, out totalChildren, filter, ordering);
     }
 
+    private async Task<IEnumerable<IContent>> GetPagedLockedAsync(IQuery<IContent>? query, long pageIndex, int pageSize, out long totalChildren, IQuery<IContent>? filter, Ordering? ordering, CancellationToken? cancellationToken = null)
+    {
+        if (pageIndex < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pageIndex));
+        }
+
+        if (pageSize <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pageSize));
+        }
+
+        if (ordering == null)
+        {
+            throw new ArgumentNullException(nameof(ordering));
+        }
+
+        return await _documentRepository.GetPageAsync(query, pageIndex, pageSize, out totalChildren, filter, ordering, cancellationToken);
+    }
+
     /// <summary>
     ///     Gets the parent of the current content as an <see cref="IContent" /> item.
     /// </summary>
@@ -849,6 +1562,18 @@ public class ContentService : RepositoryService, IContentService
         // intentionally not locking
         IContent? content = GetById(id);
         return GetParent(content);
+    }
+
+    /// <summary>
+    ///     Gets the parent of the current content as an <see cref="IContent" /> item.
+    /// </summary>
+    /// <param name="id">Id of the <see cref="IContent" /> to retrieve the parent from</param>
+    /// <returns>Parent <see cref="IContent" /> object</returns>
+    public async Task<IContent?> GetParentAsync(int id, CancellationToken? cancellationToken = null)
+    {
+        // intentionally not locking
+        IContent? content = await GetByIdAsync(id);
+        return await GetParentAsync(content);
     }
 
     /// <summary>
@@ -868,6 +1593,22 @@ public class ContentService : RepositoryService, IContentService
     }
 
     /// <summary>
+    ///     Gets the parent of the current content as an <see cref="IContent" /> item.
+    /// </summary>
+    /// <param name="content"><see cref="IContent" /> to retrieve the parent from</param>
+    /// <returns>Parent <see cref="IContent" /> object</returns>
+    public async Task<IContent?> GetParentAsync(IContent? content, CancellationToken? cancellationToken = null)
+    {
+        if (content?.ParentId == Constants.System.Root || content?.ParentId == Constants.System.RecycleBinContent ||
+            content is null)
+        {
+            return null;
+        }
+
+        return await GetByIdAsync(content.ParentId);
+    }
+
+    /// <summary>
     ///     Gets a collection of <see cref="IContent" /> objects, which reside at the first level / root
     /// </summary>
     /// <returns>An Enumerable list of <see cref="IContent" /> objects</returns>
@@ -878,6 +1619,20 @@ public class ContentService : RepositoryService, IContentService
             scope.ReadLock(Constants.Locks.ContentTree);
             IQuery<IContent> query = Query<IContent>().Where(x => x.ParentId == Constants.System.Root);
             return _documentRepository.Get(query);
+        }
+    }
+
+    /// <summary>
+    ///     Gets a collection of <see cref="IContent" /> objects, which reside at the first level / root
+    /// </summary>
+    /// <returns>An Enumerable list of <see cref="IContent" /> objects</returns>
+    public async Task<IEnumerable<IContent>> GetRootContentAsync(CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+            IQuery<IContent> query = Query<IContent>().Where(x => x.ParentId == Constants.System.Root);
+            return await _documentRepository.GetAsync(query, cancellationToken);
         }
     }
 
@@ -894,6 +1649,19 @@ public class ContentService : RepositoryService, IContentService
         }
     }
 
+    /// <summary>
+    ///     Gets all published content items
+    /// </summary>
+    /// <returns></returns>
+    internal async Task<IEnumerable<IContent>> GetAllPublishedAsync(CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+            return await _documentRepository.GetAsync(QueryNotTrashed, cancellationToken);
+        }
+    }
+
     /// <inheritdoc />
     public IEnumerable<IContent> GetContentForExpiration(DateTime date)
     {
@@ -905,12 +1673,32 @@ public class ContentService : RepositoryService, IContentService
     }
 
     /// <inheritdoc />
+    public async Task<IEnumerable<IContent>> GetContentForExpirationAsync(DateTime date, CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+            return await _documentRepository.GetContentForExpirationAsync(date, cancellationToken);
+        }
+    }
+
+    /// <inheritdoc />
     public IEnumerable<IContent> GetContentForRelease(DateTime date)
     {
         using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
         {
             scope.ReadLock(Constants.Locks.ContentTree);
             return _documentRepository.GetContentForRelease(date);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<IEnumerable<IContent>> GetContentForReleaseAsync(DateTime date, CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+            return await _documentRepository.GetContentForReleaseAsync(date, cancellationToken);
         }
     }
 
@@ -935,11 +1723,38 @@ public class ContentService : RepositoryService, IContentService
     }
 
     /// <summary>
+    ///     Gets a collection of an <see cref="IContent" /> objects, which resides in the Recycle Bin
+    /// </summary>
+    /// <returns>An Enumerable list of <see cref="IContent" /> objects</returns>
+    public async Task<IEnumerable<IContent>> GetPagedContentInRecycleBinAsync(long pageIndex, int pageSize, out long totalRecords, IQuery<IContent>? filter = null, Ordering? ordering = null, CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            if (ordering == null)
+            {
+                ordering = Ordering.By("Path");
+            }
+
+            scope.ReadLock(Constants.Locks.ContentTree);
+            IQuery<IContent>? query = Query<IContent>()?
+                .Where(x => x.Path.StartsWith(Constants.System.RecycleBinContentPathPrefix));
+            return await _documentRepository.GetPageAsync(query, pageIndex, pageSize, out totalRecords, filter, ordering, cancellationToken);
+        }
+    }
+
+    /// <summary>
     ///     Checks whether an <see cref="IContent" /> item has any children
     /// </summary>
     /// <param name="id">Id of the <see cref="IContent" /></param>
     /// <returns>True if the content has any children otherwise False</returns>
     public bool HasChildren(int id) => CountChildren(id) > 0;
+
+    /// <summary>
+    ///     Checks whether an <see cref="IContent" /> item has any children
+    /// </summary>
+    /// <param name="id">Id of the <see cref="IContent" /></param>
+    /// <returns>True if the content has any children otherwise False</returns>
+    public async Task<bool> HasChildrenAsync(int id, CancellationToken? cancellationToken = null) => (await CountChildrenAsync(id, cancellationToken)) > 0;
 
     /// <summary>
     ///     Checks if the passed in <see cref="IContent" /> can be published based on the ancestors publish state.
@@ -964,12 +1779,44 @@ public class ContentService : RepositoryService, IContentService
         return parent == null || IsPathPublished(parent);
     }
 
+    /// <summary>
+    ///     Checks if the passed in <see cref="IContent" /> can be published based on the ancestors publish state.
+    /// </summary>
+    /// <param name="content"><see cref="IContent" /> to check if ancestors are published</param>
+    /// <returns>True if the Content can be published, otherwise False</returns>
+    public async Task<bool> IsPathPublishableAsync(IContent content, CancellationToken? cancellationToken = null)
+    {
+        // fast
+        if (content.ParentId == Constants.System.Root)
+        {
+            return true; // root content is always publishable
+        }
+
+        if (content.Trashed)
+        {
+            return false; // trashed content is never publishable
+        }
+
+        // not trashed and has a parent: publishable if the parent is path-published
+        IContent? parent = await GetByIdAsync(content.ParentId, cancellationToken);
+        return parent == null || await IsPathPublishedAsync(parent, cancellationToken);
+    }
+
     public bool IsPathPublished(IContent? content)
     {
         using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
         {
             scope.ReadLock(Constants.Locks.ContentTree);
             return _documentRepository.IsPathPublished(content);
+        }
+    }
+
+    public async Task<bool> IsPathPublishedAsync(IContent? content, CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+            return await _documentRepository.IsPathPublishedAsync(content, cancellationToken);
         }
     }
 
@@ -1062,6 +1909,92 @@ public class ContentService : RepositoryService, IContentService
         return OperationResult.Succeed(eventMessages);
     }
 
+
+    /// <inheritdoc />
+    public async Task<OperationResult> SaveAsync(IContent content, int? userId = null, ContentScheduleCollection? contentSchedule = null, CancellationToken? cancellationToken = null)
+    {
+        PublishedState publishedState = content.PublishedState;
+        if (publishedState != PublishedState.Published && publishedState != PublishedState.Unpublished)
+        {
+            throw new InvalidOperationException(
+                $"Cannot save (un)publishing content with name: {content.Name} - and state: {content.PublishedState}, use the dedicated SavePublished method.");
+        }
+
+        if (content.Name != null && content.Name.Length > 255)
+        {
+            throw new InvalidOperationException(
+                $"Content with the name {content.Name} cannot be more than 255 characters in length.");
+        }
+
+        EventMessages eventMessages = EventMessagesFactory.Get();
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+        {
+            var savingNotification = new ContentSavingNotification(content, eventMessages);
+            if (scope.Notifications.PublishCancelable(savingNotification))
+            {
+                scope.Complete();
+                return OperationResult.Cancel(eventMessages);
+            }
+
+            scope.WriteLock(Constants.Locks.ContentTree);
+            userId ??= Constants.Security.SuperUserId;
+
+            if (content.HasIdentity == false)
+            {
+                content.CreatorId = userId.Value;
+            }
+
+            content.WriterId = userId.Value;
+
+            // track the cultures that have changed
+            List<string>? culturesChanging = content.ContentType.VariesByCulture()
+                ? content.CultureInfos?.Values.Where(x => x.IsDirty()).Select(x => x.Culture).ToList()
+                : null;
+
+            // TODO: Currently there's no way to change track which variant properties have changed, we only have change
+            // tracking enabled on all values on the Property which doesn't allow us to know which variants have changed.
+            // in this particular case, determining which cultures have changed works with the above with names since it will
+            // have always changed if it's been saved in the back office but that's not really fail safe.
+            await _documentRepository.SaveAsync(content, cancellationToken);
+
+            if (contentSchedule != null)
+            {
+                await _documentRepository.PersistContentScheduleAsync(content, contentSchedule, cancellationToken);
+            }
+
+            scope.Notifications.Publish(
+                new ContentSavedNotification(content, eventMessages).WithStateFrom(savingNotification));
+
+            // TODO: we had code here to FORCE that this event can never be suppressed. But that just doesn't make a ton of sense?!
+            // I understand that if its suppressed that the caches aren't updated, but that would be expected. If someone
+            // is supressing events then I think it's expected that nothing will happen. They are probably doing it for perf
+            // reasons like bulk import and in those cases we don't want this occuring.
+            scope.Notifications.Publish(
+                new ContentTreeChangeNotification(content, TreeChangeTypes.RefreshNode, eventMessages));
+
+            if (culturesChanging != null)
+            {
+                IEnumerable<string>? languages = await _languageRepository.GetManyAsync(cancellationToken)?
+                    .Where(x => culturesChanging.InvariantContains(x.IsoCode))
+                    .Select(x => x.CultureName);
+                if (languages is not null)
+                {
+                    var langs = string.Join(", ", languages);
+                    await AuditAsync(AuditType.SaveVariant, userId.Value, content.Id, $"Saved languages: {langs}", langs, cancellationToken);
+                }
+            }
+            else
+            {
+                await AuditAsync(AuditType.Save, userId.Value, content.Id, cancellationToken);
+            }
+
+            scope.Complete();
+        }
+
+        return OperationResult.Succeed(eventMessages);
+    }
+
     /// <inheritdoc />
     public OperationResult Save(IEnumerable<IContent> contents, int userId = Constants.Security.SuperUserId)
     {
@@ -1098,6 +2031,49 @@ public class ContentService : RepositoryService, IContentService
                 new ContentTreeChangeNotification(contentsA, TreeChangeTypes.RefreshNode, eventMessages));
 
             Audit(AuditType.Save, userId == -1 ? 0 : userId, Constants.System.Root, "Saved multiple content");
+
+            scope.Complete();
+        }
+
+        return OperationResult.Succeed(eventMessages);
+    }
+
+    /// <inheritdoc />
+    public async Task<OperationResult> SaveAsync(IEnumerable<IContent> contents, int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        EventMessages eventMessages = EventMessagesFactory.Get();
+        IContent[] contentsA = contents.ToArray();
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+        {
+            var savingNotification = new ContentSavingNotification(contentsA, eventMessages);
+            if (scope.Notifications.PublishCancelable(savingNotification))
+            {
+                scope.Complete();
+                return OperationResult.Cancel(eventMessages);
+            }
+
+            scope.WriteLock(Constants.Locks.ContentTree);
+            foreach (IContent content in contentsA)
+            {
+                if (content.HasIdentity == false)
+                {
+                    content.CreatorId = userId;
+                }
+
+                content.WriterId = userId;
+
+                await _documentRepository.SaveAsync(content, cancellationToken);
+            }
+
+            scope.Notifications.Publish(
+                new ContentSavedNotification(contentsA, eventMessages).WithStateFrom(savingNotification));
+
+            // TODO: See note above about supressing events
+            scope.Notifications.Publish(
+                new ContentTreeChangeNotification(contentsA, TreeChangeTypes.RefreshNode, eventMessages));
+
+            await AuditAsync(AuditType.Save, userId == -1 ? 0 : userId, Constants.System.Root, "Saved multiple content", cancellationToken);
 
             scope.Complete();
         }
@@ -1170,6 +2146,72 @@ public class ContentService : RepositoryService, IContentService
         }
     }
 
+
+    /// <inheritdoc />
+    public async Task<PublishResult> SaveAndPublishAsync(IContent content, string culture = "*", int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        EventMessages evtMsgs = EventMessagesFactory.Get();
+
+        PublishedState publishedState = content.PublishedState;
+        if (publishedState != PublishedState.Published && publishedState != PublishedState.Unpublished)
+        {
+            throw new InvalidOperationException(
+                $"Cannot save-and-publish (un)publishing content, use the dedicated {nameof(CommitDocumentChanges)} method.");
+        }
+
+        // cannot accept invariant (null or empty) culture for variant content type
+        // cannot accept a specific culture for invariant content type (but '*' is ok)
+        if (content.ContentType.VariesByCulture())
+        {
+            if (culture.IsNullOrWhiteSpace())
+            {
+                throw new NotSupportedException("Invariant culture is not supported by variant content types.");
+            }
+        }
+        else
+        {
+            if (!culture.IsNullOrWhiteSpace() && culture != "*")
+            {
+                throw new NotSupportedException(
+                    $"Culture \"{culture}\" is not supported by invariant content types.");
+            }
+        }
+
+        if (content.Name != null && content.Name.Length > 255)
+        {
+            throw new InvalidOperationException("Name cannot be more than 255 characters in length.");
+        }
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+        {
+            scope.WriteLock(Constants.Locks.ContentTree);
+
+            var allLangs = await _languageRepository.GetManyAsync(cancellationToken).ToList();
+
+            // Change state to publishing
+            content.PublishedState = PublishedState.Publishing;
+            var savingNotification = new ContentSavingNotification(content, evtMsgs);
+            if (scope.Notifications.PublishCancelable(savingNotification))
+            {
+                return new PublishResult(PublishResultType.FailedPublishCancelledByEvent, evtMsgs, content);
+            }
+
+            // if culture is specific, first publish the invariant values, then publish the culture itself.
+            // if culture is '*', then publish them all (including variants)
+
+            // this will create the correct culture impact even if culture is * or null
+            var impact = await _cultureImpactFactory.CreateAsync(culture, IsDefaultCulture(allLangs, culture), content, cancellationToken);
+
+            // publish the culture(s)
+            // we don't care about the response here, this response will be rechecked below but we need to set the culture info values now.
+            await content.PublishCultureAsync(impact, cancellationToken);
+
+            PublishResult result = await CommitDocumentChangesInternalAsync(scope, content, evtMsgs, allLangs, savingNotification.State, userId, cancellationToken);
+            scope.Complete();
+            return result;
+        }
+    }
+
     /// <inheritdoc />
     public PublishResult SaveAndPublish(IContent content, string[] cultures, int userId = Constants.Security.SuperUserId)
     {
@@ -1224,6 +2266,68 @@ public class ContentService : RepositoryService, IContentService
             foreach (CultureImpact impact in impacts)
             {
                 content.PublishCulture(impact);
+            }
+
+            PublishResult result = CommitDocumentChangesInternal(scope, content, evtMsgs, allLangs, savingNotification.State, userId);
+            scope.Complete();
+            return result;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<PublishResult> SaveAndPublishAsync(IContent content, string[] cultures, int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        if (content == null)
+        {
+            throw new ArgumentNullException(nameof(content));
+        }
+
+        if (cultures == null)
+        {
+            throw new ArgumentNullException(nameof(cultures));
+        }
+
+        if (content.Name != null && content.Name.Length > 255)
+        {
+            throw new InvalidOperationException("Name cannot be more than 255 characters in length.");
+        }
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+        {
+            scope.WriteLock(Constants.Locks.ContentTree);
+
+            var allLangs = await _languageRepository.GetManyAsync(cancellationToken).ToList();
+
+            EventMessages evtMsgs = EventMessagesFactory.Get();
+
+            var savingNotification = new ContentSavingNotification(content, evtMsgs);
+            if (scope.Notifications.PublishCancelable(savingNotification))
+            {
+                return new PublishResult(PublishResultType.FailedPublishCancelledByEvent, evtMsgs, content);
+            }
+
+            var varies = content.ContentType.VariesByCulture();
+
+            if (cultures.Length == 0 && !varies)
+            {
+                // No cultures specified and doesn't vary, so publish it, else nothing to publish
+                return await SaveAndPublishAsync(content, userId: userId, cancellationToken: cancellationToken);
+            }
+
+            if (cultures.Any(x => x == null || x == "*"))
+            {
+                throw new InvalidOperationException(
+                    "Only valid cultures are allowed to be used in this method, wildcards or nulls are not allowed");
+            }
+
+            IEnumerable<CultureImpact> impacts =
+                    cultures.Select(x => _cultureImpactFactory.ImpactExplicit(x, IsDefaultCulture(allLangs, x)));
+
+            // publish the culture(s)
+            // we don't care about the response here, this response will be rechecked below but we need to set the culture info values now.
+            foreach (CultureImpact impact in impacts)
+            {
+                await content.PublishCultureAsync(impact, cancellationToken);
             }
 
             PublishResult result = CommitDocumentChangesInternal(scope, content, evtMsgs, allLangs, savingNotification.State, userId);
@@ -1326,6 +2430,101 @@ public class ContentService : RepositoryService, IContentService
         }
     }
 
+
+    /// <inheritdoc />
+    public async Task<PublishResult> UnpublishAsync(IContent content, string? culture = "*", int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        if (content == null)
+        {
+            throw new ArgumentNullException(nameof(content));
+        }
+
+        EventMessages evtMsgs = EventMessagesFactory.Get();
+
+        culture = culture?.NullOrWhiteSpaceAsNull();
+
+        PublishedState publishedState = content.PublishedState;
+        if (publishedState != PublishedState.Published && publishedState != PublishedState.Unpublished)
+        {
+            throw new InvalidOperationException(
+                $"Cannot save-and-publish (un)publishing content, use the dedicated {nameof(CommitDocumentChanges)} method.");
+        }
+
+        // cannot accept invariant (null or empty) culture for variant content type
+        // cannot accept a specific culture for invariant content type (but '*' is ok)
+        if (content.ContentType.VariesByCulture())
+        {
+            if (culture == null)
+            {
+                throw new NotSupportedException("Invariant culture is not supported by variant content types.");
+            }
+        }
+        else
+        {
+            if (culture != null && culture != "*")
+            {
+                throw new NotSupportedException(
+                    $"Culture \"{culture}\" is not supported by invariant content types.");
+            }
+        }
+
+        // if the content is not published, nothing to do
+        if (!content.Published)
+        {
+            return new PublishResult(PublishResultType.SuccessUnpublishAlready, evtMsgs, content);
+        }
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+        {
+            scope.WriteLock(Constants.Locks.ContentTree);
+
+            var allLangs = await _languageRepository.GetManyAsync(cancellationToken).ToList();
+
+            var savingNotification = new ContentSavingNotification(content, evtMsgs);
+            if (scope.Notifications.PublishCancelable(savingNotification))
+            {
+                return new PublishResult(PublishResultType.FailedPublishCancelledByEvent, evtMsgs, content);
+            }
+
+            // all cultures = unpublish whole
+            if (culture == "*" || (!content.ContentType.VariesByCulture() && culture == null))
+            {
+                // It's important to understand that when the document varies by culture but the "*" is used,
+                // we are just unpublishing the whole document but leaving all of the culture's as-is. This is expected
+                // because we don't want to actually unpublish every culture and then the document, we just want everything
+                // to be non-routable so that when it's re-published all variants were as they were.
+                content.PublishedState = PublishedState.Unpublishing;
+                PublishResult result = await CommitDocumentChangesInternalAsync(scope, content, evtMsgs, allLangs, savingNotification.State, userId, cancellationToken);
+                scope.Complete();
+                return result;
+            }
+            else
+            {
+                // Unpublish the culture, this will change the document state to Publishing! ... which is expected because this will
+                // essentially be re-publishing the document with the requested culture removed.
+                // The call to CommitDocumentChangesInternal will perform all the checks like if this is a mandatory culture or the last culture being unpublished
+                // and will then unpublish the document accordingly.
+                // If the result of this is false it means there was no culture to unpublish (i.e. it was already unpublished or it did not exist)
+                var removed = content.UnpublishCulture(culture);
+
+                // Save and publish any changes
+                PublishResult result = await CommitDocumentChangesInternalAsync(scope, content, evtMsgs, allLangs, savingNotification.State, userId, cancellationToken);
+
+                scope.Complete();
+
+                // In one case the result will be PublishStatusType.FailedPublishNothingToPublish which means that no cultures
+                // were specified to be published which will be the case when removed is false. In that case
+                // we want to swap the result type to PublishResultType.SuccessUnpublishAlready (that was the expectation before).
+                if (result.Result == PublishResultType.FailedPublishNothingToPublish && !removed)
+                {
+                    return new PublishResult(PublishResultType.SuccessUnpublishAlready, evtMsgs, content);
+                }
+
+                return result;
+            }
+        }
+    }
+
     /// <summary>
     ///     Saves a document and publishes/unpublishes any pending publishing changes made to the document.
     /// </summary>
@@ -1369,6 +2568,55 @@ public class ContentService : RepositoryService, IContentService
             var allLangs = _languageRepository.GetMany().ToList();
 
             PublishResult result = CommitDocumentChangesInternal(scope, content, evtMsgs, allLangs, savingNotification.State, userId);
+            scope.Complete();
+            return result;
+        }
+    }
+
+
+    /// <summary>
+    ///     Saves a document and publishes/unpublishes any pending publishing changes made to the document.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         This MUST NOT be called from within this service, this used to be a public API and must only be used outside of
+    ///         this service.
+    ///         Internally in this service, calls must be made to CommitDocumentChangesInternal
+    ///     </para>
+    ///     <para>This is the underlying logic for both publishing and unpublishing any document</para>
+    ///     <para>
+    ///         Pending publishing/unpublishing changes on a document are made with calls to
+    ///         <see cref="ContentRepositoryExtensions.PublishCulture" /> and
+    ///         <see cref="ContentRepositoryExtensions.UnpublishCulture" />.
+    ///     </para>
+    ///     <para>
+    ///         When publishing or unpublishing a single culture, or all cultures, use <see cref="SaveAndPublish" />
+    ///         and <see cref="Unpublish" />. But if the flexibility to both publish and unpublish in a single operation is
+    ///         required
+    ///         then this method needs to be used in combination with <see cref="ContentRepositoryExtensions.PublishCulture" />
+    ///         and <see cref="ContentRepositoryExtensions.UnpublishCulture" />
+    ///         on the content itself - this prepares the content, but does not commit anything - and then, invoke
+    ///         <see cref="CommitDocumentChanges" /> to actually commit the changes to the database.
+    ///     </para>
+    ///     <para>The document is *always* saved, even when publishing fails.</para>
+    /// </remarks>
+    internal async Task<PublishResult> CommitDocumentChangesAsync(IContent content, int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+        {
+            EventMessages evtMsgs = EventMessagesFactory.Get();
+
+            scope.WriteLock(Constants.Locks.ContentTree);
+
+            var savingNotification = new ContentSavingNotification(content, evtMsgs);
+            if (scope.Notifications.PublishCancelable(savingNotification))
+            {
+                return new PublishResult(PublishResultType.FailedPublishCancelledByEvent, evtMsgs, content);
+            }
+
+            var allLangs = await _languageRepository.GetManyAsync(cancellationToken).ToList();
+
+            PublishResult result = await CommitDocumentChangesInternalAsync(scope, content, evtMsgs, allLangs, savingNotification.State, userId, cancellationToken);
             scope.Complete();
             return result;
         }
@@ -1714,6 +2962,348 @@ public class ContentService : RepositoryService, IContentService
         return publishResult!;
     }
 
+
+    /// <summary>
+    ///     Handles a lot of business logic cases for how the document should be persisted
+    /// </summary>
+    /// <param name="scope"></param>
+    /// <param name="content"></param>
+    /// <param name="allLangs"></param>
+    /// <param name="notificationState"></param>
+    /// <param name="userId"></param>
+    /// <param name="branchOne"></param>
+    /// <param name="branchRoot"></param>
+    /// <param name="eventMessages"></param>
+    /// <returns></returns>
+    /// <remarks>
+    ///     <para>
+    ///         Business logic cases such: as unpublishing a mandatory culture, or unpublishing the last culture, checking for
+    ///         pending scheduled publishing, etc... is dealt with in this method.
+    ///         There is quite a lot of cases to take into account along with logic that needs to deal with scheduled
+    ///         saving/publishing, branch saving/publishing, etc...
+    ///     </para>
+    /// </remarks>
+    private async Task<PublishResult> CommitDocumentChangesInternalAsync(
+        ICoreScope scope,
+        IContent content,
+        EventMessages eventMessages,
+        IReadOnlyCollection<ILanguage> allLangs,
+        IDictionary<string, object?>? notificationState,
+        int userId = Constants.Security.SuperUserId,
+        bool branchOne = false,
+        bool branchRoot = false,
+        CancellationToken? cancellationToken = null)
+    {
+        if (scope == null)
+        {
+            throw new ArgumentNullException(nameof(scope));
+        }
+
+        if (content == null)
+        {
+            throw new ArgumentNullException(nameof(content));
+        }
+
+        if (eventMessages == null)
+        {
+            throw new ArgumentNullException(nameof(eventMessages));
+        }
+
+        PublishResult? publishResult = null;
+        PublishResult? unpublishResult = null;
+
+        // nothing set = republish it all
+        if (content.PublishedState != PublishedState.Publishing &&
+            content.PublishedState != PublishedState.Unpublishing)
+        {
+            content.PublishedState = PublishedState.Publishing;
+        }
+
+        // State here is either Publishing or Unpublishing
+        // Publishing to unpublish a culture may end up unpublishing everything so these flags can be flipped later
+        var publishing = content.PublishedState == PublishedState.Publishing;
+        var unpublishing = content.PublishedState == PublishedState.Unpublishing;
+
+        var variesByCulture = content.ContentType.VariesByCulture();
+
+        // Track cultures that are being published, changed, unpublished
+        IReadOnlyList<string>? culturesPublishing = null;
+        IReadOnlyList<string>? culturesUnpublishing = null;
+        IReadOnlyList<string>? culturesChanging = variesByCulture
+            ? content.CultureInfos?.Values.Where(x => x.IsDirty()).Select(x => x.Culture).ToList()
+            : null;
+
+        var isNew = !content.HasIdentity;
+        TreeChangeTypes changeType = isNew ? TreeChangeTypes.RefreshNode : TreeChangeTypes.RefreshBranch;
+        var previouslyPublished = content.HasIdentity && content.Published;
+
+        // Inline method to persist the document with the documentRepository since this logic could be called a couple times below
+        async Task SaveDocumentAsync(IContent c, CancellationToken? cancellationToken = null)
+        {
+            // save, always
+            if (c.HasIdentity == false)
+            {
+                c.CreatorId = userId;
+            }
+
+            c.WriterId = userId;
+
+            // saving does NOT change the published version, unless PublishedState is Publishing or Unpublishing
+            await _documentRepository.SaveAsync(c, cancellationToken);
+        }
+
+        if (publishing)
+        {
+            // Determine cultures publishing/unpublishing which will be based on previous calls to content.PublishCulture and ClearPublishInfo
+            culturesUnpublishing = content.GetCulturesUnpublishing();
+            culturesPublishing = variesByCulture
+                ? content.PublishCultureInfos?.Values.Where(x => x.IsDirty()).Select(x => x.Culture).ToList()
+                : null;
+
+            // ensure that the document can be published, and publish handling events, business rules, etc
+            publishResult = StrategyCanPublish(
+                scope,
+                content, /*checkPath:*/
+                !branchOne || branchRoot,
+                culturesPublishing,
+                culturesUnpublishing,
+                eventMessages,
+                allLangs,
+                notificationState);
+            if (publishResult.Success)
+            {
+                // note: StrategyPublish flips the PublishedState to Publishing!
+                publishResult = StrategyPublish(content, culturesPublishing, culturesUnpublishing, eventMessages);
+
+                // Check if a culture has been unpublished and if there are no cultures left, and then unpublish document as a whole
+                if (publishResult.Result == PublishResultType.SuccessUnpublishCulture &&
+                    content.PublishCultureInfos?.Count == 0)
+                {
+                    // This is a special case! We are unpublishing the last culture and to persist that we need to re-publish without any cultures
+                    // so the state needs to remain Publishing to do that. However, we then also need to unpublish the document and to do that
+                    // the state needs to be Unpublishing and it cannot be both. This state is used within the documentRepository to know how to
+                    // persist certain things. So before proceeding below, we need to save the Publishing state to publish no cultures, then we can
+                    // mark the document for Unpublishing.
+                    await SaveDocumentAsync(content, cancellationToken);
+
+                    // Set the flag to unpublish and continue
+                    unpublishing = content.Published; // if not published yet, nothing to do
+                }
+            }
+            else
+            {
+                // in a branch, just give up
+                if (branchOne && !branchRoot)
+                {
+                    return publishResult;
+                }
+
+                // Check for mandatory culture missing, and then unpublish document as a whole
+                if (publishResult.Result == PublishResultType.FailedPublishMandatoryCultureMissing)
+                {
+                    publishing = false;
+                    unpublishing = content.Published; // if not published yet, nothing to do
+
+                    // we may end up in a state where we won't publish nor unpublish
+                    // keep going, though, as we want to save anyways
+                }
+
+                // reset published state from temp values (publishing, unpublishing) to original value
+                // (published, unpublished) in order to save the document, unchanged - yes, this is odd,
+                // but: (a) it means we don't reproduce the PublishState logic here and (b) setting the
+                // PublishState to anything other than Publishing or Unpublishing - which is precisely
+                // what we want to do here - throws
+                content.Published = content.Published;
+            }
+        }
+
+        // won't happen in a branch
+        if (unpublishing)
+        {
+            IContent? newest = await GetByIdAsync(content.Id, cancellationToken); // ensure we have the newest version - in scope
+            if (content.VersionId != newest?.VersionId)
+            {
+                return new PublishResult(PublishResultType.FailedPublishConcurrencyViolation, eventMessages, content);
+            }
+
+            if (content.Published)
+            {
+                // ensure that the document can be unpublished, and unpublish
+                // handling events, business rules, etc
+                // note: StrategyUnpublish flips the PublishedState to Unpublishing!
+                // note: This unpublishes the entire document (not different variants)
+                unpublishResult = StrategyCanUnpublish(scope, content, eventMessages);
+                if (unpublishResult.Success)
+                {
+                    unpublishResult = await StrategyUnpublishAsync(content, eventMessages, cancellationToken);
+                }
+                else
+                {
+                    // reset published state from temp values (publishing, unpublishing) to original value
+                    // (published, unpublished) in order to save the document, unchanged - yes, this is odd,
+                    // but: (a) it means we don't reproduce the PublishState logic here and (b) setting the
+                    // PublishState to anything other than Publishing or Unpublishing - which is precisely
+                    // what we want to do here - throws
+                    content.Published = content.Published;
+                }
+            }
+            else
+            {
+                // already unpublished - optimistic concurrency collision, really,
+                // and I am not sure at all what we should do, better die fast, else
+                // we may end up corrupting the db
+                throw new InvalidOperationException("Concurrency collision.");
+            }
+        }
+
+        // Persist the document
+        await SaveDocumentAsync(content, cancellationToken);
+
+        // raise the Saved event, always
+        scope.Notifications.Publish(
+            new ContentSavedNotification(content, eventMessages).WithState(notificationState));
+
+        // we have tried to unpublish - won't happen in a branch
+        if (unpublishing)
+        {
+            // and succeeded, trigger events
+            if (unpublishResult?.Success ?? false)
+            {
+                // events and audit
+                scope.Notifications.Publish(
+                    new ContentUnpublishedNotification(content, eventMessages).WithState(notificationState));
+                scope.Notifications.Publish(new ContentTreeChangeNotification(content, TreeChangeTypes.RefreshBranch, eventMessages));
+
+                if (culturesUnpublishing != null)
+                {
+                    // This will mean that that we unpublished a mandatory culture or we unpublished the last culture.
+                    var langs = string.Join(", ", allLangs
+                        .Where(x => culturesUnpublishing.InvariantContains(x.IsoCode))
+                        .Select(x => x.CultureName));
+                    Audit(AuditType.UnpublishVariant, userId, content.Id, $"Unpublished languages: {langs}", langs);
+
+                    if (publishResult == null)
+                    {
+                        throw new PanicException("publishResult == null - should not happen");
+                    }
+
+                    switch (publishResult.Result)
+                    {
+                        case PublishResultType.FailedPublishMandatoryCultureMissing:
+                            // Occurs when a mandatory culture was unpublished (which means we tried publishing the document without a mandatory culture)
+
+                            // Log that the whole content item has been unpublished due to mandatory culture unpublished
+                            await AuditAsync(AuditType.Unpublish, userId, content.Id, "Unpublished (mandatory language unpublished)", cancellationToken);
+                            return new PublishResult(PublishResultType.SuccessUnpublishMandatoryCulture, eventMessages, content);
+                        case PublishResultType.SuccessUnpublishCulture:
+                            // Occurs when the last culture is unpublished
+                            await AuditAsync(AuditType.Unpublish, userId, content.Id, "Unpublished (last language unpublished)", cancellationToken);
+                            return new PublishResult(PublishResultType.SuccessUnpublishLastCulture, eventMessages, content);
+                    }
+                }
+
+                await AuditAsync(AuditType.Unpublish, userId, content.Id, cancellationToken);
+                return new PublishResult(PublishResultType.SuccessUnpublish, eventMessages, content);
+            }
+
+            // or, failed
+            scope.Notifications.Publish(new ContentTreeChangeNotification(content, changeType, eventMessages));
+            return new PublishResult(PublishResultType.FailedUnpublish, eventMessages, content); // bah
+        }
+
+        // we have tried to publish
+        if (publishing)
+        {
+            // and succeeded, trigger events
+            if (publishResult?.Success ?? false)
+            {
+                if (isNew == false && previouslyPublished == false)
+                {
+                    changeType = TreeChangeTypes.RefreshBranch; // whole branch
+                }
+                else if (isNew == false && previouslyPublished)
+                {
+                    changeType = TreeChangeTypes.RefreshNode; // single node
+                }
+
+                // invalidate the node/branch
+                // for branches, handled by SaveAndPublishBranch
+                if (!branchOne)
+                {
+                    scope.Notifications.Publish(
+                        new ContentTreeChangeNotification(content, changeType, eventMessages));
+                    scope.Notifications.Publish(
+                        new ContentPublishedNotification(content, eventMessages).WithState(notificationState));
+                }
+
+                // it was not published and now is... descendants that were 'published' (but
+                // had an unpublished ancestor) are 're-published' ie not explicitly published
+                // but back as 'published' nevertheless
+                if (!branchOne && isNew == false && previouslyPublished == false && await HasChildrenAsync(content.Id, cancellationToken))
+                {
+                    IContent[] descendants = await GetPublishedDescendantsLockedAsync(content, cancellationToken).ToArray();
+                    scope.Notifications.Publish(
+                        new ContentPublishedNotification(descendants, eventMessages).WithState(notificationState));
+                }
+
+                switch (publishResult.Result)
+                {
+                    case PublishResultType.SuccessPublish:
+                        await AuditAsync(AuditType.Publish, userId, content.Id, cancellationToken);
+                        break;
+                    case PublishResultType.SuccessPublishCulture:
+                        if (culturesPublishing != null)
+                        {
+                            var langs = string.Join(", ", allLangs
+                                .Where(x => culturesPublishing.InvariantContains(x.IsoCode))
+                                .Select(x => x.CultureName));
+                            await AuditAsync(AuditType.PublishVariant, userId, content.Id, $"Published languages: {langs}", langs, cancellationToken);
+                        }
+
+                        break;
+                    case PublishResultType.SuccessUnpublishCulture:
+                        if (culturesUnpublishing != null)
+                        {
+                            var langs = string.Join(", ", allLangs
+                                .Where(x => culturesUnpublishing.InvariantContains(x.IsoCode))
+                                .Select(x => x.CultureName));
+                            await AuditAsync(AuditType.UnpublishVariant, userId, content.Id, $"Unpublished languages: {langs}", langs, cancellationToken);
+                        }
+
+                        break;
+                }
+
+                return publishResult;
+            }
+        }
+
+        // should not happen
+        if (branchOne && !branchRoot)
+        {
+            throw new PanicException("branchOne && !branchRoot - should not happen");
+        }
+
+        // if publishing didn't happen or if it has failed, we still need to log which cultures were saved
+        if (!branchOne && (publishResult == null || !publishResult.Success))
+        {
+            if (culturesChanging != null)
+            {
+                var langs = string.Join(", ", allLangs
+                    .Where(x => culturesChanging.InvariantContains(x.IsoCode))
+                    .Select(x => x.CultureName));
+                await AuditAsync(AuditType.SaveVariant, userId, content.Id, $"Saved languages: {langs}", langs, cancellationToken);
+            }
+            else
+            {
+                await AuditAsync(AuditType.Save, userId, content.Id, cancellationToken);
+            }
+        }
+
+        // or, failed
+        scope.Notifications.Publish(new ContentTreeChangeNotification(content, changeType, eventMessages));
+        return publishResult!;
+    }
+
     /// <inheritdoc />
     public IEnumerable<PublishResult> PerformScheduledPublish(DateTime date)
     {
@@ -1723,6 +3313,19 @@ public class ContentService : RepositoryService, IContentService
 
         PerformScheduledPublishingRelease(date, results, evtMsgs, allLangs);
         PerformScheduledPublishingExpiration(date, results, evtMsgs, allLangs);
+
+        return results;
+    }
+
+    /// <inheritdoc />
+    public async Task<IEnumerable<PublishResult>> PerformScheduledPublishAsync(DateTime date, CancellationToken? cancellationToken = null)
+    {
+        var allLangs = new Lazy<List<ILanguage>>(() => await _languageRepository.GetManyAsync(cancellationToken).ToList());
+        EventMessages evtMsgs = EventMessagesFactory.Get();
+        var results = new List<PublishResult>();
+
+        await PerformScheduledPublishingReleaseAsync(date, results, evtMsgs, allLangs, cancellationToken);
+        await PerformScheduledPublishingExpirationAsync(date, results, evtMsgs, allLangs, cancellationToken);
 
         return results;
     }
@@ -1794,6 +3397,78 @@ public class ContentService : RepositoryService, IContentService
             }
 
             _documentRepository.ClearSchedule(date, ContentScheduleAction.Expire);
+        }
+
+        scope.Complete();
+    }
+
+    private async Task PerformScheduledPublishingExpirationAsync(DateTime date, List<PublishResult> results, EventMessages evtMsgs, Lazy<List<ILanguage>> allLangs, CancellationToken? cancellationToken = null)
+    {
+        using ICoreScope scope = ScopeProvider.CreateCoreScope();
+
+        // do a fast read without any locks since this executes often to see if we even need to proceed
+        if (await _documentRepository.HasContentForExpirationAsync(date, cancellationToken))
+        {
+            // now take a write lock since we'll be updating
+            scope.WriteLock(Constants.Locks.ContentTree);
+
+            foreach (IContent d in await _documentRepository.GetContentForExpirationAsync(date, cancellationToken))
+            {
+                ContentScheduleCollection contentSchedule = await _documentRepository.GetContentScheduleAsync(d.Id, cancellationToken);
+                if (d.ContentType.VariesByCulture())
+                {
+                    // find which cultures have pending schedules
+                    var pendingCultures = contentSchedule.GetPending(ContentScheduleAction.Expire, date)
+                        .Select(x => x.Culture)
+                        .Distinct()
+                        .ToList();
+
+                    if (pendingCultures.Count == 0)
+                    {
+                        continue; // shouldn't happen but no point in processing this document if there's nothing there
+                    }
+
+                    var savingNotification = new ContentSavingNotification(d, evtMsgs);
+                    if (scope.Notifications.PublishCancelable(savingNotification))
+                    {
+                        results.Add(new PublishResult(PublishResultType.FailedPublishCancelledByEvent, evtMsgs, d));
+                        continue;
+                    }
+
+                    foreach (var c in pendingCultures)
+                    {
+                        // Clear this schedule for this culture
+                        contentSchedule.Clear(c, ContentScheduleAction.Expire, date);
+
+                        // set the culture to be published
+                        await d.UnpublishCultureAsync(c, cancellationToken);
+                    }
+
+                    await _documentRepository.PersistContentScheduleAsync(d, contentSchedule, cancellationToken);
+                    PublishResult result = await CommitDocumentChangesInternalAsync(scope, d, evtMsgs, allLangs.Value, savingNotification.State, d.WriterId, cancellationToken);
+                    if (result.Success == false)
+                    {
+                        _logger.LogError(null, "Failed to publish document id={DocumentId}, reason={Reason}.", d.Id, result.Result);
+                    }
+
+                    results.Add(result);
+                }
+                else
+                {
+                    // Clear this schedule for this culture
+                    contentSchedule.Clear(ContentScheduleAction.Expire, date);
+                    await _documentRepository.PersistContentScheduleAsync(d, contentSchedule, cancellationToken);
+                    PublishResult result = await UnpublishAsync(d, userId: d.WriterId, cancellationToken);
+                    if (result.Success == false)
+                    {
+                        _logger.LogError(null, "Failed to unpublish document id={DocumentId}, reason={Reason}.", d.Id, result.Result);
+                    }
+
+                    results.Add(result);
+                }
+            }
+
+            await _documentRepository.ClearScheduleAsync(date, ContentScheduleAction.Expire, cancellationToken);
         }
 
         scope.Complete();
@@ -1913,6 +3588,125 @@ public class ContentService : RepositoryService, IContentService
             }
 
             _documentRepository.ClearSchedule(date, ContentScheduleAction.Release);
+        }
+
+        scope.Complete();
+    }
+
+    private async Task PerformScheduledPublishingReleaseAsync(DateTime date, List<PublishResult> results, EventMessages evtMsgs, Lazy<List<ILanguage>> allLangs, CancellationToken? cancellationToken = null)
+    {
+        using ICoreScope scope = ScopeProvider.CreateCoreScope();
+
+        // do a fast read without any locks since this executes often to see if we even need to proceed
+        if (await _documentRepository.HasContentForReleaseAsync(date, cancellationToken))
+        {
+            // now take a write lock since we'll be updating
+            scope.WriteLock(Constants.Locks.ContentTree);
+
+            foreach (IContent d in await _documentRepository.GetContentForReleaseAsync(date, cancellationToken))
+            {
+                ContentScheduleCollection contentSchedule = await _documentRepository.GetContentScheduleAsync(d.Id, cancellationToken);
+                if (d.ContentType.VariesByCulture())
+                {
+                    // find which cultures have pending schedules
+                    var pendingCultures = contentSchedule.GetPending(ContentScheduleAction.Release, date)
+                        .Select(x => x.Culture)
+                        .Distinct()
+                        .ToList();
+
+                    if (pendingCultures.Count == 0)
+                    {
+                        continue; // shouldn't happen but no point in processing this document if there's nothing there
+                    }
+
+                    var savingNotification = new ContentSavingNotification(d, evtMsgs);
+                    if (scope.Notifications.PublishCancelable(savingNotification))
+                    {
+                        results.Add(new PublishResult(PublishResultType.FailedPublishCancelledByEvent, evtMsgs, d));
+                        continue;
+                    }
+
+                    var publishing = true;
+                    foreach (var culture in pendingCultures)
+                    {
+                        // Clear this schedule for this culture
+                        contentSchedule.Clear(culture, ContentScheduleAction.Release, date);
+
+                        if (d.Trashed)
+                        {
+                            continue; // won't publish
+                        }
+
+                        // publish the culture values and validate the property values, if validation fails, log the invalid properties so the develeper has an idea of what has failed
+                        IProperty[]? invalidProperties = null;
+                        var impact = _cultureImpactFactory.ImpactExplicit(culture, IsDefaultCulture(allLangs.Value, culture));
+                        var tryPublish = d.PublishCulture(impact) &&
+                                         _propertyValidationService.Value.IsPropertyDataValid(d, out invalidProperties, impact);
+                        if (invalidProperties != null && invalidProperties.Length > 0)
+                        {
+                            _logger.LogWarning(
+                                "Scheduled publishing will fail for document {DocumentId} and culture {Culture} because of invalid properties {InvalidProperties}",
+                                d.Id,
+                                culture,
+                                string.Join(",", invalidProperties.Select(x => x.Alias)));
+                        }
+
+                        publishing &= tryPublish; // set the culture to be published
+                        if (!publishing)
+                        {
+                        }
+                    }
+
+                    PublishResult result;
+
+                    if (d.Trashed)
+                    {
+                        result = new PublishResult(PublishResultType.FailedPublishIsTrashed, evtMsgs, d);
+                    }
+                    else if (!publishing)
+                    {
+                        result = new PublishResult(PublishResultType.FailedPublishContentInvalid, evtMsgs, d);
+                    }
+                    else
+                    {
+                        await _documentRepository.PersistContentScheduleAsync(d, contentSchedule, cancellationToken);
+                        result = await CommitDocumentChangesInternalAsync(scope, d, evtMsgs, allLangs.Value, savingNotification.State, d.WriterId, cancellationToken);
+                    }
+
+                    if (result.Success == false)
+                    {
+                        _logger.LogError(null, "Failed to publish document id={DocumentId}, reason={Reason}.", d.Id, result.Result);
+                    }
+
+                    results.Add(result);
+                }
+                else
+                {
+                    // Clear this schedule
+                    contentSchedule.Clear(ContentScheduleAction.Release, date);
+
+                    PublishResult? result = null;
+
+                    if (d.Trashed)
+                    {
+                        result = new PublishResult(PublishResultType.FailedPublishIsTrashed, evtMsgs, d);
+                    }
+                    else
+                    {
+                        await _documentRepository.PersistContentScheduleAsync(d, contentSchedule, cancellationToken);
+                        result = await SaveAndPublishAsync(d, userId: d.WriterId, cancellationToken: cancellationToken);
+                    }
+
+                    if (result.Success == false)
+                    {
+                        _logger.LogError(null, "Failed to publish document id={DocumentId}, reason={Reason}.", d.Id, result.Result);
+                    }
+
+                    results.Add(result);
+                }
+            }
+
+            await _documentRepository.ClearScheduleAsync(date, ContentScheduleAction.Release, cancellationToken);
         }
 
         scope.Complete();
@@ -2066,6 +3860,48 @@ public class ContentService : RepositoryService, IContentService
         return SaveAndPublishBranch(content, force, ShouldPublish, SaveAndPublishBranch_PublishCultures, userId);
     }
 
+    /// <inheritdoc />
+    public async Task<IEnumerable<PublishResult>> SaveAndPublishBranchAsync(IContent content, bool force, string[] cultures, int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        // note: EditedValue and PublishedValue are objects here, so it is important to .Equals()
+        // and not to == them, else we would be comparing references, and that is a bad thing
+        cultures = cultures ?? Array.Empty<string>();
+
+        // determines cultures to be published
+        // can be: null (content is not impacted), an empty set (content is impacted but already published), or cultures
+        HashSet<string>? ShouldPublish(IContent c)
+        {
+            var isRoot = c.Id == content.Id;
+            HashSet<string>? culturesToPublish = null;
+
+            // invariant content type
+            if (!c.ContentType.VariesByCulture())
+            {
+                return SaveAndPublishBranch_ShouldPublish(ref culturesToPublish, "*", c.Published, c.Edited, isRoot, force);
+            }
+
+            // variant content type, specific cultures
+            if (c.Published)
+            {
+                // then some (and maybe all) cultures will be 'already published' (unless forcing),
+                // others will have to 'republish this culture'
+                foreach (var x in cultures)
+                {
+                    SaveAndPublishBranch_ShouldPublish(ref culturesToPublish, x, c.IsCulturePublished(x), c.IsCultureEdited(x), isRoot, force);
+                }
+
+                return culturesToPublish;
+            }
+
+            // if not published, publish if force/root else do nothing
+            return force || isRoot
+                ? new HashSet<string>(cultures) // means 'publish specified cultures'
+                : null; // null means 'nothing to do'
+        }
+
+        return await SaveAndPublishBranchAsync(content, force, ShouldPublish, SaveAndPublishBranch_PublishCultures, userId, cancellationToken);
+    }
+
     internal IEnumerable<PublishResult> SaveAndPublishBranch(
         IContent document,
         bool force,
@@ -2172,6 +4008,113 @@ public class ContentService : RepositoryService, IContentService
         return results;
     }
 
+    internal async Task<IEnumerable<PublishResult>> SaveAndPublishBranchAsync(
+        IContent document,
+        bool force,
+        Func<IContent, HashSet<string>?> shouldPublish,
+        Func<IContent, HashSet<string>, IReadOnlyCollection<ILanguage>, bool> publishCultures,
+        int userId = Constants.Security.SuperUserId,
+        CancellationToken? cancellationToken = null)
+    {
+        if (shouldPublish == null)
+        {
+            throw new ArgumentNullException(nameof(shouldPublish));
+        }
+
+        if (publishCultures == null)
+        {
+            throw new ArgumentNullException(nameof(publishCultures));
+        }
+
+        EventMessages eventMessages = EventMessagesFactory.Get();
+        var results = new List<PublishResult>();
+        var publishedDocuments = new List<IContent>();
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+        {
+            scope.WriteLock(Constants.Locks.ContentTree);
+
+            var allLangs = await _languageRepository.GetManyAsync(cancellationToken).ToList();
+
+            if (!document.HasIdentity)
+            {
+                throw new InvalidOperationException("Cannot not branch-publish a new document.");
+            }
+
+            PublishedState publishedState = document.PublishedState;
+            if (publishedState == PublishedState.Publishing)
+            {
+                throw new InvalidOperationException("Cannot mix PublishCulture and SaveAndPublishBranch.");
+            }
+
+            // deal with the branch root - if it fails, abort
+            PublishResult? result = await SaveAndPublishBranchItemAsync(scope, document, shouldPublish, publishCultures, true, publishedDocuments, eventMessages, userId, allLangs, cancellationToken);
+            if (result != null)
+            {
+                results.Add(result);
+                if (!result.Success)
+                {
+                    return results;
+                }
+            }
+
+            // deal with descendants
+            // if one fails, abort its branch
+            var exclude = new HashSet<int>();
+
+            int count;
+            var page = 0;
+            const int pageSize = 100;
+            do
+            {
+                count = 0;
+
+                // important to order by Path ASC so make it explicit in case defaults change
+                // ReSharper disable once RedundantArgumentDefaultValue
+                foreach (IContent d in await GetPagedDescendantsAsync(document.Id, page, pageSize, out _, ordering: Ordering.By("Path", Direction.Ascending), cancellationToken: cancellationToken))
+                {
+                    count++;
+
+                    // if parent is excluded, exclude child too
+                    if (exclude.Contains(d.ParentId))
+                    {
+                        exclude.Add(d.Id);
+                        continue;
+                    }
+
+                    // no need to check path here, parent has to be published here
+                    result = await SaveAndPublishBranchItemAsync(scope, d, shouldPublish, publishCultures, false, publishedDocuments, eventMessages, userId, allLangs, cancellationToken);
+                    if (result != null)
+                    {
+                        results.Add(result);
+                        if (result.Success)
+                        {
+                            continue;
+                        }
+                    }
+
+                    // if we could not publish the document, cut its branch
+                    exclude.Add(d.Id);
+                }
+
+                page++;
+            }
+            while (count > 0);
+
+            await AuditAsync(AuditType.Publish, userId, document.Id, "Branch published", cancellationToken);
+
+            // trigger events for the entire branch
+            // (SaveAndPublishBranchOne does *not* do it)
+            scope.Notifications.Publish(
+                new ContentTreeChangeNotification(document, TreeChangeTypes.RefreshBranch, eventMessages));
+            scope.Notifications.Publish(new ContentPublishedNotification(publishedDocuments, eventMessages, true));
+
+            scope.Complete();
+        }
+
+        return results;
+    }
+
     // shouldPublish: a function determining whether the document has changes that need to be published
     //  note - 'force' is handled by 'editing'
     // publishValues: a function publishing values (using the appropriate PublishCulture calls)
@@ -2223,6 +4166,58 @@ public class ContentService : RepositoryService, IContentService
         return result;
     }
 
+    // shouldPublish: a function determining whether the document has changes that need to be published
+    //  note - 'force' is handled by 'editing'
+    // publishValues: a function publishing values (using the appropriate PublishCulture calls)
+    private async Task<PublishResult?> SaveAndPublishBranchItemAsync(
+        ICoreScope scope,
+        IContent document,
+        Func<IContent, HashSet<string>?> shouldPublish,
+        Func<IContent, HashSet<string>, IReadOnlyCollection<ILanguage>,
+            bool> publishCultures,
+        bool isRoot,
+        ICollection<IContent> publishedDocuments,
+        EventMessages evtMsgs,
+        int userId,
+        IReadOnlyCollection<ILanguage> allLangs,
+        CancellationToken? cancellationToken = null)
+    {
+        HashSet<string>? culturesToPublish = shouldPublish(document);
+
+        // null = do not include
+        if (culturesToPublish == null)
+        {
+            return null;
+        }
+
+        // empty = already published
+        if (culturesToPublish.Count == 0)
+        {
+            return new PublishResult(PublishResultType.SuccessPublishAlready, evtMsgs, document);
+        }
+
+        var savingNotification = new ContentSavingNotification(document, evtMsgs);
+        if (scope.Notifications.PublishCancelable(savingNotification))
+        {
+            return new PublishResult(PublishResultType.FailedPublishCancelledByEvent, evtMsgs, document);
+        }
+
+        // publish & check if values are valid
+        if (!publishCultures(document, culturesToPublish, allLangs))
+        {
+            // TODO: Based on this callback behavior there is no way to know which properties may have been invalid if this failed, see other results of FailedPublishContentInvalid
+            return new PublishResult(PublishResultType.FailedPublishContentInvalid, evtMsgs, document);
+        }
+
+        PublishResult result = await CommitDocumentChangesInternalAsync(scope, document, evtMsgs, allLangs, savingNotification.State, userId, true, isRoot, cancellationToken);
+        if (result.Success)
+        {
+            publishedDocuments.Add(document);
+        }
+
+        return result;
+    }
+
     #endregion
 
     #region Delete
@@ -2262,6 +4257,42 @@ public class ContentService : RepositoryService, IContentService
         return OperationResult.Succeed(eventMessages);
     }
 
+
+    /// <inheritdoc />
+    public async Task<OperationResult> DeleteAsync(IContent content, int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        EventMessages eventMessages = EventMessagesFactory.Get();
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+        {
+            if (scope.Notifications.PublishCancelable(new ContentDeletingNotification(content, eventMessages)))
+            {
+                scope.Complete();
+                return OperationResult.Cancel(eventMessages);
+            }
+
+            scope.WriteLock(Constants.Locks.ContentTree);
+
+            // if it's not trashed yet, and published, we should unpublish
+            // but... Unpublishing event makes no sense (not going to cancel?) and no need to save
+            // just raise the event
+            if (content.Trashed == false && content.Published)
+            {
+                scope.Notifications.Publish(new ContentUnpublishedNotification(content, eventMessages));
+            }
+
+            await DeleteLockedAsync(scope, content, eventMessages, cancellationToken);
+
+            scope.Notifications.Publish(
+                new ContentTreeChangeNotification(content, TreeChangeTypes.Remove, eventMessages));
+            await AuditAsync(AuditType.Delete, userId, content.Id, cancellationToken);
+
+            scope.Complete();
+        }
+
+        return OperationResult.Succeed(eventMessages);
+    }
+
     private void DeleteLocked(ICoreScope scope, IContent content, EventMessages evtMsgs)
     {
         void DoDelete(IContent c)
@@ -2285,6 +4316,31 @@ public class ContentService : RepositoryService, IContentService
         }
 
         DoDelete(content);
+    }
+
+    private async Task DeleteLockedAsync(ICoreScope scope, IContent content, EventMessages evtMsgs, CancellationToken? cancellationToken = null)
+    {
+        async Task DoDeleteAsync(IContent c, CancellationToken? cancellationToken = null)
+        {
+            await _documentRepository.DeleteAsync(c, cancellationToken);
+            scope.Notifications.Publish(new ContentDeletedNotification(c, evtMsgs));
+
+            // media files deleted by QueuingEventDispatcher
+        }
+
+        const int pageSize = 500;
+        var total = long.MaxValue;
+        while (total > 0)
+        {
+            // get descendants - ordered from deepest to shallowest
+            IEnumerable<IContent> descendants = await GetPagedDescendantsAsync(content.Id, 0, pageSize, out total, ordering: Ordering.By("Path", Direction.Descending), cancellationToken: cancellationToken);
+            foreach (IContent c in descendants)
+            {
+                await DoDeleteAsync(c, cancellationToken);
+            }
+        }
+
+        await DoDeleteAsync(content, cancellationToken);
     }
 
     // TODO: both DeleteVersions methods below have an issue. Sort of. They do NOT take care of files the way
@@ -2320,6 +4376,45 @@ public class ContentService : RepositoryService, IContentService
                 new ContentDeletedVersionsNotification(id, evtMsgs, dateToRetain: versionDate).WithStateFrom(
                     deletingVersionsNotification));
             Audit(AuditType.Delete, userId, Constants.System.Root, "Delete (by version date)");
+
+            scope.Complete();
+        }
+    }
+
+
+    // TODO: both DeleteVersions methods below have an issue. Sort of. They do NOT take care of files the way
+    // Delete does - for a good reason: the file may be referenced by other, non-deleted, versions. BUT,
+    // if that's not the case, then the file will never be deleted, because when we delete the content,
+    // the version referencing the file will not be there anymore. SO, we can leak files.
+
+    /// <summary>
+    ///     Permanently deletes versions from an <see cref="IContent" /> object prior to a specific date.
+    ///     This method will never delete the latest version of a content item.
+    /// </summary>
+    /// <param name="id">Id of the <see cref="IContent" /> object to delete versions from</param>
+    /// <param name="versionDate">Latest version date</param>
+    /// <param name="userId">Optional Id of the User deleting versions of a Content object</param>
+    public async Task DeleteVersionsAsync(int id, DateTime versionDate, int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        EventMessages evtMsgs = EventMessagesFactory.Get();
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+        {
+            var deletingVersionsNotification =
+                new ContentDeletingVersionsNotification(id, evtMsgs, dateToRetain: versionDate);
+            if (scope.Notifications.PublishCancelable(deletingVersionsNotification))
+            {
+                scope.Complete();
+                return;
+            }
+
+            scope.WriteLock(Constants.Locks.ContentTree);
+            await _documentRepository.DeleteVersionsAsync(id, versionDate, cancellationToken);
+
+            scope.Notifications.Publish(
+                new ContentDeletedVersionsNotification(id, evtMsgs, dateToRetain: versionDate).WithStateFrom(
+                    deletingVersionsNotification));
+            await AuditAsync(AuditType.Delete, userId, Constants.System.Root, "Delete (by version date)", cancellationToken);
 
             scope.Complete();
         }
@@ -2371,6 +4466,52 @@ public class ContentService : RepositoryService, IContentService
         }
     }
 
+    /// <summary>
+    ///     Permanently deletes specific version(s) from an <see cref="IContent" /> object.
+    ///     This method will never delete the latest version of a content item.
+    /// </summary>
+    /// <param name="id">Id of the <see cref="IContent" /> object to delete a version from</param>
+    /// <param name="versionId">Id of the version to delete</param>
+    /// <param name="deletePriorVersions">Boolean indicating whether to delete versions prior to the versionId</param>
+    /// <param name="userId">Optional Id of the User deleting versions of a Content object</param>
+    public async Task DeleteVersionAsync(int id, int versionId, bool deletePriorVersions, int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        EventMessages evtMsgs = EventMessagesFactory.Get();
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+        {
+            var deletingVersionsNotification = new ContentDeletingVersionsNotification(id, evtMsgs, versionId);
+            if (scope.Notifications.PublishCancelable(deletingVersionsNotification))
+            {
+                scope.Complete();
+                return;
+            }
+
+            if (deletePriorVersions)
+            {
+                IContent? content = await GetVersionAsync(versionId, cancellationToken);
+                await DeleteVersionsAsync(id, content?.UpdateDate ?? DateTime.Now, userId, cancellationToken);
+            }
+
+            scope.WriteLock(Constants.Locks.ContentTree);
+            IContent? c = await _documentRepository.GetAsync(id, cancellationToken);
+
+            // don't delete the current or published version
+            if (c?.VersionId != versionId &&
+                c?.PublishedVersionId != versionId)
+            {
+                await _documentRepository.DeleteVersionAsync(versionId, cancellationToken);
+            }
+
+            scope.Notifications.Publish(
+                new ContentDeletedVersionsNotification(id, evtMsgs, versionId).WithStateFrom(
+                    deletingVersionsNotification));
+            await AuditAsync(AuditType.Delete, userId, Constants.System.Root, "Delete (by version)", cancellationToken);
+
+            scope.Complete();
+        }
+    }
+
     #endregion
 
     #region Move, RecycleBin
@@ -2414,6 +4555,52 @@ public class ContentService : RepositoryService, IContentService
                 new ContentMovedToRecycleBinNotification(moveInfo, eventMessages).WithStateFrom(
                     movingToRecycleBinNotification));
             Audit(AuditType.Move, userId, content.Id, "Moved to recycle bin");
+
+            scope.Complete();
+        }
+
+        return OperationResult.Succeed(eventMessages);
+    }
+
+    /// <inheritdoc />
+    public async Task<OperationResult> MoveToRecycleBinAsync(IContent content, int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        EventMessages eventMessages = EventMessagesFactory.Get();
+        var moves = new List<(IContent, string)>();
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+        {
+            scope.WriteLock(Constants.Locks.ContentTree);
+
+            var originalPath = content.Path;
+            var moveEventInfo =
+                new MoveEventInfo<IContent>(content, originalPath, Constants.System.RecycleBinContent);
+
+            var movingToRecycleBinNotification =
+                new ContentMovingToRecycleBinNotification(moveEventInfo, eventMessages);
+            if (scope.Notifications.PublishCancelable(movingToRecycleBinNotification))
+            {
+                scope.Complete();
+                return OperationResult.Cancel(eventMessages); // causes rollback
+            }
+
+            // if it's published we may want to force-unpublish it - that would be backward-compatible... but...
+            // making a radical decision here: trashing is equivalent to moving under an unpublished node so
+            // it's NOT unpublishing, only the content is now masked - allowing us to restore it if wanted
+            // if (content.HasPublishedVersion)
+            // { }
+            await PerformMoveLockedAsync(content, Constants.System.RecycleBinContent, null, userId, moves, true, cancellationToken);
+            scope.Notifications.Publish(
+                new ContentTreeChangeNotification(content, TreeChangeTypes.RefreshBranch, eventMessages));
+
+            MoveEventInfo<IContent>[] moveInfo = moves
+                .Select(x => new MoveEventInfo<IContent>(x.Item1, x.Item2, x.Item1.ParentId))
+                .ToArray();
+
+            scope.Notifications.Publish(
+                new ContentMovedToRecycleBinNotification(moveInfo, eventMessages).WithStateFrom(
+                    movingToRecycleBinNotification));
+            await AuditAsync(AuditType.Move, userId, content.Id, "Moved to recycle bin", cancellationToken);
 
             scope.Complete();
         }
@@ -2503,6 +4690,88 @@ public class ContentService : RepositoryService, IContentService
         }
     }
 
+    /// <summary>
+    ///     Moves an <see cref="IContent" /> object to a new location by changing its parent id.
+    /// </summary>
+    /// <remarks>
+    ///     If the <see cref="IContent" /> object is already published it will be
+    ///     published after being moved to its new location. Otherwise it'll just
+    ///     be saved with a new parent id.
+    /// </remarks>
+    /// <param name="content">The <see cref="IContent" /> to move</param>
+    /// <param name="parentId">Id of the Content's new Parent</param>
+    /// <param name="userId">Optional Id of the User moving the Content</param>
+    public async Task MoveAsync(IContent content, int parentId, int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        if (content.ParentId == parentId)
+        {
+            return;
+        }
+
+        // if moving to the recycle bin then use the proper method
+        if (parentId == Constants.System.RecycleBinContent)
+        {
+            await MoveToRecycleBinAsync(content, userId, cancellationToken);
+            return;
+        }
+
+        EventMessages eventMessages = EventMessagesFactory.Get();
+
+        var moves = new List<(IContent, string)>();
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+        {
+            scope.WriteLock(Constants.Locks.ContentTree);
+
+            IContent? parent = parentId == Constants.System.Root ? null : await GetByIdAsync(parentId, cancellationToken);
+            if (parentId != Constants.System.Root && (parent == null || parent.Trashed))
+            {
+                throw new InvalidOperationException("Parent does not exist or is trashed."); // causes rollback
+            }
+
+            var moveEventInfo = new MoveEventInfo<IContent>(content, content.Path, parentId);
+
+            var movingNotification = new ContentMovingNotification(moveEventInfo, eventMessages);
+            if (scope.Notifications.PublishCancelable(movingNotification))
+            {
+                scope.Complete();
+                return; // causes rollback
+            }
+
+            // if content was trashed, and since we're not moving to the recycle bin,
+            // indicate that the trashed status should be changed to false, else just
+            // leave it unchanged
+            var trashed = content.Trashed ? false : (bool?)null;
+
+            // if the content was trashed under another content, and so has a published version,
+            // it cannot move back as published but has to be unpublished first - that's for the
+            // root content, everything underneath will retain its published status
+            if (content.Trashed && content.Published)
+            {
+                // however, it had been masked when being trashed, so there's no need for
+                // any special event here - just change its state
+                content.PublishedState = PublishedState.Unpublishing;
+            }
+
+            await PerformMoveLockedAsync(content, parentId, parent, userId, moves, trashed, cancellationToken);
+
+            scope.Notifications.Publish(
+                new ContentTreeChangeNotification(content, TreeChangeTypes.RefreshBranch, eventMessages));
+
+            // changes
+            MoveEventInfo<IContent>[] moveInfo = moves
+                .Select(x => new MoveEventInfo<IContent>(x.Item1, x.Item2, x.Item1.ParentId))
+                .ToArray();
+
+            scope.Notifications.Publish(
+                new ContentMovedNotification(moveInfo, eventMessages).WithStateFrom(movingNotification));
+
+            await AuditAsync(AuditType.Move, userId, content.Id, cancellationToken);
+
+            scope.Complete();
+        }
+    }
+
     // MUST be called from within WriteLock
     // trash indicates whether we are trashing, un-trashing, or not changing anything
     private void PerformMoveLocked(IContent content, int parentId, IContent? parent, int userId, ICollection<(IContent, string)> moves, bool? trash)
@@ -2557,6 +4826,61 @@ public class ContentService : RepositoryService, IContentService
         while (total > pageSize);
     }
 
+
+    // MUST be called from within WriteLock
+    // trash indicates whether we are trashing, un-trashing, or not changing anything
+    private async Task PerformMoveLockedAsync(IContent content, int parentId, IContent? parent, int userId, ICollection<(IContent, string)> moves, bool? trash, CancellationToken? cancellationToken = null)
+    {
+        content.WriterId = userId;
+        content.ParentId = parentId;
+
+        // get the level delta (old pos to new pos)
+        // note that recycle bin (id:-20) level is 0!
+        var levelDelta = 1 - content.Level + (parent?.Level ?? 0);
+
+        var paths = new Dictionary<int, string>();
+
+        moves.Add((content, content.Path)); // capture original path
+
+        // need to store the original path to lookup descendants based on it below
+        var originalPath = content.Path;
+
+        // these will be updated by the repo because we changed parentId
+        // content.Path = (parent == null ? "-1" : parent.Path) + "," + content.Id;
+        // content.SortOrder = ((ContentRepository) repository).NextChildSortOrder(parentId);
+        // content.Level += levelDelta;
+        await PerformMoveContentLockedAsync(content, userId, trash, cancellationToken);
+
+        // if uow is not immediate, content.Path will be updated only when the UOW commits,
+        // and because we want it now, we have to calculate it by ourselves
+        // paths[content.Id] = content.Path;
+        paths[content.Id] =
+            (parent == null
+                ? parentId == Constants.System.RecycleBinContent ? "-1,-20" : Constants.System.RootString
+                : parent.Path) + "," + content.Id;
+
+        const int pageSize = 500;
+        IQuery<IContent>? query = await GetPagedDescendantQueryAsync(originalPath, cancellationToken);
+        long total;
+        do
+        {
+            // We always page a page 0 because for each page, we are moving the result so the resulting total will be reduced
+            IEnumerable<IContent> descendants =
+                await GetPagedLockedAsync(query, 0, pageSize, out total, null, Ordering.By("Path"), cancellationToken);
+
+            foreach (IContent descendant in descendants)
+            {
+                moves.Add((descendant, descendant.Path)); // capture original path
+
+                // update path and level since we do not update parentId
+                descendant.Path = paths[descendant.Id] = paths[descendant.ParentId] + "," + descendant.Id;
+                descendant.Level += levelDelta;
+                await PerformMoveContentLockedAsync(descendant, userId, trash, cancellationToken);
+            }
+        }
+        while (total > pageSize);
+    }
+
     private void PerformMoveContentLocked(IContent content, int userId, bool? trash)
     {
         if (trash.HasValue)
@@ -2566,6 +4890,17 @@ public class ContentService : RepositoryService, IContentService
 
         content.WriterId = userId;
         _documentRepository.Save(content);
+    }
+
+    private async Task PerformMoveContentLockedAsync(IContent content, int userId, bool? trash, CancellationToken? cancellationToken = null)
+    {
+        if (trash.HasValue)
+        {
+            ((ContentBase)content).Trashed = trash.Value;
+        }
+
+        content.WriterId = userId;
+        await _documentRepository.SaveAsync(content, cancellationToken);
     }
 
     /// <summary>
@@ -2614,12 +4949,68 @@ public class ContentService : RepositoryService, IContentService
         return OperationResult.Succeed(eventMessages);
     }
 
+
+    /// <summary>
+    ///     Empties the Recycle Bin by deleting all <see cref="IContent" /> that resides in the bin
+    /// </summary>
+    public async Task<OperationResult> EmptyRecycleBinAsync(int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        var deleted = new List<IContent>();
+        EventMessages eventMessages = EventMessagesFactory.Get();
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+        {
+            scope.WriteLock(Constants.Locks.ContentTree);
+
+            // emptying the recycle bin means deleting whatever is in there - do it properly!
+            IQuery<IContent>? query = Query<IContent>().Where(x => x.ParentId == Constants.System.RecycleBinContent);
+            IContent[] contents = await _documentRepository.GetAsync(query, cancellationToken).ToArray();
+
+            var emptyingRecycleBinNotification = new ContentEmptyingRecycleBinNotification(contents, eventMessages);
+            var deletingContentNotification = new ContentDeletingNotification(contents, eventMessages);
+            if (scope.Notifications.PublishCancelable(emptyingRecycleBinNotification) || scope.Notifications.PublishCancelable(deletingContentNotification))
+            {
+                scope.Complete();
+                return OperationResult.Cancel(eventMessages);
+            }
+
+            if (contents is not null)
+            {
+                foreach (IContent content in contents)
+                {
+                    await DeleteLockedAsync(scope, content, eventMessages, cancellationToken);
+                    deleted.Add(content);
+                }
+            }
+
+            scope.Notifications.Publish(
+                new ContentEmptiedRecycleBinNotification(deleted, eventMessages).WithStateFrom(
+                    emptyingRecycleBinNotification));
+            scope.Notifications.Publish(
+                new ContentTreeChangeNotification(deleted, TreeChangeTypes.Remove, eventMessages));
+            await AuditAsync(AuditType.Delete, userId, Constants.System.RecycleBinContent, "Recycle bin emptied", cancellationToken);
+
+            scope.Complete();
+        }
+
+        return OperationResult.Succeed(eventMessages);
+    }
+
     public bool RecycleBinSmells()
     {
         using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
         {
             scope.ReadLock(Constants.Locks.ContentTree);
             return _documentRepository.RecycleBinSmells();
+        }
+    }
+
+    public async Task<bool> RecycleBinSmellsAsync(CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+            return await _documentRepository.RecycleBinSmellsAsync(cancellationToken);
         }
     }
 
@@ -2638,6 +5029,18 @@ public class ContentService : RepositoryService, IContentService
     /// <param name="userId">Optional Id of the User copying the Content</param>
     /// <returns>The newly created <see cref="IContent" /> object</returns>
     public IContent? Copy(IContent content, int parentId, bool relateToOriginal, int userId = Constants.Security.SuperUserId) => Copy(content, parentId, relateToOriginal, true, userId);
+
+    /// <summary>
+    ///     Copies an <see cref="IContent" /> object by creating a new Content object of the same type and copies all data from
+    ///     the current
+    ///     to the new copy which is returned. Recursively copies all children.
+    /// </summary>
+    /// <param name="content">The <see cref="IContent" /> to copy</param>
+    /// <param name="parentId">Id of the Content's new Parent</param>
+    /// <param name="relateToOriginal">Boolean indicating whether the copy should be related to the original</param>
+    /// <param name="userId">Optional Id of the User copying the Content</param>
+    /// <returns>The newly created <see cref="IContent" /> object</returns>
+    public async Task<IContent?> CopyAsync(IContent content, int parentId, bool relateToOriginal, int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null) => await CopyAsync(content, parentId, relateToOriginal, true, userId, cancellationToken);
 
     /// <summary>
     ///     Copies an <see cref="IContent" /> object by creating a new Content object of the same type and copies all data from
@@ -2765,6 +5168,133 @@ public class ContentService : RepositoryService, IContentService
         return copy;
     }
 
+
+    /// <summary>
+    ///     Copies an <see cref="IContent" /> object by creating a new Content object of the same type and copies all data from
+    ///     the current
+    ///     to the new copy which is returned.
+    /// </summary>
+    /// <param name="content">The <see cref="IContent" /> to copy</param>
+    /// <param name="parentId">Id of the Content's new Parent</param>
+    /// <param name="relateToOriginal">Boolean indicating whether the copy should be related to the original</param>
+    /// <param name="recursive">A value indicating whether to recursively copy children.</param>
+    /// <param name="userId">Optional Id of the User copying the Content</param>
+    /// <returns>The newly created <see cref="IContent" /> object</returns>
+    public async Task<IContent?> CopyAsync(IContent content, int parentId, bool relateToOriginal, bool recursive, int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        EventMessages eventMessages = EventMessagesFactory.Get();
+
+        IContent copy = content.DeepCloneWithResetIdentities();
+        copy.ParentId = parentId;
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+        {
+            if (scope.Notifications.PublishCancelable(
+                    new ContentCopyingNotification(content, copy, parentId, eventMessages)))
+            {
+                scope.Complete();
+                return null;
+            }
+
+            // note - relateToOriginal is not managed here,
+            // it's just part of the Copied event args so the RelateOnCopyHandler knows what to do
+            // meaning that the event has to trigger for every copied content including descendants
+            var copies = new List<Tuple<IContent, IContent>>();
+
+            scope.WriteLock(Constants.Locks.ContentTree);
+
+            // a copy is not published (but not really unpublishing either)
+            // update the create author and last edit author
+            if (copy.Published)
+            {
+                copy.Published = false;
+            }
+
+            copy.CreatorId = userId;
+            copy.WriterId = userId;
+
+            // get the current permissions, if there are any explicit ones they need to be copied
+            EntityPermissionCollection currentPermissions = await GetPermissionsAsync(content, cancellationToken);
+            currentPermissions.RemoveWhere(p => p.IsDefaultPermissions);
+
+            // save and flush because we need the ID for the recursive Copying events
+            await _documentRepository.SaveAsync(copy, cancellationToken);
+
+            // add permissions
+            if (currentPermissions.Count > 0)
+            {
+                var permissionSet = new ContentPermissionSet(copy, currentPermissions);
+                await _documentRepository.AddOrUpdatePermissionsAsync(permissionSet, cancellationToken);
+            }
+
+            // keep track of copies
+            copies.Add(Tuple.Create(content, copy));
+            var idmap = new Dictionary<int, int> { [content.Id] = copy.Id };
+
+            // process descendants
+            if (recursive)
+            {
+                const int pageSize = 500;
+                var page = 0;
+                var total = long.MaxValue;
+                while (page * pageSize < total)
+                {
+                    IEnumerable<IContent> descendants =
+                        await GetPagedDescendantsAsync(content.Id, page++, pageSize, out total, cancellationToken);
+                    foreach (IContent descendant in descendants)
+                    {
+                        // if parent has not been copied, skip, else gets its copy id
+                        if (idmap.TryGetValue(descendant.ParentId, out parentId) == false)
+                        {
+                            continue;
+                        }
+
+                        IContent descendantCopy = descendant.DeepCloneWithResetIdentities();
+                        descendantCopy.ParentId = parentId;
+
+                        if (scope.Notifications.PublishCancelable(
+                                new ContentCopyingNotification(descendant, descendantCopy, parentId, eventMessages)))
+                        {
+                            continue;
+                        }
+
+                        // a copy is not published (but not really unpublishing either)
+                        // update the create author and last edit author
+                        if (descendantCopy.Published)
+                        {
+                            descendantCopy.Published = false;
+                        }
+
+                        descendantCopy.CreatorId = userId;
+                        descendantCopy.WriterId = userId;
+
+                        // save and flush (see above)
+                        await _documentRepository.SaveAsync(descendantCopy, cancellationToken);
+
+                        copies.Add(Tuple.Create(descendant, descendantCopy));
+                        idmap[descendant.Id] = descendantCopy.Id;
+                    }
+                }
+            }
+
+            // not handling tags here, because
+            // - tags should be handled by the content repository
+            // - a copy is unpublished and therefore has no impact on tags in DB
+            scope.Notifications.Publish(
+                new ContentTreeChangeNotification(copy, TreeChangeTypes.RefreshBranch, eventMessages));
+            foreach (Tuple<IContent, IContent> x in copies)
+            {
+                scope.Notifications.Publish(new ContentCopiedNotification(x.Item1, x.Item2, parentId, relateToOriginal, eventMessages));
+            }
+
+            await AuditAsync(AuditType.Copy, userId, content.Id, cancellationToken);
+
+            scope.Complete();
+        }
+
+        return copy;
+    }
+
     /// <summary>
     ///     Sends an <see cref="IContent" /> to Publication, which executes handlers and events for the 'Send to Publication'
     ///     action.
@@ -2828,6 +5358,68 @@ public class ContentService : RepositoryService, IContentService
     }
 
     /// <summary>
+    ///     Sends an <see cref="IContent" /> to Publication, which executes handlers and events for the 'Send to Publication'
+    ///     action.
+    /// </summary>
+    /// <param name="content">The <see cref="IContent" /> to send to publication</param>
+    /// <param name="userId">Optional Id of the User issuing the send to publication</param>
+    /// <returns>True if sending publication was successful otherwise false</returns>
+    public async Task<bool> SendToPublicationAsync(IContent? content, int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        if (content is null)
+        {
+            return false;
+        }
+
+        EventMessages evtMsgs = EventMessagesFactory.Get();
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+        {
+            var sendingToPublishNotification = new ContentSendingToPublishNotification(content, evtMsgs);
+            if (scope.Notifications.PublishCancelable(sendingToPublishNotification))
+            {
+                scope.Complete();
+                return false;
+            }
+
+            // track the cultures changing for auditing
+            var culturesChanging = content.ContentType.VariesByCulture()
+                ? string.Join(",", content.CultureInfos!.Values.Where(x => x.IsDirty()).Select(x => x.Culture))
+                : null;
+
+            // TODO: Currently there's no way to change track which variant properties have changed, we only have change
+            // tracking enabled on all values on the Property which doesn't allow us to know which variants have changed.
+            // in this particular case, determining which cultures have changed works with the above with names since it will
+            // have always changed if it's been saved in the back office but that's not really fail safe.
+
+            // Save before raising event
+            OperationResult saveResult = await SaveAsync(content, userId, cancellationToken);
+
+            // always complete (but maybe return a failed status)
+            scope.Complete();
+
+            if (!saveResult.Success)
+            {
+                return saveResult.Success;
+            }
+
+            scope.Notifications.Publish(
+                new ContentSentToPublishNotification(content, evtMsgs).WithStateFrom(sendingToPublishNotification));
+
+            if (culturesChanging != null)
+            {
+                await AuditAsync(AuditType.SendToPublishVariant, userId, content.Id, $"Send To Publish for cultures: {culturesChanging}", culturesChanging, cancellationToken);
+            }
+            else
+            {
+                await AuditAsync(AuditType.SendToPublish, content.WriterId, content.Id, cancellationToken);
+            }
+
+            return saveResult.Success;
+        }
+    }
+
+    /// <summary>
     ///     Sorts a collection of <see cref="IContent" /> objects by updating the SortOrder according
     ///     to the ordering of items in the passed in <paramref name="items" />.
     /// </summary>
@@ -2860,6 +5452,37 @@ public class ContentService : RepositoryService, IContentService
 
     /// <summary>
     ///     Sorts a collection of <see cref="IContent" /> objects by updating the SortOrder according
+    ///     to the ordering of items in the passed in <paramref name="items" />.
+    /// </summary>
+    /// <remarks>
+    ///     Using this method will ensure that the Published-state is maintained upon sorting
+    ///     so the cache is updated accordingly - as needed.
+    /// </remarks>
+    /// <param name="items"></param>
+    /// <param name="userId"></param>
+    /// <returns>Result indicating what action was taken when handling the command.</returns>
+    public async Task<OperationResult> SortAsync(IEnumerable<IContent> items, int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        EventMessages evtMsgs = EventMessagesFactory.Get();
+
+        IContent[] itemsA = items.ToArray();
+        if (itemsA.Length == 0)
+        {
+            return new OperationResult(OperationResultType.NoOperation, evtMsgs);
+        }
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+        {
+            scope.WriteLock(Constants.Locks.ContentTree);
+
+            OperationResult ret = await SortAsync(scope, itemsA, userId, evtMsgs, cancellationToken);
+            scope.Complete();
+            return ret;
+        }
+    }
+
+    /// <summary>
+    ///     Sorts a collection of <see cref="IContent" /> objects by updating the SortOrder according
     ///     to the ordering of items identified by the <paramref name="ids" />.
     /// </summary>
     /// <remarks>
@@ -2885,6 +5508,38 @@ public class ContentService : RepositoryService, IContentService
             IContent[] itemsA = GetByIds(idsA).ToArray();
 
             OperationResult ret = Sort(scope, itemsA, userId, evtMsgs);
+            scope.Complete();
+            return ret;
+        }
+    }
+
+    /// <summary>
+    ///     Sorts a collection of <see cref="IContent" /> objects by updating the SortOrder according
+    ///     to the ordering of items identified by the <paramref name="ids" />.
+    /// </summary>
+    /// <remarks>
+    ///     Using this method will ensure that the Published-state is maintained upon sorting
+    ///     so the cache is updated accordingly - as needed.
+    /// </remarks>
+    /// <param name="ids"></param>
+    /// <param name="userId"></param>
+    /// <returns>Result indicating what action was taken when handling the command.</returns>
+    public async Task<OperationResult> SortAsync(IEnumerable<int>? ids, int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        EventMessages evtMsgs = EventMessagesFactory.Get();
+
+        var idsA = ids?.ToArray();
+        if (idsA is null || idsA.Length == 0)
+        {
+            return new OperationResult(OperationResultType.NoOperation, evtMsgs);
+        }
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+        {
+            scope.WriteLock(Constants.Locks.ContentTree);
+            IContent[] itemsA = (await GetByIdsAsync(idsA, cancellationToken)).ToArray();
+
+            OperationResult ret = await SortAsync(scope, itemsA, userId, evtMsgs, cancellationToken);
             scope.Complete();
             return ret;
         }
@@ -2955,6 +5610,72 @@ public class ContentService : RepositoryService, IContentService
         return OperationResult.Succeed(eventMessages);
     }
 
+
+    private async Task<OperationResult> SortAsync(ICoreScope scope, IContent[] itemsA, int userId, EventMessages eventMessages, CancellationToken? cancellationToken = null)
+    {
+        var sortingNotification = new ContentSortingNotification(itemsA, eventMessages);
+        var savingNotification = new ContentSavingNotification(itemsA, eventMessages);
+
+        // raise cancelable sorting event
+        if (scope.Notifications.PublishCancelable(sortingNotification))
+        {
+            return OperationResult.Cancel(eventMessages);
+        }
+
+        // raise cancelable saving event
+        if (scope.Notifications.PublishCancelable(savingNotification))
+        {
+            return OperationResult.Cancel(eventMessages);
+        }
+
+        var published = new List<IContent>();
+        var saved = new List<IContent>();
+        var sortOrder = 0;
+
+        foreach (IContent content in itemsA)
+        {
+            // if the current sort order equals that of the content we don't
+            // need to update it, so just increment the sort order and continue.
+            if (content.SortOrder == sortOrder)
+            {
+                sortOrder++;
+                continue;
+            }
+
+            // else update
+            content.SortOrder = sortOrder++;
+            content.WriterId = userId;
+
+            // if it's published, register it, no point running StrategyPublish
+            // since we're not really publishing it and it cannot be cancelled etc
+            if (content.Published)
+            {
+                published.Add(content);
+            }
+
+            // save
+            saved.Add(content);
+            await _documentRepository.SaveAsync(content, cancellationToken);
+            await AuditAsync(AuditType.Sort, userId, content.Id, "Sorting content performed by user", cancellationToken);
+        }
+
+        // first saved, then sorted
+        scope.Notifications.Publish(
+            new ContentSavedNotification(itemsA, eventMessages).WithStateFrom(savingNotification));
+        scope.Notifications.Publish(
+            new ContentSortedNotification(itemsA, eventMessages).WithStateFrom(sortingNotification));
+
+        scope.Notifications.Publish(
+            new ContentTreeChangeNotification(saved, TreeChangeTypes.RefreshNode, eventMessages));
+
+        if (published.Any())
+        {
+            scope.Notifications.Publish(new ContentPublishedNotification(published, eventMessages));
+        }
+
+        return OperationResult.Succeed(eventMessages);
+    }
+
     public ContentDataIntegrityReport CheckDataIntegrity(ContentDataIntegrityReportOptions options)
     {
         using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
@@ -2962,6 +5683,25 @@ public class ContentService : RepositoryService, IContentService
             scope.WriteLock(Constants.Locks.ContentTree);
 
             ContentDataIntegrityReport report = _documentRepository.CheckDataIntegrity(options);
+
+            if (report.FixedIssues.Count > 0)
+            {
+                // The event args needs a content item so we'll make a fake one with enough properties to not cause a null ref
+                var root = new Content("root", -1, new ContentType(_shortStringHelper, -1)) { Id = -1, Key = Guid.Empty };
+                scope.Notifications.Publish(new ContentTreeChangeNotification(root, TreeChangeTypes.RefreshAll, EventMessagesFactory.Get()));
+            }
+
+            return report;
+        }
+    }
+
+    public async Task<ContentDataIntegrityReport> CheckDataIntegrityAsync(ContentDataIntegrityReportOptions options, CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.WriteLock(Constants.Locks.ContentTree);
+
+            ContentDataIntegrityReport report = await _documentRepository.CheckDataIntegrityAsync(options, cancellationToken);
 
             if (report.FixedIssues.Count > 0)
             {
@@ -2992,6 +5732,20 @@ public class ContentService : RepositoryService, IContentService
         }
     }
 
+    /// <summary>
+    ///     Gets a collection of <see cref="IContent" /> descendants by the first Parent.
+    /// </summary>
+    /// <param name="content"><see cref="IContent" /> item to retrieve Descendants from</param>
+    /// <returns>An Enumerable list of <see cref="IContent" /> objects</returns>
+    internal async Task<IEnumerable<IContent>> GetPublishedDescendantsAsync(IContent content, CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+            return (await GetPublishedDescendantsLockedAsync(content, cancellationToken)).ToArray(); // ToArray important in uow!
+        }
+    }
+
     internal IEnumerable<IContent> GetPublishedDescendantsLocked(IContent content)
     {
         var pathMatch = content.Path + ",";
@@ -3016,12 +5770,38 @@ public class ContentService : RepositoryService, IContentService
         }
     }
 
+    internal async Task<IEnumerable<IContent>> GetPublishedDescendantsLockedAsync(IContent content, CancellationToken? cancellationToken = null)
+    {
+        var pathMatch = content.Path + ",";
+        IQuery<IContent> query = Query<IContent>()
+            .Where(x => x.Id != content.Id && x.Path.StartsWith(pathMatch) /*&& x.Trashed == false*/);
+        IEnumerable<IContent> contents = await _documentRepository.GetAsync(query, cancellationToken);
+
+        // beware! contents contains all published version below content
+        // including those that are not directly published because below an unpublished content
+        // these must be filtered out here
+        var parents = new List<int> { content.Id };
+        if (contents is not null)
+        {
+            foreach (IContent c in contents)
+            {
+                if (parents.Contains(c.ParentId))
+                {
+                    yield return c;
+                    parents.Add(c.Id);
+                }
+            }
+        }
+    }
     #endregion
 
     #region Private Methods
 
     private void Audit(AuditType type, int userId, int objectId, string? message = null, string? parameters = null) =>
         _auditRepository.Save(new AuditItem(objectId, type, userId, UmbracoObjectTypes.Document.GetName(), message, parameters));
+
+    private async Task AuditAsync(AuditType type, int userId, int objectId, string? message = null, string? parameters = null, CancellationToken? cancellationToken = null) =>
+        await _auditRepository.SaveAsync(new AuditItem(objectId, type, userId, UmbracoObjectTypes.Document.GetName(), message, parameters), cancellationToken);
 
     private bool IsDefaultCulture(IReadOnlyCollection<ILanguage>? langs, string culture) =>
         langs?.Any(x => x.IsDefault && x.IsoCode.InvariantEquals(culture)) ?? false;
@@ -3205,6 +5985,200 @@ public class ContentService : RepositoryService, IContentService
             // root content can be published
             // else check ancestors - we know we are not trashed
             var pathIsOk = content.ParentId == Constants.System.Root || IsPathPublished(GetParent(content));
+            if (!pathIsOk)
+            {
+                _logger.LogInformation(
+                    "Document {ContentName} (id={ContentId}) cannot be published: {Reason}",
+                    content.Name,
+                    content.Id,
+                    "parent is not published");
+                return new PublishResult(PublishResultType.FailedPublishPathNotPublished, evtMsgs, content);
+            }
+        }
+
+        // If we are both publishing and unpublishing cultures, then return a mixed status
+        if (variesByCulture && culturesPublishing?.Count > 0 && culturesUnpublishing?.Count > 0)
+        {
+            return new PublishResult(PublishResultType.SuccessMixedCulture, evtMsgs, content);
+        }
+
+        return new PublishResult(evtMsgs, content);
+    }
+
+
+    /// <summary>
+    ///     Ensures that a document can be published
+    /// </summary>
+    /// <param name="scope"></param>
+    /// <param name="content"></param>
+    /// <param name="checkPath"></param>
+    /// <param name="culturesUnpublishing"></param>
+    /// <param name="evtMsgs"></param>
+    /// <param name="culturesPublishing"></param>
+    /// <param name="allLangs"></param>
+    /// <param name="notificationState"></param>
+    /// <returns></returns>
+    private async Task<PublishResult> StrategyCanPublishAsync(
+        ICoreScope scope,
+        IContent content,
+        bool checkPath,
+        IReadOnlyList<string>? culturesPublishing,
+        IReadOnlyCollection<string>? culturesUnpublishing,
+        EventMessages evtMsgs,
+        IReadOnlyCollection<ILanguage> allLangs,
+        IDictionary<string, object?>? notificationState,
+        CancellationToken? cancellationToken = null)
+    {
+        // raise Publishing notification
+        if (scope.Notifications.PublishCancelable(
+                new ContentPublishingNotification(content, evtMsgs).WithState(notificationState)))
+        {
+            _logger.LogInformation("Document {ContentName} (id={ContentId}) cannot be published: {Reason}", content.Name, content.Id, "publishing was cancelled");
+            return new PublishResult(PublishResultType.FailedPublishCancelledByEvent, evtMsgs, content);
+        }
+
+        var variesByCulture = content.ContentType.VariesByCulture();
+
+        // If it's null it's invariant
+        CultureImpact[] impactsToPublish = culturesPublishing == null
+                ? new[] { _cultureImpactFactory.ImpactInvariant() }
+            : culturesPublishing.Select(x =>
+                _cultureImpactFactory.ImpactExplicit(
+                        x,
+                        allLangs.Any(lang => lang.IsoCode.InvariantEquals(x) && lang.IsMandatory)))
+                    .ToArray();
+
+        // publish the culture(s)
+        if (!impactsToPublish.All(content.PublishCulture))
+        {
+            return new PublishResult(PublishResultType.FailedPublishContentInvalid, evtMsgs, content);
+        }
+
+        // Validate the property values
+        IProperty[]? invalidProperties = null;
+        if (!impactsToPublish.All(x =>
+                _propertyValidationService.Value.IsPropertyDataValid(content, out invalidProperties, x)))
+        {
+            return new PublishResult(PublishResultType.FailedPublishContentInvalid, evtMsgs, content)
+            {
+                InvalidProperties = invalidProperties,
+            };
+        }
+
+        // Check if mandatory languages fails, if this fails it will mean anything that the published flag on the document will
+        // be changed to Unpublished and any culture currently published will not be visible.
+        if (variesByCulture)
+        {
+            if (culturesPublishing == null)
+            {
+                throw new InvalidOperationException(
+                    "Internal error, variesByCulture but culturesPublishing is null.");
+            }
+
+            if (content.Published && culturesPublishing.Count == 0 && culturesUnpublishing?.Count == 0)
+            {
+                // no published cultures = cannot be published
+                // This will occur if for example, a culture that is already unpublished is sent to be unpublished again, or vice versa, in that case
+                // there will be nothing to publish/unpublish.
+                return new PublishResult(PublishResultType.FailedPublishNothingToPublish, evtMsgs, content);
+            }
+
+            // missing mandatory culture = cannot be published
+            IEnumerable<string> mandatoryCultures = allLangs.Where(x => x.IsMandatory).Select(x => x.IsoCode);
+            var mandatoryMissing = mandatoryCultures.Any(x =>
+                !content.PublishedCultures.Contains(x, StringComparer.OrdinalIgnoreCase));
+            if (mandatoryMissing)
+            {
+                return new PublishResult(PublishResultType.FailedPublishMandatoryCultureMissing, evtMsgs, content);
+            }
+
+            if (culturesPublishing.Count == 0 && culturesUnpublishing?.Count > 0)
+            {
+                return new PublishResult(PublishResultType.SuccessUnpublishCulture, evtMsgs, content);
+            }
+        }
+
+        // ensure that the document has published values
+        // either because it is 'publishing' or because it already has a published version
+        if (content.PublishedState != PublishedState.Publishing && content.PublishedVersionId == 0)
+        {
+            _logger.LogInformation(
+                "Document {ContentName} (id={ContentId}) cannot be published: {Reason}",
+                content.Name,
+                content.Id,
+                "document does not have published values");
+            return new PublishResult(PublishResultType.FailedPublishNothingToPublish, evtMsgs, content);
+        }
+
+        ContentScheduleCollection contentSchedule = await _documentRepository.GetContentScheduleAsync(content.Id, cancellationToken);
+
+        // loop over each culture publishing - or string.Empty for invariant
+        foreach (var culture in culturesPublishing ?? new[] { string.Empty })
+        {
+            // ensure that the document status is correct
+            // note: culture will be string.Empty for invariant
+            switch (content.GetStatus(contentSchedule, culture))
+            {
+                case ContentStatus.Expired:
+                    if (!variesByCulture)
+                    {
+                        _logger.LogInformation(
+                            "Document {ContentName} (id={ContentId}) cannot be published: {Reason}", content.Name, content.Id, "document has expired");
+                    }
+                    else
+                    {
+                        _logger.LogInformation(
+                            "Document {ContentName} (id={ContentId}) culture {Culture} cannot be published: {Reason}", content.Name, content.Id, culture, "document culture has expired");
+                    }
+
+                    return new PublishResult(
+                        !variesByCulture
+                            ? PublishResultType.FailedPublishHasExpired : PublishResultType.FailedPublishCultureHasExpired,
+                        evtMsgs,
+                        content);
+
+                case ContentStatus.AwaitingRelease:
+                    if (!variesByCulture)
+                    {
+                        _logger.LogInformation(
+                            "Document {ContentName} (id={ContentId}) cannot be published: {Reason}",
+                            content.Name,
+                            content.Id,
+                            "document is awaiting release");
+                    }
+                    else
+                    {
+                        _logger.LogInformation(
+                            "Document {ContentName} (id={ContentId}) culture {Culture} cannot be published: {Reason}",
+                            content.Name,
+                            content.Id,
+                            culture,
+                            "document is culture awaiting release");
+                    }
+
+                    return new PublishResult(
+                        !variesByCulture
+                            ? PublishResultType.FailedPublishAwaitingRelease
+                            : PublishResultType.FailedPublishCultureAwaitingRelease,
+                        evtMsgs,
+                        content);
+
+                case ContentStatus.Trashed:
+                    _logger.LogInformation(
+                        "Document {ContentName} (id={ContentId}) cannot be published: {Reason}",
+                        content.Name,
+                        content.Id,
+                        "document is trashed");
+                    return new PublishResult(PublishResultType.FailedPublishIsTrashed, evtMsgs, content);
+            }
+        }
+
+        if (checkPath)
+        {
+            // check if the content can be path-published
+            // root content can be published
+            // else check ancestors - we know we are not trashed
+            var pathIsOk = content.ParentId == Constants.System.Root || await IsPathPublishedAsync(await GetParent(content, cancellationToken), cancellationToken);
             if (!pathIsOk)
             {
                 _logger.LogInformation(

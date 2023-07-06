@@ -42,6 +42,14 @@ public interface IRepositoryCachePolicy<TEntity, TId>
     void Create(TEntity entity, Action<TEntity> persistNew);
 
     /// <summary>
+    ///     Creates an entity.
+    /// </summary>
+    /// <param name="entity">The entity.</param>
+    /// <param name="persistNewAsync">The repository PersistNewItemAsync method.</param>
+    /// <remarks>Creates the entity in the repository, and updates the cache accordingly.</remarks>
+    Task CreateAsync(TEntity entity, Func<TEntity, Task> persistNewAsync);
+
+    /// <summary>
     ///     Updates an entity.
     /// </summary>
     /// <param name="entity">The entity.</param>

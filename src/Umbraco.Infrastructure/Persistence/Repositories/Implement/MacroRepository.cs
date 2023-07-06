@@ -178,6 +178,29 @@ internal class MacroRepository : EntityRepositoryBase<int, IMacro>, IMacroReposi
         entity.ResetDirtyProperties();
     }
 
+    protected override async Task PersistNewItemAsync(IMacro entity)
+    {
+        entity.AddingEntity();
+
+        MacroDto dto = MacroFactory.BuildDto(entity);
+
+        var id = Convert.ToInt32(await Database.InsertAsync(dto));
+        entity.Id = id;
+
+        if (dto.MacroPropertyDtos is not null)
+        {
+            foreach (MacroPropertyDto propDto in dto.MacroPropertyDtos)
+            {
+                // need to set the id explicitly here
+                propDto.Macro = id;
+                var propId = Convert.ToInt32(await Database.InsertAsync(propDto));
+                entity.Properties[propDto.Alias].Id = propId;
+            }
+        }
+
+        entity.ResetDirtyProperties();
+    }
+
     protected override void PersistUpdatedItem(IMacro entity)
     {
         entity.UpdatingEntity();

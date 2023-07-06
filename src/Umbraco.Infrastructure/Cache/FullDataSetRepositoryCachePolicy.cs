@@ -53,6 +53,26 @@ internal class FullDataSetRepositoryCachePolicy<TEntity, TId> : RepositoryCacheP
         }
     }
 
+
+
+    /// <inheritdoc />
+    public override async Task CreateAsync(TEntity entity, Func<TEntity, Task> persistNewAsync)
+    {
+        if (entity == null)
+        {
+            throw new ArgumentNullException(nameof(entity));
+        }
+
+        try
+        {
+            await persistNewAsync(entity);
+        }
+        finally
+        {
+            ClearAll();
+        }
+    }
+
     protected string GetEntityTypeCacheKey() => $"uRepo_{typeof(TEntity).Name}_";
 
     protected void InsertEntities(TEntity[]? entities)

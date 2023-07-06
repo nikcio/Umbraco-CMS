@@ -21,6 +21,8 @@ public class NoCacheRepositoryCachePolicy<TEntity, TId> : IRepositoryCachePolicy
 
     public void Create(TEntity entity, Action<TEntity> persistNew) => persistNew(entity);
 
+    public async Task CreateAsync(TEntity entity, Func<TEntity, Task> persistNewAsync) => await persistNewAsync(entity);
+
     public void Update(TEntity entity, Action<TEntity> persistUpdated) => persistUpdated(entity);
 
     public void Delete(TEntity entity, Action<TEntity> persistDeleted) => persistDeleted(entity);

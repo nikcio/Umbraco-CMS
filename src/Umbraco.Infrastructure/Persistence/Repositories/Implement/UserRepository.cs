@@ -599,6 +599,54 @@ SELECT 4 AS [Key], COUNT(id) AS [Value] FROM umbracoUser WHERE userDisabled = 0 
         entity.ResetDirtyProperties();
     }
 
+    protected override async Task PersistNewItemAsync(IUser entity)
+    {
+        entity.AddingEntity();
+
+        // ensure security stamp if missing
+        if (entity.SecurityStamp.IsNullOrWhiteSpace())
+        {
+            entity.SecurityStamp = Guid.NewGuid().ToString();
+        }
+
+        UserDto userDto = UserFactory.BuildDto(entity);
+
+        // check if we have a user config else use the default
+        userDto.PasswordConfig = entity.PasswordConfiguration ?? DefaultPasswordConfigJson;
+
+        var id = Convert.ToInt32(await Database.InsertAsync(userDto));
+        entity.Id = id;
+
+        if (entity.IsPropertyDirty("StartContentIds"))
+        {
+            AddingOrUpdateStartNodes(entity, Enumerable.Empty<UserStartNodeDto>(),
+                UserStartNodeDto.StartNodeTypeValue.Content, entity.StartContentIds);
+        }
+
+        if (entity.IsPropertyDirty("StartMediaIds"))
+        {
+            AddingOrUpdateStartNodes(entity, Enumerable.Empty<UserStartNodeDto>(),
+                UserStartNodeDto.StartNodeTypeValue.Media, entity.StartMediaIds);
+        }
+
+        if (entity.IsPropertyDirty("Groups"))
+        {
+            // lookup all assigned
+            List<UserGroupDto>? assigned = entity.Groups == null || entity.Groups.Any() == false
+                ? new List<UserGroupDto>()
+                : await Database.FetchAsync<UserGroupDto>("SELECT * FROM umbracoUserGroup WHERE userGroupAlias IN (@aliases)",
+                    new { aliases = entity.Groups.Select(x => x.Alias) });
+
+            foreach (UserGroupDto? groupDto in assigned)
+            {
+                var dto = new User2UserGroupDto { UserGroupId = groupDto.Id, UserId = entity.Id };
+                await Database.InsertAsync(dto);
+            }
+        }
+
+        entity.ResetDirtyProperties();
+    }
+
     protected override void PersistUpdatedItem(IUser entity)
     {
         // updates Modified date

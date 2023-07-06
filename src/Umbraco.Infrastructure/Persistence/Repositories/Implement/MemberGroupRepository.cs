@@ -76,6 +76,30 @@ internal class MemberGroupRepository : EntityRepositoryBase<int, IMemberGroup>, 
         return grp;
     }
 
+    public async Task<IMemberGroup?> CreateIfNotExistsAsync(string roleName)
+    {
+        IQuery<IMemberGroup> qry = Query<IMemberGroup>().Where(group => group.Name!.Equals(roleName));
+        IEnumerable<IMemberGroup> result = Get(qry);
+
+        if (result.Any())
+        {
+            return null;
+        }
+
+        var grp = new MemberGroup { Name = roleName };
+        await PersistNewItemAsync(grp);
+
+        EventMessages evtMsgs = _eventMessagesFactory.Get();
+        if (AmbientScope.Notifications.PublishCancelable(new MemberGroupSavingNotification(grp, evtMsgs)))
+        {
+            return null;
+        }
+
+        AmbientScope.Notifications.Publish(new MemberGroupSavedNotification(grp, evtMsgs));
+
+        return grp;
+    }
+
     public IEnumerable<IMemberGroup> GetMemberGroupsForMember(int memberId)
     {
         Sql<ISqlContext> sql = Sql()
@@ -197,6 +221,24 @@ internal class MemberGroupRepository : EntityRepositoryBase<int, IMemberGroup>, 
         group.ResetDirtyProperties();
     }
 
+    protected override async Task PersistNewItemAsync(IMemberGroup entity)
+    {
+        // Save to db
+        entity.AddingEntity();
+        var group = (MemberGroup)entity;
+        NodeDto dto = MemberGroupFactory.BuildDto(group);
+        var o = await Database.IsNewAsync(dto) ? Convert.ToInt32(await Database.InsertAsync(dto)) : await Database.UpdateAsync(dto);
+        group.Id = dto.NodeId; // Set Id on entity to ensure an Id is set
+
+        // Update with new correct path and id
+        dto.Path = string.Concat("-1,", dto.NodeId);
+        await Database.UpdateAsync(dto);
+
+        // assign to entity
+        group.Id = o;
+        group.ResetDirtyProperties();
+    }
+
     protected override void PersistUpdatedItem(IMemberGroup entity)
     {
         NodeDto dto = MemberGroupFactory.BuildDto(entity);
@@ -278,6 +320,81 @@ internal class MemberGroupRepository : EntityRepositoryBase<int, IMemberGroup>, 
                 .Select(x => new Member2MemberGroupDto { Member = mId, MemberGroup = rolesForNames[x!].NodeId });
 
             Database.InsertBulk(dtos);
+        }
+    }
+
+    private async Task AssignRolesInternalAsync(int[] memberIds, string[] roleNames, bool replace = false)
+    {
+        // ensure they're unique
+        memberIds = memberIds.Distinct().ToArray();
+
+        // create the missing roles first
+        Sql<ISqlContext> existingSql = Sql()
+            .SelectAll()
+            .From<NodeDto>()
+            .Where<NodeDto>(dto => dto.NodeObjectType == NodeObjectTypeId)
+            .Where("umbracoNode." + SqlSyntax.GetQuotedColumnName("text") + " in (@names)", new { names = roleNames });
+        IEnumerable<string?> existingRoles = (await Database.FetchAsync<NodeDto>(existingSql)).Select(x => x.Text);
+        IEnumerable<string?> missingRoles = roleNames.Except(existingRoles, StringComparer.CurrentCultureIgnoreCase);
+        MemberGroup[] missingGroups = missingRoles.Select(x => new MemberGroup { Name = x }).ToArray();
+
+        EventMessages evtMsgs = _eventMessagesFactory.Get();
+        if (AmbientScope.Notifications.PublishCancelable(new MemberGroupSavingNotification(missingGroups, evtMsgs)))
+        {
+            return;
+        }
+
+        foreach (MemberGroup m in missingGroups)
+        {
+            await PersistNewItemAsync(m);
+        }
+
+        AmbientScope.Notifications.Publish(new MemberGroupSavedNotification(missingGroups, evtMsgs));
+
+        // now go get all the dto's for roles with these role names
+        var rolesForNames = (await Database.FetchAsync<NodeDto>(existingSql))
+            .ToDictionary(x => x.Text!, StringComparer.InvariantCultureIgnoreCase);
+
+        AssignedRolesDto[] currentlyAssigned;
+        if (replace)
+        {
+            // delete all assigned groups first
+            await Database.ExecuteAsync("DELETE FROM cmsMember2MemberGroup WHERE Member IN (@memberIds)", new { memberIds });
+
+            currentlyAssigned = Array.Empty<AssignedRolesDto>();
+        }
+        else
+        {
+            // get the groups that are currently assigned to any of these members
+            Sql<ISqlContext> assignedSql = Sql()
+                .Select(
+                    $"{SqlSyntax.GetQuotedColumnName("text")},{SqlSyntax.GetQuotedColumnName("Member")},{SqlSyntax.GetQuotedColumnName("MemberGroup")}")
+                .From<NodeDto>()
+                .InnerJoin<Member2MemberGroupDto>()
+                .On<NodeDto, Member2MemberGroupDto>(dto => dto.NodeId, dto => dto.MemberGroup)
+                .Where<NodeDto>(x => x.NodeObjectType == NodeObjectTypeId)
+                .WhereIn<Member2MemberGroupDto>(x => x.Member, memberIds);
+
+            currentlyAssigned = (await Database.FetchAsync<AssignedRolesDto>(assignedSql)).ToArray();
+        }
+
+        // assign the roles for each member id
+        foreach (var memberId in memberIds)
+        {
+            // find any roles for the current member that are currently assigned that
+            // exist in the roleNames list, then determine which ones are not currently assigned.
+            var mId = memberId;
+            AssignedRolesDto[] found = currentlyAssigned.Where(x => x.MemberId == mId).ToArray();
+            IEnumerable<string?> assignedRoles = found
+                .Where(x => roleNames.Contains(x.RoleName, StringComparer.CurrentCultureIgnoreCase))
+                .Select(x => x.RoleName);
+            IEnumerable<string?> nonAssignedRoles =
+                roleNames.Except(assignedRoles, StringComparer.CurrentCultureIgnoreCase);
+
+            IEnumerable<Member2MemberGroupDto> dtos = nonAssignedRoles
+                .Select(x => new Member2MemberGroupDto { Member = mId, MemberGroup = rolesForNames[x!].NodeId });
+
+            await Database.InsertBulkAsync(dtos);
         }
     }
 

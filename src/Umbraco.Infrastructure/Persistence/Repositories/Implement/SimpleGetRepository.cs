@@ -82,6 +82,9 @@ internal abstract class SimpleGetRepository<TId, TEntity, TDto> : EntityReposito
     protected sealed override void PersistNewItem(TEntity entity) =>
         throw new InvalidOperationException("This method won't be implemented.");
 
+    protected sealed override Task PersistNewItemAsync(TEntity entity) =>
+        throw new InvalidOperationException("This method won't be implemented.");
+
     protected sealed override void PersistUpdatedItem(TEntity entity) =>
         throw new InvalidOperationException("This method won't be implemented.");
 }

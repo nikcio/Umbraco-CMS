@@ -96,6 +96,12 @@ internal class TwoFactorLoginRepository : EntityRepositoryBase<int, ITwoFactorLo
         Database.Insert(dto);
     }
 
+    protected override async Task PersistNewItemAsync(ITwoFactorLogin entity)
+    {
+        TwoFactorLoginDto? dto = Map(entity);
+        await Database.InsertAsync(dto);
+    }
+
     protected override void PersistUpdatedItem(ITwoFactorLogin entity)
     {
         TwoFactorLoginDto? dto = Map(entity);

@@ -58,6 +58,9 @@ public abstract class RepositoryCachePolicyBase<TEntity, TId> : IRepositoryCache
     public abstract void Create(TEntity entity, Action<TEntity> persistNew);
 
     /// <inheritdoc />
+    public abstract Task CreateAsync(TEntity entity, Func<TEntity, Task> persistNewAsync);
+
+    /// <inheritdoc />
     public abstract void Update(TEntity entity, Action<TEntity> persistUpdated);
 
     /// <inheritdoc />

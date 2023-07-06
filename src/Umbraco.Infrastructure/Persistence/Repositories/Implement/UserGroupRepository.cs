@@ -212,6 +212,20 @@ public class UserGroupRepository : EntityRepositoryBase<int, IUserGroup>, IUserG
             RefreshUsersInGroup(entity.UserGroup.Id, entity.UserIds);
         }
 
+        protected override async Task PersistNewItemAsync(UserGroupWithUsers entity)
+        {
+            // save the user group
+            await _userGroupRepo.PersistNewItemAsync(entity.UserGroup);
+
+            if (entity.UserIds == null)
+            {
+                return;
+            }
+
+            // now the user association
+            RefreshUsersInGroup(entity.UserGroup.Id, entity.UserIds);
+        }
+
         protected override void PersistUpdatedItem(UserGroupWithUsers entity)
         {
             // save the user group
@@ -428,6 +442,21 @@ public class UserGroupRepository : EntityRepositoryBase<int, IUserGroup>, IUserG
         UserGroupDto userGroupDto = UserGroupFactory.BuildDto(entity);
 
         var id = Convert.ToInt32(Database.Insert(userGroupDto));
+        entity.Id = id;
+
+        PersistAllowedSections(entity);
+        PersistAllowedLanguages(entity);
+
+        entity.ResetDirtyProperties();
+    }
+
+    protected override async Task PersistNewItemAsync(IUserGroup entity)
+    {
+        entity.AddingEntity();
+
+        UserGroupDto userGroupDto = UserGroupFactory.BuildDto(entity);
+
+        var id = Convert.ToInt32(await Database.InsertAsync(userGroupDto));
         entity.Id = id;
 
         PersistAllowedSections(entity);

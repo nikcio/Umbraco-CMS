@@ -1067,6 +1067,199 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
         //}
     }
 
+    protected override async Task PersistNewItemAsync(IContent entity)
+    {
+        entity.AddingEntity();
+
+        var publishing = entity.PublishedState == PublishedState.Publishing;
+
+        // ensure that the default template is assigned
+        if (entity.TemplateId.HasValue == false)
+        {
+            entity.TemplateId = entity.ContentType.DefaultTemplate?.Id;
+        }
+
+        // sanitize names
+        SanitizeNames(entity, publishing);
+
+        // ensure that strings don't contain characters that are invalid in xml
+        // TODO: do we really want to keep doing this here?
+        entity.SanitizeEntityPropertiesForXmlStorage();
+
+        // create the dto
+        DocumentDto dto = ContentBaseFactory.BuildDto(entity, NodeObjectTypeId);
+
+        // derive path and level from parent
+        NodeDto parent = GetParentNodeDto(entity.ParentId);
+        var level = parent.Level + 1;
+
+        var sortOrderExists = SortorderExists(entity.ParentId, entity.SortOrder);
+        // if the sortorder of the entity already exists get a new one, else use the sortOrder of the entity
+        var sortOrder = sortOrderExists ? GetNewChildSortOrder(entity.ParentId, 0) : entity.SortOrder;
+
+        // persist the node dto
+        NodeDto nodeDto = dto.ContentDto.NodeDto;
+        nodeDto.Path = parent.Path;
+        nodeDto.Level = Convert.ToInt16(level);
+        nodeDto.SortOrder = sortOrder;
+
+        // see if there's a reserved identifier for this unique id
+        // and then either update or insert the node dto
+        var id = GetReservedId(nodeDto.UniqueId);
+        if (id > 0)
+        {
+            nodeDto.NodeId = id;
+        }
+        else
+        {
+            await Database.InsertAsync(nodeDto);
+        }
+
+        nodeDto.Path = string.Concat(parent.Path, ",", nodeDto.NodeId);
+        nodeDto.ValidatePathWithException();
+        await Database.UpdateAsync(nodeDto);
+
+        // update entity
+        entity.Id = nodeDto.NodeId;
+        entity.Path = nodeDto.Path;
+        entity.SortOrder = sortOrder;
+        entity.Level = level;
+
+        // persist the content dto
+        ContentDto contentDto = dto.ContentDto;
+        contentDto.NodeId = nodeDto.NodeId;
+        await Database.InsertAsync(contentDto);
+
+        // persist the content version dto
+        ContentVersionDto contentVersionDto = dto.DocumentVersionDto.ContentVersionDto;
+        contentVersionDto.NodeId = nodeDto.NodeId;
+        contentVersionDto.Current = !publishing;
+        await Database.InsertAsync(contentVersionDto);
+        entity.VersionId = contentVersionDto.Id;
+
+        // persist the document version dto
+        DocumentVersionDto documentVersionDto = dto.DocumentVersionDto;
+        documentVersionDto.Id = entity.VersionId;
+        if (publishing)
+        {
+            documentVersionDto.Published = true;
+        }
+
+        await Database.InsertAsync(documentVersionDto);
+
+        // and again in case we're publishing immediately
+        if (publishing)
+        {
+            entity.PublishedVersionId = entity.VersionId;
+            contentVersionDto.Id = 0;
+            contentVersionDto.Current = true;
+            contentVersionDto.Text = entity.Name;
+            await Database.InsertAsync(contentVersionDto);
+            entity.VersionId = contentVersionDto.Id;
+
+            documentVersionDto.Id = entity.VersionId;
+            documentVersionDto.Published = false;
+            await Database.InsertAsync(documentVersionDto);
+        }
+
+        // persist the property data
+        IEnumerable<PropertyDataDto> propertyDataDtos = PropertyFactory.BuildDtos(entity.ContentType.Variations,
+            entity.VersionId, entity.PublishedVersionId, entity.Properties, LanguageRepository, out var edited,
+            out HashSet<string>? editedCultures);
+        foreach (PropertyDataDto propertyDataDto in propertyDataDtos)
+        {
+            await Database.InsertAsync(propertyDataDto);
+        }
+
+        // if !publishing, we may have a new name != current publish name,
+        // also impacts 'edited'
+        if (!publishing && entity.PublishName != entity.Name)
+        {
+            edited = true;
+        }
+
+        // persist the document dto
+        // at that point, when publishing, the entity still has its old Published value
+        // so we need to explicitly update the dto to persist the correct value
+        if (entity.PublishedState == PublishedState.Publishing)
+        {
+            dto.Published = true;
+        }
+
+        dto.NodeId = nodeDto.NodeId;
+        entity.Edited = dto.Edited = !dto.Published || edited; // if not published, always edited
+        await Database.InsertAsync(dto);
+
+        // persist the variations
+        if (entity.ContentType.VariesByCulture())
+        {
+            // names also impact 'edited'
+            // ReSharper disable once UseDeconstruction
+            foreach (ContentCultureInfos cultureInfo in entity.CultureInfos!)
+            {
+                if (cultureInfo.Name != entity.GetPublishName(cultureInfo.Culture))
+                {
+                    (editedCultures ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase)).Add(cultureInfo.Culture);
+                }
+            }
+
+            // refresh content
+            entity.SetCultureEdited(editedCultures!);
+
+            // bump dates to align cultures to version
+            entity.AdjustDates(contentVersionDto.VersionDate, publishing);
+
+            // insert content variations
+            await Database.BulkInsertRecordsAsync(GetContentVariationDtos(entity, publishing));
+
+            // insert document variations
+            await Database.BulkInsertRecordsAsync(GetDocumentVariationDtos(entity, editedCultures!));
+        }
+
+        // trigger here, before we reset Published etc
+        OnUowRefreshedEntity(new ContentRefreshNotification(entity, new EventMessages()));
+
+        // flip the entity's published property
+        // this also flips its published state
+        // note: what depends on variations (eg PublishNames) is managed directly by the content
+        if (entity.PublishedState == PublishedState.Publishing)
+        {
+            entity.Published = true;
+            entity.PublishTemplateId = entity.TemplateId;
+            entity.PublisherId = entity.WriterId;
+            entity.PublishName = entity.Name;
+            entity.PublishDate = entity.UpdateDate;
+
+            SetEntityTags(entity, _tagRepository, _serializer);
+        }
+        else if (entity.PublishedState == PublishedState.Unpublishing)
+        {
+            entity.Published = false;
+            entity.PublishTemplateId = null;
+            entity.PublisherId = null;
+            entity.PublishName = null;
+            entity.PublishDate = null;
+
+            ClearEntityTags(entity, _tagRepository);
+        }
+
+        PersistRelations(entity);
+
+        entity.ResetDirtyProperties();
+
+        // troubleshooting
+        //if (Database.ExecuteScalar<int>($"SELECT COUNT(*) FROM {Constants.DatabaseSchema.Tables.DocumentVersion} JOIN {Constants.DatabaseSchema.Tables.ContentVersion} ON {Constants.DatabaseSchema.Tables.DocumentVersion}.id={Constants.DatabaseSchema.Tables.ContentVersion}.id WHERE published=1 AND nodeId=" + content.Id) > 1)
+        //{
+        //    Debugger.Break();
+        //    throw new Exception("oops");
+        //}
+        //if (Database.ExecuteScalar<int>($"SELECT COUNT(*) FROM {Constants.DatabaseSchema.Tables.DocumentVersion} JOIN {Constants.DatabaseSchema.Tables.ContentVersion} ON {Constants.DatabaseSchema.Tables.DocumentVersion}.id={Constants.DatabaseSchema.Tables.ContentVersion}.id WHERE [current]=1 AND nodeId=" + content.Id) > 1)
+        //{
+        //    Debugger.Break();
+        //    throw new Exception("oops");
+        //}
+    }
+
     protected override void PersistUpdatedItem(IContent entity)
     {
         var isEntityDirty = entity.IsDirty();
@@ -1569,6 +1762,9 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
             throw new InvalidOperationException("This method won't be implemented.");
 
         protected override void PersistNewItem(IContent entity) =>
+            throw new InvalidOperationException("This method won't be implemented.");
+
+        protected override Task PersistNewItemAsync(IContent entity) =>
             throw new InvalidOperationException("This method won't be implemented.");
 
         protected override void PersistUpdatedItem(IContent entity) =>

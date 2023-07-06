@@ -107,6 +107,15 @@ internal class MediaTypeRepository : ContentTypeRepositoryBase<IMediaType>, IMed
         entity.ResetDirtyProperties();
     }
 
+    protected override async Task PersistNewItemAsync(IMediaType entity)
+    {
+        entity.AddingEntity();
+
+        PersistNewBaseContentType(entity);
+
+        entity.ResetDirtyProperties();
+    }
+
     protected override void PersistUpdatedItem(IMediaType entity)
     {
         ValidateAlias(entity);

@@ -166,6 +166,42 @@ internal class MemberTypeRepository : ContentTypeRepositoryBase<IMemberType>, IM
         entity.ResetDirtyProperties();
     }
 
+    protected override async Task PersistNewItemAsync(IMemberType entity)
+    {
+        ValidateAlias(entity);
+
+        entity.AddingEntity();
+
+        // set a default icon if one is not specified
+        if (entity.Icon.IsNullOrWhiteSpace())
+        {
+            entity.Icon = Constants.Icons.Member;
+        }
+
+        // By Convention we add 9 standard PropertyTypes to an Umbraco MemberType
+        Dictionary<string, PropertyType> standardPropertyTypes =
+            ConventionsHelper.GetStandardPropertyTypeStubs(_shortStringHelper);
+        foreach (KeyValuePair<string, PropertyType> standardPropertyType in standardPropertyTypes)
+        {
+            entity.AddPropertyType(
+                standardPropertyType.Value,
+                Constants.Conventions.Member.StandardPropertiesGroupAlias,
+                Constants.Conventions.Member.StandardPropertiesGroupName);
+        }
+
+        EnsureExplicitDataTypeForBuiltInProperties(entity);
+        PersistNewBaseContentType(entity);
+
+        // Handles the MemberTypeDto (cmsMemberType table)
+        IEnumerable<MemberPropertyTypeDto> memberTypeDtos = ContentTypeFactory.BuildMemberPropertyTypeDtos(entity);
+        foreach (MemberPropertyTypeDto memberTypeDto in memberTypeDtos)
+        {
+            await Database.InsertAsync(memberTypeDto);
+        }
+
+        entity.ResetDirtyProperties();
+    }
+
     protected override void PersistUpdatedItem(IMemberType entity)
     {
         ValidateAlias(entity);

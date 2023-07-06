@@ -417,6 +417,86 @@ public class MediaRepository : ContentRepositoryBase<int, IMedia, MediaRepositor
         entity.ResetDirtyProperties();
     }
 
+    protected override async Task PersistNewItemAsync(IMedia entity)
+    {
+        entity.AddingEntity();
+
+        // ensure unique name on the same level
+        entity.Name = EnsureUniqueNodeName(entity.ParentId, entity.Name)!;
+
+        // ensure that strings don't contain characters that are invalid in xml
+        // TODO: do we really want to keep doing this here?
+        entity.SanitizeEntityPropertiesForXmlStorage();
+
+        // create the dto
+        MediaDto dto = ContentBaseFactory.BuildDto(_mediaUrlGenerators, entity);
+
+        // derive path and level from parent
+        NodeDto parent = GetParentNodeDto(entity.ParentId);
+        var level = parent.Level + 1;
+
+        // get sort order
+        var sortOrder = GetNewChildSortOrder(entity.ParentId, 0);
+
+        // persist the node dto
+        NodeDto nodeDto = dto.ContentDto.NodeDto;
+        nodeDto.Path = parent.Path;
+        nodeDto.Level = Convert.ToInt16(level);
+        nodeDto.SortOrder = sortOrder;
+
+        // see if there's a reserved identifier for this unique id
+        // and then either update or insert the node dto
+        var id = GetReservedId(nodeDto.UniqueId);
+        if (id > 0)
+        {
+            nodeDto.NodeId = id;
+        }
+        else
+        {
+            await Database.InsertAsync(nodeDto);
+        }
+
+        nodeDto.Path = string.Concat(parent.Path, ",", nodeDto.NodeId);
+        nodeDto.ValidatePathWithException();
+        await Database.UpdateAsync(nodeDto);
+
+        // update entity
+        entity.Id = nodeDto.NodeId;
+        entity.Path = nodeDto.Path;
+        entity.SortOrder = sortOrder;
+        entity.Level = level;
+
+        // persist the content dto
+        ContentDto contentDto = dto.ContentDto;
+        contentDto.NodeId = nodeDto.NodeId;
+        await Database.InsertAsync(contentDto);
+
+        // persist the content version dto
+        // assumes a new version id and version date (modified date) has been set
+        ContentVersionDto contentVersionDto = dto.MediaVersionDto.ContentVersionDto;
+        contentVersionDto.NodeId = nodeDto.NodeId;
+        contentVersionDto.Current = true;
+        await Database.InsertAsync(contentVersionDto);
+        entity.VersionId = contentVersionDto.Id;
+
+        // persist the media version dto
+        MediaVersionDto mediaVersionDto = dto.MediaVersionDto;
+        mediaVersionDto.Id = entity.VersionId;
+        await Database.InsertAsync(mediaVersionDto);
+
+        // persist the property data
+        InsertPropertyValues(entity, 0, out _, out _);
+
+        // set tags
+        SetEntityTags(entity, _tagRepository, _serializer);
+
+        PersistRelations(entity);
+
+        OnUowRefreshedEntity(new MediaRefreshNotification(entity, new EventMessages()));
+
+        entity.ResetDirtyProperties();
+    }
+
     protected override void PersistUpdatedItem(IMedia entity)
     {
         // update
@@ -559,6 +639,9 @@ public class MediaRepository : ContentRepositoryBase<int, IMedia, MediaRepositor
             throw new InvalidOperationException("This method won't be implemented.");
 
         protected override void PersistNewItem(IMedia entity) =>
+            throw new InvalidOperationException("This method won't be implemented.");
+
+        protected override Task PersistNewItemAsync(IMedia entity) =>
             throw new InvalidOperationException("This method won't be implemented.");
 
         protected override void PersistUpdatedItem(IMedia entity) =>

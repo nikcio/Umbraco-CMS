@@ -70,6 +70,17 @@ internal class ConsentRepository : EntityRepositoryBase<int, IConsent>, IConsent
     }
 
     /// <inheritdoc />
+    protected override async Task PersistNewItemAsync(IConsent entity)
+    {
+        entity.AddingEntity();
+
+        ConsentDto dto = ConsentFactory.BuildDto(entity);
+        await Database.InsertAsync(dto);
+        entity.Id = dto.Id;
+        entity.ResetDirtyProperties();
+    }
+
+    /// <inheritdoc />
     protected override void PersistUpdatedItem(IConsent entity)
     {
         entity.UpdatingEntity();

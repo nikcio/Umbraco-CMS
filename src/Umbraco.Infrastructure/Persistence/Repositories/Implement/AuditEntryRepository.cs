@@ -122,6 +122,17 @@ internal class AuditEntryRepository : EntityRepositoryBase<int, IAuditEntry>, IA
     }
 
     /// <inheritdoc />
+    protected override async Task PersistNewItemAsync(IAuditEntry entity)
+    {
+        entity.AddingEntity();
+
+        AuditEntryDto dto = AuditEntryFactory.BuildDto(entity);
+        await Database.InsertAsync(dto);
+        entity.Id = dto.Id;
+        entity.ResetDirtyProperties();
+    }
+
+    /// <inheritdoc />
     protected override void PersistUpdatedItem(IAuditEntry entity) =>
         throw new NotSupportedException("Audit entries cannot be updated.");
 }

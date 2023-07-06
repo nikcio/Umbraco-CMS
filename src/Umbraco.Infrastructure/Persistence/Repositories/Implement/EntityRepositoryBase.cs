@@ -122,6 +122,22 @@ public abstract class EntityRepositoryBase<TId, TEntity> : RepositoryBase, IRead
     }
 
     /// <summary>
+    ///     Adds or Updates an entity of type TEntity
+    /// </summary>
+    /// <remarks>This method is backed by an <see cref="IAppPolicyCache" /> cache</remarks>
+    public virtual async Task SaveAsync(TEntity entity)
+    {
+        if (entity.HasIdentity == false)
+        {
+            await CachePolicy.CreateAsync(entity, PersistNewItemAsync);
+        }
+        else
+        {
+            CachePolicy.Update(entity, PersistUpdatedItem);
+        }
+    }
+
+    /// <summary>
     ///     Deletes the passed in entity
     /// </summary>
     public virtual void Delete(TEntity entity)
@@ -203,6 +219,8 @@ public abstract class EntityRepositoryBase<TId, TEntity> : RepositoryBase, IRead
     protected abstract IEnumerable<TEntity> PerformGetByQuery(IQuery<TEntity> query);
 
     protected abstract void PersistNewItem(TEntity item);
+
+    protected abstract Task PersistNewItemAsync(TEntity item);
 
     protected abstract void PersistUpdatedItem(TEntity item);
 

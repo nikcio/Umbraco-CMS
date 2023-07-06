@@ -319,6 +319,32 @@ internal class DictionaryRepository : EntityRepositoryBase<int, IDictionaryItem>
         dictionaryItem.ResetDirtyProperties();
     }
 
+    protected override async Task PersistNewItemAsync(IDictionaryItem entity)
+    {
+        var dictionaryItem = (DictionaryItem)entity;
+
+        dictionaryItem.AddingEntity();
+
+        foreach (IDictionaryTranslation translation in dictionaryItem.Translations)
+        {
+            translation.Value = translation.Value.ToValidXmlString();
+        }
+
+        DictionaryDto dto = DictionaryItemFactory.BuildDto(dictionaryItem);
+
+        var id = Convert.ToInt32(await Database.InsertAsync(dto));
+        dictionaryItem.Id = id;
+
+        foreach (IDictionaryTranslation translation in dictionaryItem.Translations)
+        {
+            LanguageTextDto textDto = DictionaryTranslationFactory.BuildDto(translation, dictionaryItem.Key);
+            translation.Id = Convert.ToInt32(await Database.InsertAsync(textDto));
+            translation.Key = dictionaryItem.Key;
+        }
+
+        dictionaryItem.ResetDirtyProperties();
+    }
+
     protected override void PersistUpdatedItem(IDictionaryItem entity)
     {
         entity.UpdatingEntity();

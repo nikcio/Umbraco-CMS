@@ -142,6 +142,20 @@ internal class RelationTypeRepository : EntityRepositoryBase<int, IRelationType>
         entity.ResetDirtyProperties();
     }
 
+    protected override async Task PersistNewItemAsync(IRelationType entity)
+    {
+        entity.AddingEntity();
+
+        CheckNullObjectTypeValues(entity);
+
+        RelationTypeDto dto = RelationTypeFactory.BuildDto(entity);
+
+        var id = Convert.ToInt32(await Database.InsertAsync(dto));
+        entity.Id = id;
+
+        entity.ResetDirtyProperties();
+    }
+
     protected override void PersistUpdatedItem(IRelationType entity)
     {
         entity.UpdatingEntity();

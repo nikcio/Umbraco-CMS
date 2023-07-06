@@ -244,6 +244,27 @@ internal class ContentTypeRepository : ContentTypeRepositoryBase<IContentType>, 
         entity.ResetDirtyProperties();
     }
 
+    protected override async Task PersistNewItemAsync(IContentType entity)
+    {
+        if (string.IsNullOrWhiteSpace(entity.Alias))
+        {
+            var ex = new Exception(
+                $"ContentType '{entity.Name}' cannot have an empty Alias. This is most likely due to invalid characters stripped from the Alias.");
+            Logger.LogError(
+                "ContentType '{EntityName}' cannot have an empty Alias. This is most likely due to invalid characters stripped from the Alias.",
+                entity.Name);
+            throw ex;
+        }
+
+        entity.AddingEntity();
+
+        PersistNewBaseContentType(entity);
+        PersistTemplates(entity, false);
+        PersistHistoryCleanup(entity);
+
+        entity.ResetDirtyProperties();
+    }
+
     protected void PersistTemplates(IContentType entity, bool clearAll)
     {
         // remove and insert, if required

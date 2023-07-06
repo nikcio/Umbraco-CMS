@@ -85,6 +85,18 @@ internal class TagRepository : EntityRepositoryBase<int, ITag>, ITagRepository
     }
 
     /// <inheritdoc />
+    protected override async Task PersistNewItemAsync(ITag entity)
+    {
+        entity.AddingEntity();
+
+        TagDto dto = TagFactory.BuildDto(entity);
+        var id = Convert.ToInt32(await Database.InsertAsync(dto));
+        entity.Id = id;
+
+        entity.ResetDirtyProperties();
+    }
+
+    /// <inheritdoc />
     protected override void PersistUpdatedItem(ITag entity)
     {
         entity.UpdatingEntity();

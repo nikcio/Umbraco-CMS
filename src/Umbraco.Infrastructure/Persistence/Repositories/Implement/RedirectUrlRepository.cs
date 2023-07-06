@@ -221,6 +221,13 @@ JOIN umbracoNode ON umbracoRedirectUrl.contentKey=umbracoNode.uniqueID");
         entity.Id = entity.Key.GetHashCode();
     }
 
+    protected override async Task PersistNewItemAsync(IRedirectUrl entity)
+    {
+        RedirectUrlDto? dto = Map(entity);
+        await Database.InsertAsync(dto);
+        entity.Id = entity.Key.GetHashCode();
+    }
+
     protected override void PersistUpdatedItem(IRedirectUrl entity)
     {
         RedirectUrlDto? dto = Map(entity);

@@ -133,6 +133,59 @@ internal class DomainRepository : EntityRepositoryBase<int, IDomain>, IDomainRep
         entity.ResetDirtyProperties();
     }
 
+    protected override async Task PersistNewItemAsync(IDomain entity)
+    {
+        var exists = await Database.ExecuteScalarAsync<int>(
+            $"SELECT COUNT(*) FROM {Constants.DatabaseSchema.Tables.Domain} WHERE domainName = @domainName",
+            new { domainName = entity.DomainName });
+        if (exists > 0)
+        {
+            throw new DuplicateNameException($"The domain name {entity.DomainName} is already assigned.");
+        }
+
+        if (entity.RootContentId.HasValue)
+        {
+            var contentExists = await Database.ExecuteScalarAsync<int>(
+                $"SELECT COUNT(*) FROM {Constants.DatabaseSchema.Tables.Content} WHERE nodeId = @id",
+                new { id = entity.RootContentId.Value });
+            if (contentExists == 0)
+            {
+                throw new NullReferenceException($"No content exists with id {entity.RootContentId.Value}.");
+            }
+        }
+
+        if (entity.LanguageId.HasValue)
+        {
+            var languageExists = await Database.ExecuteScalarAsync<int>(
+                $"SELECT COUNT(*) FROM {Constants.DatabaseSchema.Tables.Language} WHERE id = @id",
+                new { id = entity.LanguageId.Value });
+            if (languageExists == 0)
+            {
+                throw new NullReferenceException($"No language exists with id {entity.LanguageId.Value}.");
+            }
+        }
+
+        entity.AddingEntity();
+
+        // Get sort order
+        entity.SortOrder = GetNewSortOrder(entity.RootContentId, entity.IsWildcard);
+
+        DomainDto dto = DomainFactory.BuildDto(entity);
+
+        var id = Convert.ToInt32(await Database.InsertAsync(dto));
+        entity.Id = id;
+
+        // If the language changed, we need to resolve the ISO code
+        if (entity.LanguageId.HasValue)
+        {
+            ((UmbracoDomain)entity).LanguageIsoCode = await Database.ExecuteScalarAsync<string>(
+                $"SELECT languageISOCode FROM {Constants.DatabaseSchema.Tables.Language} WHERE id = @langId",
+                new { langId = entity.LanguageId });
+        }
+
+        entity.ResetDirtyProperties();
+    }
+
     protected override void PersistUpdatedItem(IDomain entity)
     {
         entity.UpdatingEntity();

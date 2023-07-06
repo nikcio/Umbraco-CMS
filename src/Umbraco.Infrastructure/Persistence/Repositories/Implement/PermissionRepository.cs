@@ -289,6 +289,18 @@ internal class PermissionRepository<TEntity> : EntityRepositoryBase<int, Content
     ///     Used to add or update entity permissions during a content item being updated
     /// </summary>
     /// <param name="entity"></param>
+    protected override Task PersistNewItemAsync(ContentPermissionSet entity)
+    {
+        // Does the same thing as update
+        PersistUpdatedItem(entity);
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    ///     Used to add or update entity permissions during a content item being updated
+    /// </summary>
+    /// <param name="entity"></param>
     protected override void PersistUpdatedItem(ContentPermissionSet entity)
     {
         var asIEntity = (IEntity)entity;

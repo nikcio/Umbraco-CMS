@@ -76,6 +76,25 @@ internal class LogViewerQueryRepository : EntityRepositoryBase<int, ILogViewerQu
         entity.Id = id;
     }
 
+    protected override async Task PersistNewItemAsync(ILogViewerQuery entity)
+    {
+        var exists = await Database.ExecuteScalarAsync<int>(
+            $"SELECT COUNT(*) FROM {Constants.DatabaseSchema.Tables.LogViewerQuery} WHERE name = @name",
+            new { name = entity.Name });
+        if (exists > 0)
+        {
+            throw new DuplicateNameException($"The log query name '{entity.Name}' is already used");
+        }
+
+        entity.AddingEntity();
+
+        var factory = new LogViewerQueryModelFactory();
+        LogViewerQueryDto dto = factory.BuildDto(entity);
+
+        var id = Convert.ToInt32(await Database.InsertAsync(dto));
+        entity.Id = id;
+    }
+
     protected override void PersistUpdatedItem(ILogViewerQuery entity)
     {
         entity.UpdatingEntity();
