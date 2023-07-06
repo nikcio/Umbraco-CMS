@@ -8,6 +8,8 @@ public interface IAuditRepository : IReadRepository<int, IAuditItem>, IWriteRepo
 {
     void CleanLogs(int maximumAgeOfLogsInMinutes);
 
+    Task CleanLogsAsync(int maximumAgeOfLogsInMinutes, CancellationToken? cancellationToken = null);
+
     /// <summary>
     ///     Return the audit items as paged result
     /// </summary>
@@ -36,5 +38,36 @@ public interface IAuditRepository : IReadRepository<int, IAuditItem>, IWriteRepo
         AuditType[]? auditTypeFilter,
         IQuery<IAuditItem>? customFilter);
 
+    /// <summary>
+    ///     Return the audit items as paged result
+    /// </summary>
+    /// <param name="query">
+    ///     The query coming from the service
+    /// </param>
+    /// <param name="pageIndex"></param>
+    /// <param name="pageSize"></param>
+    /// <param name="totalRecords"></param>
+    /// <param name="orderDirection"></param>
+    /// <param name="auditTypeFilter">
+    ///     Since we currently do not have enum support with our expression parser, we cannot query on AuditType in the query
+    ///     or the custom filter
+    ///     so we need to do that here
+    /// </param>
+    /// <param name="customFilter">
+    ///     A user supplied custom filter
+    /// </param>
+    /// <returns></returns>
+    Task<IEnumerable<IAuditItem>> GetPagedResultsByQueryAsync(
+        IQuery<IAuditItem> query,
+        long pageIndex,
+        int pageSize,
+        out long totalRecords,
+        Direction orderDirection,
+        AuditType[]? auditTypeFilter,
+        IQuery<IAuditItem>? customFilter,
+        CancellationToken? cancellationToken = null);
+
     IEnumerable<IAuditItem> Get(AuditType type, IQuery<IAuditItem> query);
+
+    Task<IEnumerable<IAuditItem>> GetAsync(AuditType type, IQuery<IAuditItem> query, CancellationToken? cancellationToken = null);
 }
