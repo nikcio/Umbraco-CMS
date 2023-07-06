@@ -11,4 +11,9 @@ public interface IConsentRepository : IReadWriteQueryRepository<int, IConsent>
     ///     Clears the current flag.
     /// </summary>
     void ClearCurrent(string source, string context, string action);
+
+    /// <summary>
+    ///     Clears the current flag.
+    /// </summary>
+    Task ClearCurrentAsync(string source, string context, string action, CancellationToken? cancellationToken = null);
 }
