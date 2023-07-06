@@ -1,4 +1,3 @@
-using System.Drawing.Drawing2D;
 using System.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -6178,7 +6177,7 @@ public class ContentService : RepositoryService, IContentService
             // check if the content can be path-published
             // root content can be published
             // else check ancestors - we know we are not trashed
-            var pathIsOk = content.ParentId == Constants.System.Root || await IsPathPublishedAsync(await GetParent(content, cancellationToken), cancellationToken);
+            var pathIsOk = content.ParentId == Constants.System.Root || await IsPathPublishedAsync(await GetParentAsync(content, cancellationToken), cancellationToken);
             if (!pathIsOk)
             {
                 _logger.LogInformation(
@@ -6329,6 +6328,52 @@ public class ContentService : RepositoryService, IContentService
         return attempt;
     }
 
+    /// <summary>
+    ///     Unpublishes a document
+    /// </summary>
+    /// <param name="content"></param>
+    /// <param name="evtMsgs"></param>
+    /// <returns></returns>
+    /// <remarks>
+    ///     It is assumed that all unpublishing checks have passed before calling this method like
+    ///     <see cref="StrategyCanUnpublish" />
+    /// </remarks>
+    private async Task<PublishResult> StrategyUnpublishAsync(IContent content, EventMessages evtMsgs, CancellationToken? cancellationToken = null)
+    {
+        var attempt = new PublishResult(PublishResultType.SuccessUnpublish, evtMsgs, content);
+
+        // TODO: What is this check?? we just created this attempt and of course it is Success?!
+        if (attempt.Success == false)
+        {
+            return attempt;
+        }
+
+        // if the document has any release dates set to before now,
+        // they should be removed so they don't interrupt an unpublish
+        // otherwise it would remain released == published
+        ContentScheduleCollection contentSchedule = await _documentRepository.GetContentScheduleAsync(content.Id, cancellationToken);
+        IReadOnlyList<ContentSchedule> pastReleases =
+            contentSchedule.GetPending(ContentScheduleAction.Expire, DateTime.Now);
+        foreach (ContentSchedule p in pastReleases)
+        {
+            contentSchedule.Remove(p);
+        }
+
+        if (pastReleases.Count > 0)
+        {
+            _logger.LogInformation(
+                "Document {ContentName} (id={ContentId}) had its release date removed, because it was unpublished.", content.Name, content.Id);
+        }
+
+        await _documentRepository.PersistContentScheduleAsync(content, contentSchedule, cancellationToken);
+
+        // change state to unpublishing
+        content.PublishedState = PublishedState.Unpublishing;
+
+        _logger.LogInformation("Document {ContentName} (id={ContentId}) has been unpublished.", content.Name, content.Id);
+        return attempt;
+    }
+
     #endregion
 
     #region Content Types
@@ -6425,6 +6470,97 @@ public class ContentService : RepositoryService, IContentService
     }
 
     /// <summary>
+    ///     Deletes all content of specified type. All children of deleted content is moved to Recycle Bin.
+    /// </summary>
+    /// <remarks>
+    ///     <para>This needs extra care and attention as its potentially a dangerous and extensive operation.</para>
+    ///     <para>
+    ///         Deletes content items of the specified type, and only that type. Does *not* handle content types
+    ///         inheritance and compositions, which need to be managed outside of this method.
+    ///     </para>
+    /// </remarks>
+    /// <param name="contentTypeIds">Id of the <see cref="IContentType" /></param>
+    /// <param name="userId">Optional Id of the user issuing the delete operation</param>
+    public async Task DeleteOfTypesAsync(IEnumerable<int> contentTypeIds, int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        // TODO: This currently this is called from the ContentTypeService but that needs to change,
+        // if we are deleting a content type, we should just delete the data and do this operation slightly differently.
+        // This method will recursively go lookup every content item, check if any of it's descendants are
+        // of a different type, move them to the recycle bin, then permanently delete the content items.
+        // The main problem with this is that for every content item being deleted, events are raised...
+        // which we need for many things like keeping caches in sync, but we can surely do this MUCH better.
+        var changes = new List<TreeChange<IContent>>();
+        var moves = new List<(IContent, string)>();
+        var contentTypeIdsA = contentTypeIds.ToArray();
+        EventMessages eventMessages = EventMessagesFactory.Get();
+
+        // using an immediate uow here because we keep making changes with
+        // PerformMoveLocked and DeleteLocked that must be applied immediately,
+        // no point queuing operations
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+        {
+            scope.WriteLock(Constants.Locks.ContentTree);
+
+            IQuery<IContent> query = Query<IContent>().WhereIn(x => x.ContentTypeId, contentTypeIdsA);
+            IContent[] contents = await _documentRepository.GetAsync(query, cancellationToken).ToArray();
+
+            if (contents is null)
+            {
+                return;
+            }
+
+            if (scope.Notifications.PublishCancelable(new ContentDeletingNotification(contents, eventMessages)))
+            {
+                scope.Complete();
+                return;
+            }
+
+            // order by level, descending, so deepest first - that way, we cannot move
+            // a content of the deleted type, to the recycle bin (and then delete it...)
+            foreach (IContent content in contents.OrderByDescending(x => x.ParentId))
+            {
+                // if it's not trashed yet, and published, we should unpublish
+                // but... Unpublishing event makes no sense (not going to cancel?) and no need to save
+                // just raise the event
+                if (content.Trashed == false && content.Published)
+                {
+                    scope.Notifications.Publish(new ContentUnpublishedNotification(content, eventMessages));
+                }
+
+                // if current content has children, move them to trash
+                IContent c = content;
+                IQuery<IContent> childQuery = Query<IContent>().Where(x => x.ParentId == c.Id);
+                IEnumerable<IContent> children = await _documentRepository.GetAsync(childQuery, cancellationToken);
+                foreach (IContent child in children)
+                {
+                    // see MoveToRecycleBin
+                    await PerformMoveLockedAsync(child, Constants.System.RecycleBinContent, null, userId, moves, true, cancellationToken);
+                    changes.Add(new TreeChange<IContent>(content, TreeChangeTypes.RefreshBranch));
+                }
+
+                // delete content
+                // triggers the deleted event (and handles the files)
+                await DeleteLockedAsync(scope, content, eventMessages, cancellationToken);
+                changes.Add(new TreeChange<IContent>(content, TreeChangeTypes.Remove));
+            }
+
+            MoveEventInfo<IContent>[] moveInfos = moves
+                .Select(x => new MoveEventInfo<IContent>(x.Item1, x.Item2, x.Item1.ParentId))
+                .ToArray();
+            if (moveInfos.Length > 0)
+            {
+                scope.Notifications.Publish(new ContentMovedToRecycleBinNotification(moveInfos, eventMessages));
+            }
+
+            scope.Notifications.Publish(new ContentTreeChangeNotification(changes, eventMessages));
+
+            await AuditAsync(AuditType.Delete, userId, Constants.System.Root, $"Delete content of type {string.Join(",", contentTypeIdsA)}", cancellationToken);
+
+            scope.Complete();
+        }
+    }
+
+    /// <summary>
     ///     Deletes all content items of specified type. All children of deleted content item is moved to Recycle Bin.
     /// </summary>
     /// <remarks>This needs extra care and attention as its potentially a dangerous and extensive operation</remarks>
@@ -6432,6 +6568,15 @@ public class ContentService : RepositoryService, IContentService
     /// <param name="userId">Optional id of the user deleting the media</param>
     public void DeleteOfType(int contentTypeId, int userId = Constants.Security.SuperUserId) =>
         DeleteOfTypes(new[] { contentTypeId }, userId);
+
+    /// <summary>
+    ///     Deletes all content items of specified type. All children of deleted content item is moved to Recycle Bin.
+    /// </summary>
+    /// <remarks>This needs extra care and attention as its potentially a dangerous and extensive operation</remarks>
+    /// <param name="contentTypeId">Id of the <see cref="IContentType" /></param>
+    /// <param name="userId">Optional id of the user deleting the media</param>
+    public async Task DeleteOfTypeAsync(int contentTypeId, int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null) =>
+        await DeleteOfTypesAsync(new[] { contentTypeId }, userId, cancellationToken);
 
     private IContentType GetContentType(ICoreScope scope, string contentTypeAlias)
     {
@@ -6449,6 +6594,32 @@ public class ContentService : RepositoryService, IContentService
 
         IQuery<IContentType> query = Query<IContentType>().Where(x => x.Alias == contentTypeAlias);
         IContentType? contentType = _contentTypeRepository.Get(query).FirstOrDefault();
+
+        if (contentType == null)
+        {
+            throw new Exception(
+                $"No ContentType matching the passed in Alias: '{contentTypeAlias}' was found"); // causes rollback
+        }
+
+        return contentType;
+    }
+
+    private async Task<IContentType> GetContentTypeAsync(ICoreScope scope, string contentTypeAlias, CancellationToken? cancellationToken = null)
+    {
+        if (contentTypeAlias == null)
+        {
+            throw new ArgumentNullException(nameof(contentTypeAlias));
+        }
+
+        if (string.IsNullOrWhiteSpace(contentTypeAlias))
+        {
+            throw new ArgumentException("Value can't be empty or consist only of white-space characters.", nameof(contentTypeAlias));
+        }
+
+        scope.ReadLock(Constants.Locks.ContentTypes);
+
+        IQuery<IContentType> query = Query<IContentType>().Where(x => x.Alias == contentTypeAlias);
+        IContentType? contentType = await _contentTypeRepository.GetAsync(query, cancellationToken).FirstOrDefault();
 
         if (contentType == null)
         {
@@ -6477,6 +6648,24 @@ public class ContentService : RepositoryService, IContentService
         }
     }
 
+    private async Task<IContentType> GetContentType(string contentTypeAlias, CancellationToken? cancellationToken = null)
+    {
+        if (contentTypeAlias == null)
+        {
+            throw new ArgumentNullException(nameof(contentTypeAlias));
+        }
+
+        if (string.IsNullOrWhiteSpace(contentTypeAlias))
+        {
+            throw new ArgumentException("Value can't be empty or consist only of white-space characters.", nameof(contentTypeAlias));
+        }
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            return await GetContentTypeAsync(scope, contentTypeAlias, cancellationToken);
+        }
+    }
+
     #endregion
 
     #region Blueprints
@@ -6496,12 +6685,42 @@ public class ContentService : RepositoryService, IContentService
         }
     }
 
+    public async Task<IContent?> GetBlueprintByIdASync(int id, CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+            IContent? blueprint = await _documentBlueprintRepository.GetAsync(id, cancellationToken);
+            if (blueprint != null)
+            {
+                blueprint.Blueprint = true;
+            }
+
+            return blueprint;
+        }
+    }
+
     public IContent? GetBlueprintById(Guid id)
     {
         using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
         {
             scope.ReadLock(Constants.Locks.ContentTree);
             IContent? blueprint = _documentBlueprintRepository.Get(id);
+            if (blueprint != null)
+            {
+                blueprint.Blueprint = true;
+            }
+
+            return blueprint;
+        }
+    }
+
+    public async Task<IContent?> GetBlueprintByIdAsync(Guid id, CancellationToken? cancellationToken = null)
+    {
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            scope.ReadLock(Constants.Locks.ContentTree);
+            IContent? blueprint = await _documentBlueprintRepository.GetAsync(id, cancellationToken);
             if (blueprint != null)
             {
                 blueprint.Blueprint = true;
@@ -6544,6 +6763,39 @@ public class ContentService : RepositoryService, IContentService
         }
     }
 
+    public async Task SaveBlueprintAsync(IContent content, int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        EventMessages evtMsgs = EventMessagesFactory.Get();
+
+        // always ensure the blueprint is at the root
+        if (content.ParentId != -1)
+        {
+            content.ParentId = -1;
+        }
+
+        content.Blueprint = true;
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+        {
+            scope.WriteLock(Constants.Locks.ContentTree);
+
+            if (content.HasIdentity == false)
+            {
+                content.CreatorId = userId;
+            }
+
+            content.WriterId = userId;
+
+            await _documentBlueprintRepository.SaveAsync(content, cancellationToken);
+
+            await AuditAsync(AuditType.Save, Constants.Security.SuperUserId, content.Id, $"Saved content template: {content.Name}", cancellationToken);
+
+            scope.Notifications.Publish(new ContentSavedBlueprintNotification(content, evtMsgs));
+
+            scope.Complete();
+        }
+    }
+
     public void DeleteBlueprint(IContent content, int userId = Constants.Security.SuperUserId)
     {
         EventMessages evtMsgs = EventMessagesFactory.Get();
@@ -6552,6 +6804,19 @@ public class ContentService : RepositoryService, IContentService
         {
             scope.WriteLock(Constants.Locks.ContentTree);
             _documentBlueprintRepository.Delete(content);
+            scope.Notifications.Publish(new ContentDeletedBlueprintNotification(content, evtMsgs));
+            scope.Complete();
+        }
+    }
+
+    public async Task DeleteBlueprintAsync(IContent content, int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        EventMessages evtMsgs = EventMessagesFactory.Get();
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+        {
+            scope.WriteLock(Constants.Locks.ContentTree);
+            await _documentBlueprintRepository.DeleteAsync(content, cancellationToken);
             scope.Notifications.Publish(new ContentDeletedBlueprintNotification(content, evtMsgs));
             scope.Complete();
         }
@@ -6606,6 +6871,53 @@ public class ContentService : RepositoryService, IContentService
         return content;
     }
 
+    public async Task<IContent> CreateContentFromBlueprintAsync(IContent blueprint, string name, int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        if (blueprint == null)
+        {
+            throw new ArgumentNullException(nameof(blueprint));
+        }
+
+        IContentType contentType = await GetContentTypeAsync(blueprint.ContentType.Alias, cancellationToken: cancellationToken);
+        var content = new Content(name, -1, contentType);
+        content.Path = string.Concat(content.ParentId.ToString(), ",", content.Id);
+
+        content.CreatorId = userId;
+        content.WriterId = userId;
+
+        IEnumerable<string?> cultures = ArrayOfOneNullString;
+        if (blueprint.CultureInfos?.Count > 0)
+        {
+            cultures = blueprint.CultureInfos.Values.Select(x => x.Culture);
+            using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+            {
+                if (blueprint.CultureInfos.TryGetValue(await _languageRepository.GetDefaultIsoCodeAsync(cancellationToken), out ContentCultureInfos defaultCulture))
+                {
+                    defaultCulture.Name = name;
+                }
+
+                scope.Complete();
+            }
+        }
+
+        DateTime now = DateTime.Now;
+        foreach (var culture in cultures)
+        {
+            foreach (IProperty property in blueprint.Properties)
+            {
+                var propertyCulture = property.PropertyType.VariesByCulture() ? culture : null;
+                content.SetValue(property.Alias, property.GetValue(propertyCulture), propertyCulture);
+            }
+
+            if (!string.IsNullOrEmpty(culture))
+            {
+                content.SetCultureInfo(culture, blueprint.GetCultureName(culture), now);
+            }
+        }
+
+        return content;
+    }
+
     public IEnumerable<IContent> GetBlueprintsForContentTypes(params int[] contentTypeId)
     {
         using (ScopeProvider.CreateCoreScope(autoComplete: true))
@@ -6617,6 +6929,24 @@ public class ContentService : RepositoryService, IContentService
             }
 
             return _documentBlueprintRepository.Get(query).Select(x =>
+            {
+                x.Blueprint = true;
+                return x;
+            });
+        }
+    }
+
+    public async Task<IEnumerable<IContent>> GetBlueprintsForContentTypesAsync(CancellationToken? cancellationToken = null, params int[] contentTypeId)
+    {
+        using (ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            IQuery<IContent> query = Query<IContent>();
+            if (contentTypeId.Length > 0)
+            {
+                query.Where(x => contentTypeId.Contains(x.ContentTypeId));
+            }
+
+            return await _documentBlueprintRepository.GetAsync(query, cancellationToken).Select(x =>
             {
                 x.Blueprint = true;
                 return x;
@@ -6658,8 +6988,45 @@ public class ContentService : RepositoryService, IContentService
         }
     }
 
+    public async Task DeleteBlueprintsOfTypesAsync(IEnumerable<int> contentTypeIds, int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null)
+    {
+        EventMessages evtMsgs = EventMessagesFactory.Get();
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+        {
+            scope.WriteLock(Constants.Locks.ContentTree);
+
+            var contentTypeIdsA = contentTypeIds.ToArray();
+            IQuery<IContent> query = Query<IContent>();
+            if (contentTypeIdsA.Length > 0)
+            {
+                query.Where(x => contentTypeIdsA.Contains(x.ContentTypeId));
+            }
+
+            IContent[]? blueprints = await _documentBlueprintRepository.GetAsync(query, cancellationToken)?.Select(x =>
+            {
+                x.Blueprint = true;
+                return x;
+            }).ToArray();
+
+            if (blueprints is not null)
+            {
+                foreach (IContent blueprint in blueprints)
+                {
+                    await _documentBlueprintRepository.DeleteAsync(blueprint, cancellationToken);
+                }
+
+                scope.Notifications.Publish(new ContentDeletedBlueprintNotification(blueprints, evtMsgs));
+                scope.Complete();
+            }
+        }
+    }
+
     public void DeleteBlueprintsOfType(int contentTypeId, int userId = Constants.Security.SuperUserId) =>
         DeleteBlueprintsOfTypes(new[] { contentTypeId }, userId);
+
+    public async Task DeleteBlueprintsOfTypeASync(int contentTypeId, int userId = Constants.Security.SuperUserId, CancellationToken? cancellationToken = null) =>
+        await DeleteBlueprintsOfTypesAsync(new[] { contentTypeId }, userId, cancellationToken);
 
     #endregion
 }
