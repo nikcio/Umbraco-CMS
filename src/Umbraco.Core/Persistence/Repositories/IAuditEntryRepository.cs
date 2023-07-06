@@ -13,8 +13,19 @@ public interface IAuditEntryRepository : IReadWriteQueryRepository<int, IAuditEn
     IEnumerable<IAuditEntry> GetPage(long pageIndex, int pageCount, out long records);
 
     /// <summary>
+    ///     Gets a page of entries.
+    /// </summary>
+    Task<(IEnumerable<IAuditEntry> Results, int Records)> GetPageAsync(long pageIndex, int pageCount, CancellationToken? cancellationToken = null);
+
+    /// <summary>
     ///     Determines whether the repository is available.
     /// </summary>
     /// <remarks>During an upgrade, the repository may not be available, until the table has been created.</remarks>
     bool IsAvailable();
+
+    /// <summary>
+    ///     Determines whether the repository is available.
+    /// </summary>
+    /// <remarks>During an upgrade, the repository may not be available, until the table has been created.</remarks>
+    Task<bool> IsAvailableAsync(CancellationToken? cancellationToken = null);
 }
