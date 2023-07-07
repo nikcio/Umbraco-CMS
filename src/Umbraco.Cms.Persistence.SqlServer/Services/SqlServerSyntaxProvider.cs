@@ -213,9 +213,22 @@ public class SqlServerSyntaxProvider : MicrosoftSqlSyntaxProviderBase<SqlServerS
     public override IEnumerable<string> GetTablesInSchema(IDatabase db) => db.Fetch<string>(
         "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = (SELECT SCHEMA_NAME())");
 
+    public override async Task<IEnumerable<string>> GetTablesInSchemaAsync(IDatabase db, CancellationToken? cancellationToken = null) => await db.FetchAsync<string>(
+        "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = (SELECT SCHEMA_NAME())");
+
     public override IEnumerable<ColumnInfo> GetColumnsInSchema(IDatabase db)
     {
         List<ColumnInSchemaDto>? items = db.Fetch<ColumnInSchemaDto>(
+            "SELECT TABLE_NAME, COLUMN_NAME, ORDINAL_POSITION, COLUMN_DEFAULT, IS_NULLABLE, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = (SELECT SCHEMA_NAME())");
+        return
+            items.Select(
+                item =>
+                    new ColumnInfo(item.TableName, item.ColumnName, item.OrdinalPosition, item.ColumnDefault, item.IsNullable, item.DataType)).ToList();
+    }
+
+    public override async Task<IEnumerable<ColumnInfo>> GetColumnsInSchemaAsync(IDatabase db, CancellationToken? cancellationToken = null)
+    {
+        List<ColumnInSchemaDto>? items = await db.FetchAsync<ColumnInSchemaDto>(
             "SELECT TABLE_NAME, COLUMN_NAME, ORDINAL_POSITION, COLUMN_DEFAULT, IS_NULLABLE, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = (SELECT SCHEMA_NAME())");
         return
             items.Select(
@@ -233,6 +246,15 @@ public class SqlServerSyntaxProvider : MicrosoftSqlSyntaxProviderBase<SqlServerS
     }
 
     /// <inheritdoc />
+    public override async Task<IEnumerable<Tuple<string, string>>> GetConstraintsPerTableAsync(IDatabase db, CancellationToken? cancellationToken = null)
+    {
+        List<ConstraintPerTableDto> items =
+            await db.FetchAsync<ConstraintPerTableDto>(
+                "SELECT TABLE_NAME, CONSTRAINT_NAME FROM INFORMATION_SCHEMA.CONSTRAINT_TABLE_USAGE WHERE TABLE_SCHEMA = (SELECT SCHEMA_NAME())");
+        return items.Select(item => new Tuple<string, string>(item.TableName, item.ConstraintName)).ToList();
+    }
+
+    /// <inheritdoc />
     public override IEnumerable<Tuple<string, string, string>> GetConstraintsPerColumn(IDatabase db)
     {
         List<ConstraintPerColumnDto>? items =
@@ -243,10 +265,36 @@ public class SqlServerSyntaxProvider : MicrosoftSqlSyntaxProviderBase<SqlServerS
     }
 
     /// <inheritdoc />
+    public override async Task<IEnumerable<Tuple<string, string, string>>> GetConstraintsPerColumnAsync(IDatabase db, CancellationToken? cancellationToken = null)
+    {
+        List<ConstraintPerColumnDto>? items =
+            await db.FetchAsync<ConstraintPerColumnDto>(
+                "SELECT TABLE_NAME, COLUMN_NAME, CONSTRAINT_NAME FROM INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE WHERE TABLE_SCHEMA = (SELECT SCHEMA_NAME())");
+        return items.Select(item =>
+            new Tuple<string, string, string>(item.TableName, item.ColumnName, item.ConstraintName)).ToList();
+    }
+
+    /// <inheritdoc />
     public override IEnumerable<Tuple<string, string, string, bool>> GetDefinedIndexes(IDatabase db)
     {
         List<DefinedIndexDto>? items =
             db.Fetch<DefinedIndexDto>(
+                @"select T.name as TABLE_NAME, I.name as INDEX_NAME, AC.Name as COLUMN_NAME,
+CASE WHEN I.is_unique_constraint = 1 OR  I.is_unique = 1 THEN 1 ELSE 0 END AS [UNIQUE]
+from sys.tables as T inner join sys.indexes as I on T.[object_id] = I.[object_id]
+   inner join sys.index_columns as IC on IC.[object_id] = I.[object_id] and IC.[index_id] = I.[index_id]
+   inner join sys.all_columns as AC on IC.[object_id] = AC.[object_id] and IC.[column_id] = AC.[column_id]
+   inner join sys.schemas as S on T.[schema_id] = S.[schema_id]
+WHERE S.name = (SELECT SCHEMA_NAME()) AND I.is_primary_key = 0
+order by T.name, I.name");
+        return items.Select(item => new Tuple<string, string, string, bool>(item.TableName, item.IndexName, item.ColumnName, item.Unique == 1)).ToList();
+    }
+
+    /// <inheritdoc />
+    public override async Task<IEnumerable<Tuple<string, string, string, bool>>> GetDefinedIndexesAsync(IDatabase db, CancellationToken? cancellationToken = null)
+    {
+        List<DefinedIndexDto>? items =
+            await db.FetchAsync<DefinedIndexDto>(
                 @"select T.name as TABLE_NAME, I.name as INDEX_NAME, AC.Name as COLUMN_NAME,
 CASE WHEN I.is_unique_constraint = 1 OR  I.is_unique = 1 THEN 1 ELSE 0 END AS [UNIQUE]
 from sys.tables as T inner join sys.indexes as I on T.[object_id] = I.[object_id]
@@ -284,6 +332,16 @@ where tbl.[name]=@0 and col.[name]=@1;",
     {
         var result =
             db.ExecuteScalar<long>(
+                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = @TableName AND TABLE_SCHEMA = (SELECT SCHEMA_NAME())",
+                new { TableName = tableName });
+
+        return result > 0;
+    }
+
+    public override async Task<bool> DoesTableExistAsync(IDatabase db, string tableName, CancellationToken? cancellationToken = null)
+    {
+        var result =
+            await db.ExecuteScalarAsync<long>(
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = @TableName AND TABLE_SCHEMA = (SELECT SCHEMA_NAME())",
                 new { TableName = tableName });
 
