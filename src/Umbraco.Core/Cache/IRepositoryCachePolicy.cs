@@ -34,14 +34,6 @@ public interface IRepositoryCachePolicy<TEntity, TId>
     TEntity? GetCached(TId id);
 
     /// <summary>
-    ///     Gets an entity from the cache.
-    /// </summary>
-    /// <param name="id">The identifier.</param>
-    /// <returns>The entity with the specified identifier, if it is in the cache already, else null.</returns>
-    /// <remarks>Does not consider the repository at all.</remarks>
-    Task<TEntity?> GetCachedAsync(TId id, CancellationToken? cancellationToken = null);
-
-    /// <summary>
     ///     Gets a value indicating whether an entity with a specified identifier exists.
     /// </summary>
     /// <param name="id">The identifier.</param>
