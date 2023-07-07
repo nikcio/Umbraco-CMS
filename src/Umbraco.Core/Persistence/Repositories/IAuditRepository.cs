@@ -46,7 +46,6 @@ public interface IAuditRepository : IReadRepository<int, IAuditItem>, IWriteRepo
     /// </param>
     /// <param name="pageIndex"></param>
     /// <param name="pageSize"></param>
-    /// <param name="totalRecords"></param>
     /// <param name="orderDirection"></param>
     /// <param name="auditTypeFilter">
     ///     Since we currently do not have enum support with our expression parser, we cannot query on AuditType in the query
@@ -57,11 +56,10 @@ public interface IAuditRepository : IReadRepository<int, IAuditItem>, IWriteRepo
     ///     A user supplied custom filter
     /// </param>
     /// <returns></returns>
-    Task<IEnumerable<IAuditItem>> GetPagedResultsByQueryAsync(
+    Task<(IEnumerable<IAuditItem> Results, long TotalRecords)> GetPagedResultsByQueryAsync(
         IQuery<IAuditItem> query,
         long pageIndex,
         int pageSize,
-        out long totalRecords,
         Direction orderDirection,
         AuditType[]? auditTypeFilter,
         IQuery<IAuditItem>? customFilter,
