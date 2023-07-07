@@ -32,11 +32,33 @@ internal class AuditRepository : EntityRepositoryBase<int, IAuditItem>, IAuditRe
         return dtos.Select(x => new AuditItem(x.NodeId, Enum<AuditType>.Parse(x.Header), x.UserId ?? Constants.Security.UnknownUserId, x.EntityType, x.Comment, x.Parameters)).ToList();
     }
 
+    public async Task<IEnumerable<IAuditItem>> GetAsync(AuditType type, IQuery<IAuditItem> query, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext>? sqlClause = GetBaseQuery(false)
+            .Where("(logHeader=@0)", type.ToString());
+
+        var translator = new SqlTranslator<IAuditItem>(sqlClause, query);
+        Sql<ISqlContext> sql = translator.Translate();
+
+        List<LogDto>? dtos = await Database.FetchAsync<LogDto>(sql);
+
+        return dtos.Select(x => new AuditItem(x.NodeId, Enum<AuditType>.Parse(x.Header), x.UserId ?? Constants.Security.UnknownUserId, x.EntityType, x.Comment, x.Parameters)).ToList();
+    }
+
     public void CleanLogs(int maximumAgeOfLogsInMinutes)
     {
         DateTime oldestPermittedLogEntry = DateTime.Now.Subtract(new TimeSpan(0, maximumAgeOfLogsInMinutes, 0));
 
         Database.Execute(
+            "delete from umbracoLog where datestamp < @oldestPermittedLogEntry and logHeader in ('open','system')",
+            new { oldestPermittedLogEntry });
+    }
+
+    public async Task CleanLogsAsync(int maximumAgeOfLogsInMinutes, CancellationToken? cancellationToken = null)
+    {
+        DateTime oldestPermittedLogEntry = DateTime.Now.Subtract(new TimeSpan(0, maximumAgeOfLogsInMinutes, 0));
+
+        await Database.ExecuteAsync(
             "delete from umbracoLog where datestamp < @oldestPermittedLogEntry and logHeader in ('open','system')",
             new { oldestPermittedLogEntry });
     }
@@ -115,6 +137,54 @@ internal class AuditRepository : EntityRepositoryBase<int, IAuditItem>, IAuditRe
         return items;
     }
 
+    public async Task<(IEnumerable<IAuditItem> Results, long TotalRecords)> GetPagedResultsByQueryAsync(IQuery<IAuditItem> query, long pageIndex, int pageSize, Direction orderDirection, AuditType[]? auditTypeFilter, IQuery<IAuditItem>? customFilter, CancellationToken? cancellationToken = null)
+    {
+        if (auditTypeFilter == null)
+        {
+            auditTypeFilter = Array.Empty<AuditType>();
+        }
+
+        Sql<ISqlContext> sql = GetBaseQuery(false);
+
+        var translator = new SqlTranslator<IAuditItem>(sql, query);
+        sql = translator.Translate();
+
+        if (customFilter != null)
+        {
+            foreach (Tuple<string, object[]> filterClause in customFilter.GetWhereClauses())
+            {
+                sql.Where(filterClause.Item1, filterClause.Item2);
+            }
+        }
+
+        if (auditTypeFilter.Length > 0)
+        {
+            foreach (AuditType type in auditTypeFilter)
+            {
+                sql.Where("(logHeader=@0)", type.ToString());
+            }
+        }
+
+        sql = orderDirection == Direction.Ascending
+            ? sql.OrderBy("Datestamp")
+            : sql.OrderByDescending("Datestamp");
+
+        // get page
+        Page<LogDto>? page = await Database.PageAsync<LogDto>(pageIndex + 1, pageSize, sql);
+        var totalRecords = page.TotalItems;
+
+        var items = page.Items.Select(
+            dto => new AuditItem(dto.NodeId, Enum<AuditType>.ParseOrNull(dto.Header) ?? AuditType.Custom, dto.UserId ?? Constants.Security.UnknownUserId, dto.EntityType, dto.Comment, dto.Parameters)).ToList();
+
+        // map the DateStamp
+        for (var i = 0; i < items.Count; i++)
+        {
+            items[i].CreateDate = page.Items[i].Datestamp;
+        }
+
+        return new(items, totalRecords);
+    }
+
     protected override void PersistNewItem(IAuditItem entity) =>
         Database.Insert(new LogDto
         {
@@ -125,6 +195,18 @@ internal class AuditRepository : EntityRepositoryBase<int, IAuditItem>, IAuditRe
             UserId = entity.UserId,
             EntityType = entity.EntityType,
             Parameters = entity.Parameters,
+        });
+
+    protected override async Task PersistNewItemAsync(IAuditItem item, CancellationToken? cancellationToken = null) =>
+        await Database.InsertAsync(new LogDto
+        {
+            Comment = item.Comment,
+            Datestamp = DateTime.Now,
+            Header = item.AuditType.ToString(),
+            NodeId = item.Id,
+            UserId = item.UserId,
+            EntityType = item.EntityType,
+            Parameters = item.Parameters,
         });
 
     protected override void PersistUpdatedItem(IAuditItem entity) =>
@@ -141,6 +223,20 @@ internal class AuditRepository : EntityRepositoryBase<int, IAuditItem>, IAuditRe
             Parameters = entity.Parameters,
         });
 
+    protected override async Task PersistUpdatedItemAsync(IAuditItem item, CancellationToken? cancellationToken = null) =>
+
+        // inserting when updating because we never update a log entry, perhaps this should throw?
+        await Database.InsertAsync(new LogDto
+        {
+            Comment = item.Comment,
+            Datestamp = DateTime.Now,
+            Header = item.AuditType.ToString(),
+            NodeId = item.Id,
+            UserId = item.UserId,
+            EntityType = item.EntityType,
+            Parameters = item.Parameters,
+        });
+
     protected override IAuditItem? PerformGet(int id)
     {
         Sql<ISqlContext> sql = GetBaseQuery(false);
@@ -152,7 +248,20 @@ internal class AuditRepository : EntityRepositoryBase<int, IAuditItem>, IAuditRe
             : new AuditItem(dto.NodeId, Enum<AuditType>.Parse(dto.Header), dto.UserId ?? Constants.Security.UnknownUserId, dto.EntityType, dto.Comment, dto.Parameters);
     }
 
+    protected override async Task<IAuditItem?> PerformGetAsync(int id, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sql = GetBaseQuery(false);
+        sql.Where(GetBaseWhereClause(), new { Id = id });
+
+        LogDto? dto = await Database.FirstAsync<LogDto>(sql);
+        return dto == null
+            ? null
+            : new AuditItem(dto.NodeId, Enum<AuditType>.Parse(dto.Header), dto.UserId ?? Constants.Security.UnknownUserId, dto.EntityType, dto.Comment, dto.Parameters);
+    }
+
     protected override IEnumerable<IAuditItem> PerformGetAll(params int[]? ids) => throw new NotImplementedException();
+
+    protected override Task<IEnumerable<IAuditItem>> PerformGetAllAsync(CancellationToken? cancellationToken = null, params int[]? ids) => throw new NotImplementedException();
 
     protected override IEnumerable<IAuditItem> PerformGetByQuery(IQuery<IAuditItem> query)
     {
@@ -161,6 +270,17 @@ internal class AuditRepository : EntityRepositoryBase<int, IAuditItem>, IAuditRe
         Sql<ISqlContext> sql = translator.Translate();
 
         List<LogDto>? dtos = Database.Fetch<LogDto>(sql);
+
+        return dtos.Select(x => new AuditItem(x.NodeId, Enum<AuditType>.Parse(x.Header), x.UserId ?? Constants.Security.UnknownUserId, x.EntityType, x.Comment, x.Parameters)).ToList();
+    }
+
+    protected override async Task<IEnumerable<IAuditItem>> PerformGetByQueryAsync(IQuery<IAuditItem> query, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sqlClause = GetBaseQuery(false);
+        var translator = new SqlTranslator<IAuditItem>(sqlClause, query);
+        Sql<ISqlContext> sql = translator.Translate();
+
+        List<LogDto>? dtos = await Database.FetchAsync<LogDto>(sql);
 
         return dtos.Select(x => new AuditItem(x.NodeId, Enum<AuditType>.Parse(x.Header), x.UserId ?? Constants.Security.UnknownUserId, x.EntityType, x.Comment, x.Parameters)).ToList();
     }
