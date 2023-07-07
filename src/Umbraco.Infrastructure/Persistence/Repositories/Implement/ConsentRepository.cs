@@ -38,7 +38,13 @@ internal class ConsentRepository : EntityRepositoryBase<int, IConsent>, IConsent
     protected override IConsent PerformGet(int id) => throw new NotSupportedException();
 
     /// <inheritdoc />
+    protected override Task<IConsent?> PerformGetAsync(int id, CancellationToken? cancellationToken = null) => throw new NotImplementedException();
+
+    /// <inheritdoc />
     protected override IEnumerable<IConsent> PerformGetAll(params int[]? ids) => throw new NotSupportedException();
+
+    /// <inheritdoc />
+    protected override Task<IEnumerable<IConsent>> PerformGetAllAsync(CancellationToken? cancellationToken = null, params int[]? ids) => throw new NotImplementedException();
 
     /// <inheritdoc />
     protected override IEnumerable<IConsent> PerformGetByQuery(IQuery<IConsent> query)
@@ -47,6 +53,15 @@ internal class ConsentRepository : EntityRepositoryBase<int, IConsent>, IConsent
         var translator = new SqlTranslator<IConsent>(sqlClause, query);
         Sql<ISqlContext> sql = translator.Translate().OrderByDescending<ConsentDto>(x => x.CreateDate);
         return ConsentFactory.BuildEntities(Database.Fetch<ConsentDto>(sql));
+    }
+
+    /// <inheritdoc />
+    protected override async Task<IEnumerable<IConsent>> PerformGetByQueryAsync(IQuery<IConsent> query, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sqlClause = Sql().Select<ConsentDto>().From<ConsentDto>();
+        var translator = new SqlTranslator<IConsent>(sqlClause, query);
+        Sql<ISqlContext> sql = translator.Translate().OrderByDescending<ConsentDto>(x => x.CreateDate);
+        return ConsentFactory.BuildEntities(await Database.FetchAsync<ConsentDto>(sql));
     }
 
     /// <inheritdoc />
@@ -70,6 +85,17 @@ internal class ConsentRepository : EntityRepositoryBase<int, IConsent>, IConsent
     }
 
     /// <inheritdoc />
+    protected override async Task PersistNewItemAsync(IConsent item, CancellationToken? cancellationToken = null)
+    {
+        item.AddingEntity();
+
+        ConsentDto dto = ConsentFactory.BuildDto(item);
+        await Database.InsertAsync(dto);
+        item.Id = dto.Id;
+        item.ResetDirtyProperties();
+    }
+
+    /// <inheritdoc />
     protected override void PersistUpdatedItem(IConsent entity)
     {
         entity.UpdatingEntity();
@@ -80,4 +106,17 @@ internal class ConsentRepository : EntityRepositoryBase<int, IConsent>, IConsent
 
         IsolatedCache.Clear(RepositoryCacheKeys.GetKey<IConsent, int>(entity.Id));
     }
+
+    protected override async Task PersistUpdatedItemAsync(IConsent item, CancellationToken? cancellationToken = null)
+    {
+        item.UpdatingEntity();
+
+        ConsentDto dto = ConsentFactory.BuildDto(item);
+        await Database.UpdateAsync(dto);
+        item.ResetDirtyProperties();
+
+        IsolatedCache.Clear(RepositoryCacheKeys.GetKey<IConsent, int>(item.Id));
+    }
+
+    public Task ClearCurrentAsync(string source, string context, string action, CancellationToken? cancellationToken = null) => throw new NotImplementedException();
 }
