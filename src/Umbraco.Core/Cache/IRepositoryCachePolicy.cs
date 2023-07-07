@@ -19,11 +19,11 @@ public interface IRepositoryCachePolicy<TEntity, TId>
     ///     Gets an entity from the cache, else from the repository.
     /// </summary>
     /// <param name="id">The identifier.</param>
-    /// <param name="performGet">The repository PerformGet method.</param>
+    /// <param name="performGetAsync">The repository PerformGet method.</param>
     /// <param name="performGetAllAsync">The repository PerformGetAll method.</param>
     /// <returns>The entity with the specified identifier, if it exits, else null.</returns>
     /// <remarks>First considers the cache then the repository.</remarks>
-    Task<TEntity?> GetAsync(TId? id, Func<TId?, TEntity?> performGet, Func<TId[]?, CancellationToken?, Task<IEnumerable<TEntity>?>> performGetAllAsync, CancellationToken? cancellationToken = null);
+    Task<TEntity?> GetAsync(TId? id, Func<TId?, CancellationToken?, Task<TEntity?>> performGetAsync, Func<CancellationToken?, TId[]?, Task<IEnumerable<TEntity>>> performGetAllAsync, CancellationToken? cancellationToken = null);
 
     /// <summary>
     ///     Gets an entity from the cache.
@@ -55,11 +55,11 @@ public interface IRepositoryCachePolicy<TEntity, TId>
     ///     Gets a value indicating whether an entity with a specified identifier exists.
     /// </summary>
     /// <param name="id">The identifier.</param>
-    /// <param name="performExists">The repository PerformExists method.</param>
+    /// <param name="performExistsAsync">The repository PerformExists method.</param>
     /// <param name="performGetAllAsync">The repository PerformGetAll method.</param>
     /// <returns>A value indicating whether an entity with the specified identifier exists.</returns>
     /// <remarks>First considers the cache then the repository.</remarks>
-    Task<bool> ExistsAsync(TId id, Func<TId, bool> performExists, Func<TId[], CancellationToken?, Task<IEnumerable<TEntity>?>> performGetAllAsync, CancellationToken? cancellationToken = null);
+    Task<bool> ExistsAsync(TId id, Func<TId, CancellationToken?, Task<bool>> performExistsAsync, Func<CancellationToken?, TId[], Task<IEnumerable<TEntity>>> performGetAllAsync, CancellationToken? cancellationToken = null);
 
     /// <summary>
     ///     Creates an entity.
@@ -125,7 +125,7 @@ public interface IRepositoryCachePolicy<TEntity, TId>
     /// <param name="performGetAllAsync">The repository PerformGetAll method.</param>
     /// <returns>If <paramref name="ids" /> is empty, all entities, else the entities with the specified identifiers.</returns>
     /// <remarks>Get all the entities. Either from the cache or the repository depending on the implementation.</remarks>
-    Task<TEntity[]> GetAllAsync(TId[]? ids, Func<TId[]?, CancellationToken?, Task<IEnumerable<TEntity>>> performGetAllAsync, CancellationToken? cancellationToken = null);
+    Task<TEntity[]> GetAllAsync(TId[]? ids, Func<CancellationToken?, TId[]?, Task<IEnumerable<TEntity>>> performGetAllAsync, CancellationToken? cancellationToken = null);
 
     /// <summary>
     ///     Clears the entire cache.
