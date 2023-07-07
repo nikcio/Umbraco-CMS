@@ -6,5 +6,9 @@ public interface IServerRegistrationRepository : IReadWriteQueryRepository<int, 
 {
     void DeactiveStaleServers(TimeSpan staleTimeout);
 
+    Task DeactiveStaleServersAsync(TimeSpan staleTimeout, CancellationToken? cancellationToken = null);
+
     void ClearCache();
+
+    Task ClearCacheAsync(CancellationToken? cancellationToken = null);
 }
