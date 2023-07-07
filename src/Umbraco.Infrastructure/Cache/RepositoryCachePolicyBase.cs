@@ -55,9 +55,6 @@ public abstract class RepositoryCachePolicyBase<TEntity, TId> : IRepositoryCache
     public abstract TEntity? GetCached(TId id);
 
     /// <inheritdoc />
-    public abstract Task<TEntity?> GetCachedAsync(TId id, CancellationToken? cancellationToken = null);
-
-    /// <inheritdoc />
     public abstract bool Exists(TId id, Func<TId, bool> performExists, Func<TId[], IEnumerable<TEntity>?> performGetAll);
 
     /// <inheritdoc />
