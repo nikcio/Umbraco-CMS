@@ -6,5 +6,9 @@ public interface IMediaRepository : IContentRepository<int, IMedia>, IReadReposi
 {
     IMedia? GetMediaByPath(string mediaPath);
 
+    Task<IMedia?> GetMediaByPathAsync(string mediaPath, CancellationToken? cancellationToken = null);
+
     bool RecycleBinSmells();
+
+    Task<bool> RecycleBinSmellsAsync(CancellationToken? cancellationToken = null);
 }
