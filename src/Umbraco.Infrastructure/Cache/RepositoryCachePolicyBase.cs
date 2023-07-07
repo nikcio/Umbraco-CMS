@@ -49,22 +49,43 @@ public abstract class RepositoryCachePolicyBase<TEntity, TId> : IRepositoryCache
     public abstract TEntity? Get(TId? id, Func<TId?, TEntity?> performGet, Func<TId[]?, IEnumerable<TEntity>?> performGetAll);
 
     /// <inheritdoc />
+    public abstract Task<TEntity?> GetAsync(TId? id, Func<TId?, CancellationToken?, Task<TEntity?>> performGetAsync, Func<CancellationToken?, TId[]?, Task<IEnumerable<TEntity>>> performGetAllAsync, CancellationToken? cancellationToken = null);
+
+    /// <inheritdoc />
     public abstract TEntity? GetCached(TId id);
+
+    /// <inheritdoc />
+    public abstract Task<TEntity?> GetCachedAsync(TId id, CancellationToken? cancellationToken = null);
 
     /// <inheritdoc />
     public abstract bool Exists(TId id, Func<TId, bool> performExists, Func<TId[], IEnumerable<TEntity>?> performGetAll);
 
     /// <inheritdoc />
+    public abstract Task<bool> ExistsAsync(TId id, Func<TId, CancellationToken?, Task<bool>> performExistsAsync, Func<CancellationToken?, TId[], Task<IEnumerable<TEntity>>> performGetAllAsync, CancellationToken? cancellationToken = null);
+
+    /// <inheritdoc />
     public abstract void Create(TEntity entity, Action<TEntity> persistNew);
+
+    /// <inheritdoc />
+    public abstract Task CreateAsync(TEntity entity, Func<TEntity, CancellationToken?, Task> persistNewAsync, CancellationToken? cancellationToken = null);
 
     /// <inheritdoc />
     public abstract void Update(TEntity entity, Action<TEntity> persistUpdated);
 
     /// <inheritdoc />
+    public abstract Task UpdateAsync(TEntity entity, Func<TEntity, CancellationToken?, Task> persistUpdatedAsync, CancellationToken? cancellationToken = null);
+
+    /// <inheritdoc />
     public abstract void Delete(TEntity entity, Action<TEntity> persistDeleted);
 
     /// <inheritdoc />
+    public abstract Task DeleteAsync(TEntity entity, Func<TEntity, CancellationToken?, Task> persistDeletedAsync, CancellationToken? cancellationToken = null);
+
+    /// <inheritdoc />
     public abstract TEntity[] GetAll(TId[]? ids, Func<TId[]?, IEnumerable<TEntity>?> performGetAll);
+
+    /// <inheritdoc />
+    public abstract Task<TEntity[]> GetAllAsync(TId[]? ids, Func<CancellationToken?, TId[]?, Task<IEnumerable<TEntity>>> performGetAllAsync, CancellationToken? cancellationToken = null);
 
     /// <inheritdoc />
     public abstract void ClearAll();
