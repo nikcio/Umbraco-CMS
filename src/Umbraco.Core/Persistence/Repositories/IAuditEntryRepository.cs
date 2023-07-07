@@ -15,7 +15,7 @@ public interface IAuditEntryRepository : IReadWriteQueryRepository<int, IAuditEn
     /// <summary>
     ///     Gets a page of entries.
     /// </summary>
-    Task<(IEnumerable<IAuditEntry> Results, int Records)> GetPageAsync(long pageIndex, int pageCount, CancellationToken? cancellationToken = null);
+    Task<(IEnumerable<IAuditEntry> Results, long Records)> GetPageAsync(long pageIndex, int pageCount, CancellationToken? cancellationToken = null);
 
     /// <summary>
     ///     Determines whether the repository is available.
