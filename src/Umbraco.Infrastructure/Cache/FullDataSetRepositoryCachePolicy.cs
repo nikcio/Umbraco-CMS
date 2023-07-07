@@ -53,6 +53,24 @@ internal class FullDataSetRepositoryCachePolicy<TEntity, TId> : RepositoryCacheP
         }
     }
 
+    /// <inheritdoc />
+    public override async Task CreateAsync(TEntity entity, Func<TEntity, CancellationToken?, Task> persistNewAsync, CancellationToken? cancellationToken = null)
+    {
+        if (entity == null)
+        {
+            throw new ArgumentNullException(nameof(entity));
+        }
+
+        try
+        {
+            await persistNewAsync(entity, cancellationToken);
+        }
+        finally
+        {
+            ClearAll();
+        }
+    }
+
     protected string GetEntityTypeCacheKey() => $"uRepo_{typeof(TEntity).Name}_";
 
     protected void InsertEntities(TEntity[]? entities)
@@ -103,6 +121,24 @@ internal class FullDataSetRepositoryCachePolicy<TEntity, TId> : RepositoryCacheP
     }
 
     /// <inheritdoc />
+    public override async Task UpdateAsync(TEntity entity, Func<TEntity, CancellationToken?, Task> persistUpdatedAsync, CancellationToken? cancellationToken = null)
+    {
+        if (entity == null)
+        {
+            throw new ArgumentNullException(nameof(entity));
+        }
+
+        try
+        {
+            await persistUpdatedAsync(entity, cancellationToken);
+        }
+        finally
+        {
+            ClearAll();
+        }
+    }
+
+    /// <inheritdoc />
     public override void Delete(TEntity entity, Action<TEntity> persistDeleted)
     {
         if (entity == null)
@@ -121,10 +157,40 @@ internal class FullDataSetRepositoryCachePolicy<TEntity, TId> : RepositoryCacheP
     }
 
     /// <inheritdoc />
+    public override async Task DeleteAsync(TEntity entity, Func<TEntity, CancellationToken?, Task> persistDeletedAsync, CancellationToken? cancellationToken = null)
+    {
+        if (entity == null)
+        {
+            throw new ArgumentNullException(nameof(entity));
+        }
+
+        try
+        {
+            await persistDeletedAsync(entity, cancellationToken);
+        }
+        finally
+        {
+            ClearAll();
+        }
+    }
+
+    /// <inheritdoc />
     public override TEntity? Get(TId? id, Func<TId?, TEntity?> performGet, Func<TId[]?, IEnumerable<TEntity>?> performGetAll)
     {
         // get all from the cache, then look for the entity
         IEnumerable<TEntity> all = GetAllCached(performGetAll);
+        TEntity? entity = all.FirstOrDefault(x => _entityGetId(x)?.Equals(id) ?? false);
+
+        // see note in InsertEntities - what we get here is the original
+        // cached entity, not a clone, so we need to manually ensure it is deep-cloned.
+        return (TEntity?)entity?.DeepClone();
+    }
+
+    /// <inheritdoc />
+    public override async Task<TEntity?> GetAsync(TId? id, Func<TId?, CancellationToken?, Task<TEntity?>> performGetAsync, Func<CancellationToken?, TId[]?, Task<IEnumerable<TEntity>>> performGetAllAsync, CancellationToken? cancellationToken = null)
+    {
+        // get all from the cache, then look for the entity
+        IEnumerable<TEntity> all = await GetAllCachedAsync(performGetAllAsync, cancellationToken);
         TEntity? entity = all.FirstOrDefault(x => _entityGetId(x)?.Equals(id) ?? false);
 
         // see note in InsertEntities - what we get here is the original
@@ -153,10 +219,36 @@ internal class FullDataSetRepositoryCachePolicy<TEntity, TId> : RepositoryCacheP
     }
 
     /// <inheritdoc />
+    public override async Task<bool> ExistsAsync(TId id, Func<TId, CancellationToken?, Task<bool>> performExistsAsync, Func<CancellationToken?, TId[], Task<IEnumerable<TEntity>>> performGetAllAsync, CancellationToken? cancellationToken = null)
+    {
+        // get all as one set, then look for the entity
+        IEnumerable<TEntity> all = await GetAllCachedAsync(performGetAllAsync, cancellationToken);
+        return all.Any(x => _entityGetId(x)?.Equals(id) ?? false);
+    }
+
+    /// <inheritdoc />
     public override TEntity[] GetAll(TId[]? ids, Func<TId[], IEnumerable<TEntity>?> performGetAll)
     {
         // get all as one set, from cache if possible, else repo
         IEnumerable<TEntity> all = GetAllCached(performGetAll);
+
+        // if ids have been specified, filter
+        if (ids?.Length > 0)
+        {
+            all = all.Where(x => ids.Contains(_entityGetId(x)));
+        }
+
+        // and return
+        // see note in SetCacheActionToInsertEntities - what we get here is the original
+        // cached entities, not clones, so we need to manually ensure they are deep-cloned.
+        return all.Select(x => (TEntity)x.DeepClone()).ToArray();
+    }
+
+    /// <inheritdoc />
+    public override async Task<TEntity[]> GetAllAsync(TId[]? ids, Func<CancellationToken?, TId[]?, Task<IEnumerable<TEntity>>> performGetAllAsync, CancellationToken? cancellationToken = null)
+    {
+        // get all as one set, from cache if possible, else repo
+        IEnumerable<TEntity> all = await GetAllCachedAsync(performGetAllAsync, cancellationToken);
 
         // if ids have been specified, filter
         if (ids?.Length > 0)
@@ -185,6 +277,22 @@ internal class FullDataSetRepositoryCachePolicy<TEntity, TId> : RepositoryCacheP
 
         // else get from repo and cache
         TEntity[]? entities = performGetAll(EmptyIds)?.WhereNotNull().ToArray();
+        InsertEntities(entities); // may be an empty array...
+        return entities ?? Enumerable.Empty<TEntity>();
+    }
+
+    // does NOT clone anything, so be nice with the returned values
+    internal async Task<IEnumerable<TEntity>> GetAllCachedAsync(Func<CancellationToken?, TId[], Task<IEnumerable<TEntity>>> performGetAllAsync, CancellationToken? cancellationToken = null)
+    {
+        // try the cache first
+        DeepCloneableList<TEntity>? all = Cache.GetCacheItem<DeepCloneableList<TEntity>>(GetEntityTypeCacheKey());
+        if (all != null)
+        {
+            return all.ToArray();
+        }
+
+        // else get from repo and cache
+        TEntity[]? entities = (await performGetAllAsync(cancellationToken, EmptyIds)).WhereNotNull().ToArray();
         InsertEntities(entities); // may be an empty array...
         return entities ?? Enumerable.Empty<TEntity>();
     }
