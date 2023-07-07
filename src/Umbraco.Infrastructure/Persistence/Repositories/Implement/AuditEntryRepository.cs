@@ -40,9 +40,29 @@ internal class AuditEntryRepository : EntityRepositoryBase<int, IAuditEntry>, IA
     }
 
     /// <inheritdoc />
+    public async Task<(IEnumerable<IAuditEntry> Results, long Records)> GetPageAsync(long pageIndex, int pageCount, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sql = Sql()
+            .Select<AuditEntryDto>()
+            .From<AuditEntryDto>()
+            .OrderByDescending<AuditEntryDto>(x => x.EventDateUtc);
+
+        Page<AuditEntryDto> page = await Database.PageAsync<AuditEntryDto>(pageIndex + 1, pageCount, sql);
+        var records = page.TotalItems;
+        return new (page.Items.Select(AuditEntryFactory.BuildEntity), records);
+    }
+
+    /// <inheritdoc />
     public bool IsAvailable()
     {
         var tables = SqlSyntax.GetTablesInSchema(Database).ToArray();
+        return tables.InvariantContains(Constants.DatabaseSchema.Tables.AuditEntry);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> IsAvailableAsync(CancellationToken? cancellationToken = null)
+    {
+        var tables = (await SqlSyntax.GetTablesInSchemaAsync(Database, cancellationToken)).ToArray();
         return tables.InvariantContains(Constants.DatabaseSchema.Tables.AuditEntry);
     }
 
@@ -55,6 +75,18 @@ internal class AuditEntryRepository : EntityRepositoryBase<int, IAuditEntry>, IA
             .Where<AuditEntryDto>(x => x.Id == id);
 
         AuditEntryDto dto = Database.FirstOrDefault<AuditEntryDto>(sql);
+        return dto == null ? null : AuditEntryFactory.BuildEntity(dto);
+    }
+
+    /// <inheritdoc />
+    protected override async Task<IAuditEntry?> PerformGetAsync(int id, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sql = Sql()
+            .Select<AuditEntryDto>()
+            .From<AuditEntryDto>()
+            .Where<AuditEntryDto>(x => x.Id == id);
+
+        AuditEntryDto dto = await Database.FirstOrDefaultAsync<AuditEntryDto>(sql);
         return dto == null ? null : AuditEntryFactory.BuildEntity(dto);
     }
 
@@ -86,12 +118,48 @@ internal class AuditEntryRepository : EntityRepositoryBase<int, IAuditEntry>, IA
     }
 
     /// <inheritdoc />
+    protected override async Task<IEnumerable<IAuditEntry>> PerformGetAllAsync(CancellationToken? cancellationToken = null, params int[]? ids)
+    {
+        if (ids?.Length == 0)
+        {
+            Sql<ISqlContext> sql = Sql()
+                .Select<AuditEntryDto>()
+                .From<AuditEntryDto>();
+
+            return (await Database.FetchAsync<AuditEntryDto>(sql)).Select(AuditEntryFactory.BuildEntity);
+        }
+
+        var entries = new List<IAuditEntry>();
+
+        foreach (IEnumerable<int> group in ids.InGroupsOf(Constants.Sql.MaxParameterCount))
+        {
+            Sql<ISqlContext> sql = Sql()
+                .Select<AuditEntryDto>()
+                .From<AuditEntryDto>()
+                .WhereIn<AuditEntryDto>(x => x.Id, group);
+
+            entries.AddRange((await Database.FetchAsync<AuditEntryDto>(sql)).Select(AuditEntryFactory.BuildEntity));
+        }
+
+        return entries;
+    }
+
+    /// <inheritdoc />
     protected override IEnumerable<IAuditEntry> PerformGetByQuery(IQuery<IAuditEntry> query)
     {
         Sql<ISqlContext> sqlClause = GetBaseQuery(false);
         var translator = new SqlTranslator<IAuditEntry>(sqlClause, query);
         Sql<ISqlContext> sql = translator.Translate();
         return Database.Fetch<AuditEntryDto>(sql).Select(AuditEntryFactory.BuildEntity);
+    }
+
+    /// <inheritdoc />
+    protected override async Task<IEnumerable<IAuditEntry>> PerformGetByQueryAsync(IQuery<IAuditEntry> query, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sqlClause = GetBaseQuery(false);
+        var translator = new SqlTranslator<IAuditEntry>(sqlClause, query);
+        Sql<ISqlContext> sql = translator.Translate();
+        return (await Database.FetchAsync<AuditEntryDto>(sql)).Select(AuditEntryFactory.BuildEntity);
     }
 
     /// <inheritdoc />
@@ -122,6 +190,20 @@ internal class AuditEntryRepository : EntityRepositoryBase<int, IAuditEntry>, IA
     }
 
     /// <inheritdoc />
+    protected override async Task PersistNewItemAsync(IAuditEntry item, CancellationToken? cancellationToken = null)
+    {
+        item.AddingEntity();
+
+        AuditEntryDto dto = AuditEntryFactory.BuildDto(item);
+        await Database.InsertAsync(dto);
+        item.Id = dto.Id;
+        item.ResetDirtyProperties();
+    }
+
+    /// <inheritdoc />
     protected override void PersistUpdatedItem(IAuditEntry entity) =>
         throw new NotSupportedException("Audit entries cannot be updated.");
+
+    /// <inheritdoc />
+    protected override Task PersistUpdatedItemAsync(IAuditEntry item, CancellationToken? cancellationToken = null) => throw new NotSupportedException("Audit entries cannot be updated.");
 }
