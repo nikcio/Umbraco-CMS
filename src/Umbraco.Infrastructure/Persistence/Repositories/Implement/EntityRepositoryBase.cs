@@ -122,16 +122,44 @@ public abstract class EntityRepositoryBase<TId, TEntity> : RepositoryBase, IRead
     }
 
     /// <summary>
+    ///     Adds or Updates an entity of type TEntity
+    /// </summary>
+    /// <remarks>This method is backed by an <see cref="IAppPolicyCache" /> cache</remarks>
+    public virtual async Task SaveAsync(TEntity entity, CancellationToken? cancellationToken = null)
+    {
+        if (entity.HasIdentity == false)
+        {
+            await CachePolicy.CreateAsync(entity, PersistNewItemAsync, cancellationToken);
+        }
+        else
+        {
+            await CachePolicy.UpdateAsync(entity, PersistUpdatedItemAsync, cancellationToken);
+        }
+    }
+
+    /// <summary>
     ///     Deletes the passed in entity
     /// </summary>
     public virtual void Delete(TEntity entity)
         => CachePolicy.Delete(entity, PersistDeletedItem);
 
     /// <summary>
+    ///     Deletes the passed in entity
+    /// </summary>
+    public virtual async Task DeleteAsync(TEntity entity, CancellationToken? cancellationToken = null)
+        => CachePolicy.DeleteAsync(entity, PersistDeletedItemAsync, cancellationToken);
+
+    /// <summary>
     ///     Gets an entity by the passed in Id utilizing the repository's cache policy
     /// </summary>
     public TEntity? Get(TId? id)
         => CachePolicy.Get(id, PerformGet, PerformGetAll);
+
+    /// <summary>
+    ///     Gets an entity by the passed in Id utilizing the repository's cache policy
+    /// </summary>
+    public async Task<TEntity?> GetAsync(TId? id, CancellationToken? cancellationToken = null)
+        => await CachePolicy.GetAsync(id, PerformGetAsync, PerformGetAllAsync, cancellationToken);
 
     /// <summary>
     ///     Gets all entities of type TEntity or a list according to the passed in Ids
@@ -164,6 +192,36 @@ public abstract class EntityRepositoryBase<TId, TEntity> : RepositoryBase, IRead
     }
 
     /// <summary>
+    ///     Gets all entities of type TEntity or a list according to the passed in Ids
+    /// </summary>
+    public async Task<IEnumerable<TEntity>> GetManyAsync(CancellationToken? cancellationToken = null, params TId[]? ids)
+    {
+        // ensure they are de-duplicated, easy win if people don't do this as this can cause many excess queries
+        ids = ids?.Distinct()
+
+            // don't query by anything that is a default of T (like a zero)
+            // TODO: I think we should enabled this in case accidental calls are made to get all with invalid ids
+            // .Where(x => Equals(x, default(TId)) == false)
+            .ToArray();
+
+        // can't query more than 2000 ids at a time... but if someone is really querying 2000+ entities,
+        // the additional overhead of fetching them in groups is minimal compared to the lookup time of each group
+        if (ids?.Length <= Constants.Sql.MaxParameterCount)
+        {
+            return await CachePolicy.GetAllAsync(ids, PerformGetAllAsync, cancellationToken);
+        }
+
+        var entities = new List<TEntity>();
+        foreach (IEnumerable<TId> group in ids.InGroupsOf(Constants.Sql.MaxParameterCount))
+        {
+            TEntity[] groups = await CachePolicy.GetAllAsync(group.ToArray(), PerformGetAllAsync, cancellationToken);
+            entities.AddRange(groups);
+        }
+
+        return entities;
+    }
+
+    /// <summary>
     ///     Gets a list of entities by the passed in query
     /// </summary>
     public IEnumerable<TEntity> Get(IQuery<TEntity> query) =>
@@ -173,16 +231,37 @@ public abstract class EntityRepositoryBase<TId, TEntity> : RepositoryBase, IRead
             .WhereNotNull();
 
     /// <summary>
+    ///     Gets a list of entities by the passed in query
+    /// </summary>
+    public async Task<IEnumerable<TEntity>> GetAsync(IQuery<TEntity> query, CancellationToken? cancellationToken = null) =>
+
+        // ensure we don't include any null refs in the returned collection!
+        (await PerformGetByQueryAsync(query, cancellationToken))
+            .WhereNotNull();
+
+    /// <summary>
     ///     Returns a boolean indicating whether an entity with the passed Id exists
     /// </summary>
     public bool Exists(TId id)
         => CachePolicy.Exists(id, PerformExists, PerformGetAll);
 
     /// <summary>
+    ///     Returns a boolean indicating whether an entity with the passed Id exists
+    /// </summary>
+    public async Task<bool> ExistsAsync(TId id, CancellationToken? cancellationToken = null)
+        => await CachePolicy.ExistsAsync(id, PerformExistsAsync, PerformGetAllAsync, cancellationToken);
+
+    /// <summary>
     ///     Returns an integer with the count of entities found with the passed in query
     /// </summary>
     public int Count(IQuery<TEntity> query)
         => PerformCount(query);
+
+    /// <summary>
+    ///     Returns an integer with the count of entities found with the passed in query
+    /// </summary>
+    public async Task<int> CountAsync(IQuery<TEntity> query, CancellationToken? cancellationToken = null)
+        => await PerformCountAsync(query, cancellationToken);
 
     /// <summary>
     ///     Get the entity id for the <see cref="TEntity" />
@@ -198,13 +277,23 @@ public abstract class EntityRepositoryBase<TId, TEntity> : RepositoryBase, IRead
 
     protected abstract TEntity? PerformGet(TId? id);
 
+    protected abstract Task<TEntity?> PerformGetAsync(TId? id, CancellationToken? cancellationToken = null);
+
     protected abstract IEnumerable<TEntity> PerformGetAll(params TId[]? ids);
+
+    protected abstract Task<IEnumerable<TEntity>> PerformGetAllAsync(CancellationToken? cancellationToken = null, params TId[]? ids);
 
     protected abstract IEnumerable<TEntity> PerformGetByQuery(IQuery<TEntity> query);
 
+    protected abstract Task<IEnumerable<TEntity>> PerformGetByQueryAsync(IQuery<TEntity> query, CancellationToken? cancellationToken = null);
+
     protected abstract void PersistNewItem(TEntity item);
 
+    protected abstract Task PersistNewItemAsync(TEntity item, CancellationToken? cancellationToken = null);
+
     protected abstract void PersistUpdatedItem(TEntity item);
+
+    protected abstract Task PersistUpdatedItemAsync(TEntity item, CancellationToken? cancellationToken = null);
 
     // TODO: obsolete, use QueryType instead everywhere like GetBaseQuery(QueryType queryType);
     protected abstract Sql<ISqlContext> GetBaseQuery(bool isCount);
@@ -221,6 +310,14 @@ public abstract class EntityRepositoryBase<TId, TEntity> : RepositoryBase, IRead
         return count == 1;
     }
 
+    protected virtual async Task<bool> PerformExistsAsync(TId id, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sql = GetBaseQuery(true);
+        sql.Where(GetBaseWhereClause(), new { id });
+        var count = await Database.ExecuteScalarAsync<int>(sql);
+        return count == 1;
+    }
+
     protected virtual int PerformCount(IQuery<TEntity> query)
     {
         Sql<ISqlContext> sqlClause = GetBaseQuery(true);
@@ -230,12 +327,32 @@ public abstract class EntityRepositoryBase<TId, TEntity> : RepositoryBase, IRead
         return Database.ExecuteScalar<int>(sql);
     }
 
+    protected virtual async Task<int> PerformCountAsync(IQuery<TEntity> query, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sqlClause = GetBaseQuery(true);
+        var translator = new SqlTranslator<TEntity>(sqlClause, query);
+        Sql<ISqlContext> sql = translator.Translate();
+
+        return await Database.ExecuteScalarAsync<int>(sql);
+    }
+
     protected virtual void PersistDeletedItem(TEntity entity)
     {
         IEnumerable<string> deletes = GetDeleteClauses();
         foreach (var delete in deletes)
         {
             Database.Execute(delete, new { id = GetEntityId(entity) });
+        }
+
+        entity.DeleteDate = DateTime.Now;
+    }
+
+    protected virtual async Task PersistDeletedItemAsync(TEntity entity, CancellationToken? cancellationToken = null)
+    {
+        IEnumerable<string> deletes = GetDeleteClauses();
+        foreach (var delete in deletes)
+        {
+            await Database.ExecuteAsync(delete, new { id = GetEntityId(entity) });
         }
 
         entity.DeleteDate = DateTime.Now;
