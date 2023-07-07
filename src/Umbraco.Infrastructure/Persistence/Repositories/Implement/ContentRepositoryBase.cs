@@ -97,12 +97,22 @@ namespace Umbraco.Cms.Infrastructure.Persistence.Repositories.Implement
         // gets a specific version
         public abstract TEntity? GetVersion(int versionId);
 
+        // gets a specific version
+        public abstract Task<TEntity?> GetVersionAsync(int versionId, CancellationToken? cancellationToken = null);
+
         // gets all versions, current first
         public abstract IEnumerable<TEntity> GetAllVersions(int nodeId);
 
         // gets all versions, current first
+        public abstract Task<IEnumerable<TEntity>> GetAllVersionsAsync(int nodeId, CancellationToken? cancellationToken = null);
+
+        // gets all versions, current first
         public virtual IEnumerable<TEntity> GetAllVersionsSlim(int nodeId, int skip, int take)
             => GetAllVersions(nodeId).Skip(skip).Take(take);
+
+        // gets all versions, current first
+        public virtual async Task<IEnumerable<TEntity>> GetAllVersionsSlimAsync(int nodeId, int skip, int take, CancellationToken? cancellationToken = null)
+            => (await GetAllVersionsAsync(nodeId, cancellationToken)).Skip(skip).Take(take);
 
         // gets all version ids, current first
         public virtual IEnumerable<int> GetVersionIds(int nodeId, int maxRows)
@@ -115,6 +125,19 @@ namespace Umbraco.Cms.Infrastructure.Persistence.Repositories.Implement
                     .AndByDescending<ContentVersionDto>(x => x.VersionDate)); // most recent first
 
             return Database.Fetch<int>(SqlSyntax.SelectTop(template.Sql(nodeId), maxRows));
+        }
+
+        // gets all version ids, current first
+        public virtual async Task<IEnumerable<int>> GetVersionIdsAsync(int id, int topRows, CancellationToken? cancellationToken = null)
+        {
+            SqlTemplate template = SqlContext.Templates.Get(Constants.SqlTemplates.VersionableRepository.GetVersionIds, tsql =>
+                tsql.Select<ContentVersionDto>(x => x.Id)
+                    .From<ContentVersionDto>()
+                    .Where<ContentVersionDto>(x => x.NodeId == SqlTemplate.Arg<int>("nodeId"))
+                    .OrderByDescending<ContentVersionDto>(x => x.Current) // current '1' comes before others '0'
+                    .AndByDescending<ContentVersionDto>(x => x.VersionDate)); // most recent first
+
+            return await Database.FetchAsync<int>(SqlSyntax.SelectTop(template.Sql(id), topRows));
         }
 
         // deletes a specific version
@@ -142,6 +165,30 @@ namespace Umbraco.Cms.Infrastructure.Persistence.Repositories.Implement
             PerformDeleteVersion(versionDto.NodeId, versionId);
         }
 
+        public virtual async Task DeleteVersionAsync(int versionId, CancellationToken? cancellationToken = null)
+        {
+            // TODO: test object node type?
+
+            // get the version we want to delete
+            SqlTemplate template = SqlContext.Templates.Get(Constants.SqlTemplates.VersionableRepository.GetVersion, tsql =>
+                tsql.Select<ContentVersionDto>().From<ContentVersionDto>().Where<ContentVersionDto>(x => x.Id == SqlTemplate.Arg<int>("versionId")));
+            ContentVersionDto? versionDto = (await Database.FetchAsync<ContentVersionDto>(template.Sql(new { versionId }))).FirstOrDefault();
+
+            // nothing to delete
+            if (versionDto == null)
+            {
+                return;
+            }
+
+            // don't delete the current version
+            if (versionDto.Current)
+            {
+                throw new InvalidOperationException("Cannot delete the current version.");
+            }
+
+            await PerformDeleteVersionAsync(versionDto.NodeId, versionId, cancellationToken);
+        }
+
         // deletes all versions of an entity, older than a date.
         public virtual void DeleteVersions(int nodeId, DateTime versionDate)
         {
@@ -164,8 +211,33 @@ namespace Umbraco.Cms.Infrastructure.Persistence.Repositories.Implement
             }
         }
 
+        // deletes all versions of an entity, older than a date.
+        public virtual async Task DeleteVersionsAsync(int nodeId, DateTime versionDate, CancellationToken? cancellationToken = null)
+        {
+            // TODO: test object node type?
+
+            // get the versions we want to delete, excluding the current one
+            SqlTemplate template = SqlContext.Templates.Get(
+                Constants.SqlTemplates.VersionableRepository.GetVersions,
+                tsql =>
+                tsql.Select<ContentVersionDto>()
+                    .From<ContentVersionDto>()
+                    .Where<ContentVersionDto>(x =>
+                        x.NodeId == SqlTemplate.Arg<int>("nodeId") &&
+                        !x.Current &&
+                        x.VersionDate < SqlTemplate.Arg<DateTime>("versionDate")));
+            List<ContentVersionDto>? versionDtos = await Database.FetchAsync<ContentVersionDto>(template.Sql(new { nodeId, versionDate }));
+            foreach (ContentVersionDto versionDto in versionDtos)
+            {
+                await PerformDeleteVersionAsync(versionDto.NodeId, versionDto.Id, cancellationToken);
+            }
+        }
+
         // actually deletes a version
         protected abstract void PerformDeleteVersion(int id, int versionId);
+
+        // actually deletes a version
+        protected abstract Task PerformDeleteVersionAsync(int id, int versionId, CancellationToken? cancellationToken = null);
 
         #endregion
 
@@ -206,6 +278,40 @@ namespace Umbraco.Cms.Infrastructure.Persistence.Repositories.Implement
         }
 
         /// <summary>
+        /// Count descendants of an item.
+        /// </summary>
+        public async Task<int> CountDescendantsAsync(int parentId, string? contentTypeAlias = null, CancellationToken? cancellationToken = null)
+        {
+            var pathMatch = parentId == -1
+                ? "-1,"
+                : "," + parentId + ",";
+
+            Sql<ISqlContext> sql = SqlContext.Sql()
+                .SelectCount()
+                .From<NodeDto>();
+
+            if (contentTypeAlias.IsNullOrWhiteSpace())
+            {
+                sql
+                    .Where<NodeDto>(x => x.NodeObjectType == NodeObjectTypeId)
+                    .Where<NodeDto>(x => x.Path.Contains(pathMatch));
+            }
+            else
+            {
+                sql
+                    .InnerJoin<ContentDto>()
+                    .On<NodeDto, ContentDto>(left => left.NodeId, right => right.NodeId)
+                    .InnerJoin<ContentTypeDto>()
+                    .On<ContentTypeDto, ContentDto>(left => left.NodeId, right => right.ContentTypeId)
+                    .Where<NodeDto>(x => x.NodeObjectType == NodeObjectTypeId)
+                    .Where<NodeDto>(x => x.Path.Contains(pathMatch))
+                    .Where<ContentTypeDto>(x => x.Alias == contentTypeAlias);
+            }
+
+            return await Database.ExecuteScalarAsync<int>(sql);
+        }
+
+        /// <summary>
         /// Count children of an item.
         /// </summary>
         public int CountChildren(int parentId, string? contentTypeAlias = null)
@@ -235,6 +341,33 @@ namespace Umbraco.Cms.Infrastructure.Persistence.Repositories.Implement
             return Database.ExecuteScalar<int>(sql);
         }
 
+        public async Task<int> CountChildrenAsync(int parentId, string? contentTypeAlias = null, CancellationToken? cancellationToken = null)
+        {
+            Sql<ISqlContext> sql = SqlContext.Sql()
+                .SelectCount()
+                .From<NodeDto>();
+
+            if (contentTypeAlias.IsNullOrWhiteSpace())
+            {
+                sql
+                    .Where<NodeDto>(x => x.NodeObjectType == NodeObjectTypeId)
+                    .Where<NodeDto>(x => x.ParentId == parentId);
+            }
+            else
+            {
+                sql
+                    .InnerJoin<ContentDto>()
+                    .On<NodeDto, ContentDto>(left => left.NodeId, right => right.NodeId)
+                    .InnerJoin<ContentTypeDto>()
+                    .On<ContentTypeDto, ContentDto>(left => left.NodeId, right => right.ContentTypeId)
+                    .Where<NodeDto>(x => x.NodeObjectType == NodeObjectTypeId)
+                    .Where<NodeDto>(x => x.ParentId == parentId)
+                    .Where<ContentTypeDto>(x => x.Alias == contentTypeAlias);
+            }
+
+            return await Database.ExecuteScalarAsync<int>(sql);
+        }
+
         /// <summary>
         /// Count items.
         /// </summary>
@@ -261,6 +394,34 @@ namespace Umbraco.Cms.Infrastructure.Persistence.Repositories.Implement
             }
 
             return Database.ExecuteScalar<int>(sql);
+        }
+
+        /// <summary>
+        /// Count items.
+        /// </summary>
+        public async Task<int> CountAsync(string? contentTypeAlias = null, CancellationToken? cancellationToken = null)
+        {
+            Sql<ISqlContext> sql = SqlContext.Sql()
+                .SelectCount()
+                .From<NodeDto>();
+
+            if (contentTypeAlias.IsNullOrWhiteSpace())
+            {
+                sql
+                    .Where<NodeDto>(x => x.NodeObjectType == NodeObjectTypeId);
+            }
+            else
+            {
+                sql
+                    .InnerJoin<ContentDto>()
+                    .On<NodeDto, ContentDto>(left => left.NodeId, right => right.NodeId)
+                    .InnerJoin<ContentTypeDto>()
+                    .On<ContentTypeDto, ContentDto>(left => left.NodeId, right => right.ContentTypeId)
+                    .Where<NodeDto>(x => x.NodeObjectType == NodeObjectTypeId)
+                    .Where<ContentTypeDto>(x => x.Alias == contentTypeAlias);
+            }
+
+            return await Database.ExecuteScalarAsync<int>(sql);
         }
 
         #endregion
@@ -573,6 +734,8 @@ namespace Umbraco.Cms.Infrastructure.Persistence.Repositories.Implement
 
         public abstract IEnumerable<TEntity> GetPage(IQuery<TEntity>? query, long pageIndex, int pageSize, out long totalRecords, IQuery<TEntity>? filter, Ordering? ordering);
 
+        public abstract Task<(IEnumerable<TEntity> Results, long TotalRecords)> GetPageAsync(IQuery<TEntity>? query, long pageIndex, int pageSize, IQuery<TEntity>? filter, Ordering? ordering, CancellationToken? cancellationToken = null);
+
         public ContentDataIntegrityReport CheckDataIntegrity(ContentDataIntegrityReportOptions options)
         {
             var report = new Dictionary<int, ContentDataIntegrityReportEntry>();
@@ -678,6 +841,121 @@ namespace Umbraco.Cms.Infrastructure.Persistence.Repositories.Implement
                 foreach (NodeDto node in updated)
                 {
                     Database.Update(node);
+                    if (report.TryGetValue(node.NodeId, out ContentDataIntegrityReportEntry? entry))
+                    {
+                        entry.Fixed = true;
+                    }
+                }
+            }
+
+            return new ContentDataIntegrityReport(report);
+        }
+
+        public async Task<ContentDataIntegrityReport> CheckDataIntegrityAsync(ContentDataIntegrityReportOptions options, CancellationToken? cancellationToken = null)
+        {
+            var report = new Dictionary<int, ContentDataIntegrityReportEntry>();
+
+            Sql<ISqlContext> sql = SqlContext.Sql()
+                .Select<NodeDto>()
+                .From<NodeDto>()
+                .Where<NodeDto>(x => x.NodeObjectType == NodeObjectTypeId)
+                .OrderBy<NodeDto>(x => x.Level, x => x.ParentId, x => x.SortOrder);
+
+            var nodesToRebuild = new Dictionary<int, List<NodeDto>>();
+            var validNodes = new Dictionary<int, NodeDto>();
+            var rootIds = new[] { Constants.System.Root, Constants.System.RecycleBinContent, Constants.System.RecycleBinMedia };
+            var currentParentIds = new HashSet<int>(rootIds);
+            HashSet<int> prevParentIds = currentParentIds;
+            var lastLevel = -1;
+
+            // use a forward cursor (query)
+            await foreach (NodeDto? node in Database.QueryAsync<NodeDto>(sql))
+            {
+                if (node.Level != lastLevel)
+                {
+                    // changing levels
+                    prevParentIds = currentParentIds;
+                    currentParentIds = null;
+                    lastLevel = node.Level;
+                }
+
+                if (currentParentIds == null)
+                {
+                    // we're reset
+                    currentParentIds = new HashSet<int>();
+                }
+
+                currentParentIds.Add(node.NodeId);
+
+                // paths parts without the roots
+                var pathParts = node.Path.Split(Constants.CharArrays.Comma).Where(x => !rootIds.Contains(int.Parse(x, CultureInfo.InvariantCulture))).ToArray();
+
+                if (!prevParentIds.Contains(node.ParentId))
+                {
+                    // invalid, this will be because the level is wrong (which prob means path is wrong too)
+                    report.Add(node.NodeId, new ContentDataIntegrityReportEntry(ContentDataIntegrityReport.IssueType.InvalidPathAndLevelByParentId));
+                    AppendNodeToFix(nodesToRebuild, node);
+                }
+                else if (pathParts.Length == 0)
+                {
+                    // invalid path
+                    report.Add(node.NodeId, new ContentDataIntegrityReportEntry(ContentDataIntegrityReport.IssueType.InvalidPathEmpty));
+                    AppendNodeToFix(nodesToRebuild, node);
+                }
+                else if (pathParts.Length != node.Level)
+                {
+                    // invalid, either path or level is wrong
+                    report.Add(node.NodeId, new ContentDataIntegrityReportEntry(ContentDataIntegrityReport.IssueType.InvalidPathLevelMismatch));
+                    AppendNodeToFix(nodesToRebuild, node);
+                }
+                else if (pathParts[pathParts.Length - 1] != node.NodeId.ToString())
+                {
+                    // invalid path
+                    report.Add(node.NodeId, new ContentDataIntegrityReportEntry(ContentDataIntegrityReport.IssueType.InvalidPathById));
+                    AppendNodeToFix(nodesToRebuild, node);
+                }
+                else if (!rootIds.Contains(node.ParentId) && pathParts[pathParts.Length - 2] != node.ParentId.ToString())
+                {
+                    // invalid path
+                    report.Add(node.NodeId, new ContentDataIntegrityReportEntry(ContentDataIntegrityReport.IssueType.InvalidPathByParentId));
+                    AppendNodeToFix(nodesToRebuild, node);
+                }
+                else
+                {
+                    // it's valid!
+
+                    // don't track unless we are configured to fix
+                    if (options.FixIssues)
+                    {
+                        validNodes.Add(node.NodeId, node);
+                    }
+                }
+            }
+
+            var updated = new List<NodeDto>();
+
+            if (options.FixIssues)
+            {
+                // iterate all valid nodes to see if these are parents for invalid nodes
+                foreach (var (nodeId, node) in validNodes)
+                {
+                    if (!nodesToRebuild.TryGetValue(nodeId, out List<NodeDto>? invalidNodes))
+                    {
+                        continue;
+                    }
+
+                    // now we can try to rebuild the invalid paths.
+                    foreach (NodeDto invalidNode in invalidNodes)
+                    {
+                        invalidNode.Level = (short)(node.Level + 1);
+                        invalidNode.Path = node.Path + "," + invalidNode.NodeId;
+                        updated.Add(invalidNode);
+                    }
+                }
+
+                foreach (NodeDto node in updated)
+                {
+                    await Database.UpdateAsync(node);
                     if (report.TryGetValue(node.NodeId, out ContentDataIntegrityReportEntry? entry))
                     {
                         entry.Fixed = true;
@@ -1076,6 +1354,11 @@ namespace Umbraco.Cms.Infrastructure.Persistence.Repositories.Implement
         public virtual IEnumerable<TEntity>? GetRecycleBin()
         {
             return Get(Query<TEntity>().Where(entity => entity.Trashed));
+        }
+
+        public virtual async Task<IEnumerable<TEntity>?> GetRecycleBinAsync(CancellationToken? cancellationToken = null)
+        {
+            return await GetAsync(Query<TEntity>().Where(entity => entity.Trashed), cancellationToken);
         }
 
         #endregion
