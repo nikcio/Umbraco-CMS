@@ -153,6 +153,25 @@ public class SqliteSyntaxProvider : SqlSyntaxProviderBase<SqliteSyntaxProvider>
             .ToList();
     }
 
+    public override async Task<IEnumerable<Tuple<string, string, string, bool>>> GetDefinedIndexesAsync(IDatabase db, CancellationToken? cancellationToken = null)
+    {
+        List<IndexMeta> items = await db.FetchAsync<IndexMeta>(
+            @"SELECT
+                m.tbl_name AS tableName,
+                ilist.name AS indexName,
+                iinfo.name AS columnName,
+                ilist.[unique] AS isUnique
+            FROM
+                sqlite_master AS m,
+                pragma_index_list(m.name) AS ilist,
+                pragma_index_info(ilist.name) AS iinfo");
+
+        return items
+            .Where(x => !x.IndexName.StartsWith("sqlite_"))
+            .Select(item =>
+                new Tuple<string, string, string, bool>(item.TableName, item.IndexName, item.ColumnName, item.IsUnique))
+            .ToList();
+    }
 
     public override string ConvertIntegerToOrderableString => "substr('0000000000'||'{0}', -10, 10)";
 
@@ -326,8 +345,56 @@ public class SqliteSyntaxProvider : SqlSyntaxProviderBase<SqliteSyntaxProvider>
         }
     }
 
+    public override async Task HandleCreateTableAsync(IDatabase database, TableDefinition tableDefinition, bool skipKeysAndIndexes = false, CancellationToken? cancellationToken = null)
+    {
+        var columns = Format(tableDefinition.Columns);
+        var primaryKey = FormatPrimaryKey(tableDefinition);
+        List<string> foreignKeys = Format(tableDefinition.ForeignKeys);
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"CREATE TABLE {tableDefinition.Name}");
+        sb.AppendLine("(");
+        sb.Append(columns);
+
+        if (!string.IsNullOrEmpty(primaryKey) && !skipKeysAndIndexes)
+        {
+            sb.AppendLine($", {primaryKey}");
+        }
+
+        if (!skipKeysAndIndexes)
+        {
+            foreach (var foreignKey in foreignKeys)
+            {
+                sb.AppendLine($", {foreignKey}");
+            }
+        }
+
+        sb.AppendLine(")");
+
+        var createSql = sb.ToString();
+
+        _log.LogInformation("Create table:\n {Sql}", createSql);
+        await database.ExecuteAsync(new Sql(createSql));
+
+        if (skipKeysAndIndexes)
+        {
+            return;
+        }
+
+        List<string> indexSql = Format(tableDefinition.Indexes);
+        foreach (var sql in indexSql)
+        {
+            _log.LogInformation("Create Index:\n {Sql}", sql);
+            await database.ExecuteAsync(new Sql(sql));
+        }
+    }
+
     public override IEnumerable<string> GetTablesInSchema(IDatabase db) =>
         db.Fetch<string>("select name from sqlite_master where type='table'")
+            .Where(x => !x.StartsWith("sqlite_"));
+
+    public override async Task<IEnumerable<string>> GetTablesInSchemaAsync(IDatabase db, CancellationToken? cancellationToken = null) =>
+        (await db.FetchAsync<string>("select name from sqlite_master where type='table'"))
             .Where(x => !x.StartsWith("sqlite_"));
 
     public override IEnumerable<ColumnInfo> GetColumnsInSchema(IDatabase db)
@@ -353,10 +420,85 @@ public class SqliteSyntaxProvider : SqlSyntaxProviderBase<SqliteSyntaxProvider>
         db.CompleteTransaction();
     }
 
+    public override async Task<IEnumerable<ColumnInfo>> GetColumnsInSchemaAsync(IDatabase db, CancellationToken? cancellationToken = null)
+    {
+        IEnumerable<string> tables = await GetTablesInSchemaAsync(db, cancellationToken);
+
+        var columns = new List<ColumnInfo>();
+
+        db.BeginTransaction();
+        foreach (var table in tables)
+        {
+            DbCommand? cmd = db.CreateCommand(db.Connection, CommandType.Text, $"PRAGMA table_info({table})");
+            DbDataReader reader = await cmd.ExecuteReaderAsync();
+
+            while (reader.Read())
+            {
+                var ordinal = reader.GetInt32("cid");
+                var columnName = reader.GetString("name");
+                var type = reader.GetString("type");
+                var notNull = reader.GetBoolean("notnull");
+                columns.Add(new ColumnInfo(table, columnName, ordinal, notNull, type));
+            }
+        }
+
+        db.CompleteTransaction();
+
+        return columns;
+    }
+
     /// <inheritdoc />
     public override IEnumerable<Tuple<string, string, string>> GetConstraintsPerColumn(IDatabase db)
     {
         IEnumerable<SqliteMaster> items = db.Fetch<SqliteMaster>("select * from sqlite_master where type = 'table'")
+            .Where(x => !x.Name.StartsWith("sqlite_"));
+
+        List<Constraint> foundConstraints = new();
+        foreach (SqliteMaster row in items)
+        {
+            Match altPk = Regex.Match(row.Sql, @"CONSTRAINT (?<constraint>PK_\w+)\s.*UNIQUE \(""(?<field>.+?)""\)");
+            if (altPk.Success)
+            {
+                var field = altPk.Groups["field"].Value;
+                var constraint = altPk.Groups["constraint"].Value;
+                foundConstraints.Add(new Constraint(row.Name, field, constraint));
+            }
+            else
+            {
+                Match identity = Regex.Match(row.Sql, @"""(?<field>.+)"".*AUTOINCREMENT");
+                if (identity.Success)
+                {
+                    foundConstraints.Add(new Constraint(row.Name, identity.Groups["field"].Value, $"PK_{row.Name}"));
+                }
+            }
+
+            Match pk = Regex.Match(row.Sql, @"CONSTRAINT (?<constraint>\w+)\s.*PRIMARY KEY \(""(?<field>.+?)""\)");
+            if (pk.Success)
+            {
+                var field = pk.Groups["field"].Value;
+                var constraint = pk.Groups["constraint"].Value;
+                foundConstraints.Add(new Constraint(row.Name, field, constraint));
+            }
+
+            var fkRegex = new Regex(@"CONSTRAINT (?<constraint>\w+) FOREIGN KEY \(""(?<field>.+?)""\) REFERENCES");
+            IEnumerable<Match> foreignKeys = fkRegex.Matches(row.Sql).Cast<Match>();
+            {
+                foreach (Match fk in foreignKeys)
+                {
+                    var field = fk.Groups["field"].Value;
+                    var constraint = fk.Groups["constraint"].Value;
+                    foundConstraints.Add(new Constraint(row.Name, field, constraint));
+                }
+            }
+        }
+
+        // item.TableName, item.ColumnName, item.ConstraintName
+        return foundConstraints.Select(x => Tuple.Create(x.TableName, x.ColumnName, x.ConstraintName));
+    }
+
+    public override async Task<IEnumerable<Tuple<string, string, string>>> GetConstraintsPerColumnAsync(IDatabase db, CancellationToken? cancellationToken = null)
+    {
+        IEnumerable<SqliteMaster> items = (await db.FetchAsync<SqliteMaster>("select * from sqlite_master where type = 'table'"))
             .Where(x => !x.Name.StartsWith("sqlite_"));
 
         List<Constraint> foundConstraints = new();
