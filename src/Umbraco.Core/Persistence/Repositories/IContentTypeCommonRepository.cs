@@ -17,7 +17,17 @@ public interface IContentTypeCommonRepository
     IEnumerable<IContentTypeComposition>? GetAllTypes();
 
     /// <summary>
+    ///     Gets and cache all types.
+    /// </summary>
+    Task<IEnumerable<IContentTypeComposition>?> GetAllTypesAsync(CancellationToken? cancellationToken = null);
+
+    /// <summary>
     ///     Clears the cache.
     /// </summary>
     void ClearCache();
+
+    /// <summary>
+    ///     Clears the cache.
+    /// </summary>
+    Task ClearCacheAsync(CancellationToken? cancellationToken = null);
 }

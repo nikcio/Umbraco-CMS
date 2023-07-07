@@ -6,5 +6,9 @@ public interface IEntityContainerRepository : IReadRepository<int, EntityContain
 {
     EntityContainer? Get(Guid id);
 
+    Task<EntityContainer?> GetAsync(Guid id, CancellationToken? cancellationToken = null);
+
     IEnumerable<EntityContainer> Get(string name, int level);
+
+    Task<IEnumerable<EntityContainer>> GetAsync(string name, int level, CancellationToken? cancellationToken = null);
 }

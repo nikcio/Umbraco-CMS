@@ -44,7 +44,7 @@ internal class RedirectUrlRepository : EntityRepositoryBase<Guid, IRedirectUrl>,
         return dto == null ? null : Map(dto);
     }
 
-    public  async Task<IRedirectUrl?> GetMostRecentUrlAsync(string url)
+    public  async Task<IRedirectUrl?> GetMostRecentUrlAsync(string url, CancellationToken? cancellationToken = null)
     {
         Sql<ISqlContext> sql = GetMostRecentSql(url);
         List<RedirectUrlDto> dtos = await Database.FetchAsync<RedirectUrlDto>(sql);
@@ -92,7 +92,7 @@ internal class RedirectUrlRepository : EntityRepositoryBase<Guid, IRedirectUrl>,
         return sql;
     }
 
-    public async Task<IRedirectUrl?> GetMostRecentUrlAsync(string url, string culture)
+    public async Task<IRedirectUrl?> GetMostRecentUrlAsync(string url, string culture, CancellationToken? cancellationToken = null)
     {
         if (string.IsNullOrWhiteSpace(culture))
         {

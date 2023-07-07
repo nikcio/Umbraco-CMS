@@ -4,5 +4,5 @@ namespace Umbraco.Cms.Core.Persistence.Repositories;
 
 public interface IUpgradeCheckRepository
 {
-    Task<UpgradeResult> CheckUpgradeAsync(SemVersion version);
+    Task<UpgradeResult> CheckUpgradeAsync(SemVersion version, CancellationToken? cancellationToken = null);
 }

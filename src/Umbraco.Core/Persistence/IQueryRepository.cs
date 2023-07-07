@@ -13,7 +13,17 @@ public interface IQueryRepository<TEntity> : IRepository
     IEnumerable<TEntity> Get(IQuery<TEntity> query);
 
     /// <summary>
+    ///     Gets entities.
+    /// </summary>
+    Task<IEnumerable<TEntity>> GetAsync(IQuery<TEntity> query, CancellationToken? cancellationToken = null);
+
+    /// <summary>
     ///     Counts entities.
     /// </summary>
     int Count(IQuery<TEntity> query);
+
+    /// <summary>
+    ///     Counts entities.
+    /// </summary>
+    Task<int> CountAsync(IQuery<TEntity> query, CancellationToken? cancellationToken = null);
 }

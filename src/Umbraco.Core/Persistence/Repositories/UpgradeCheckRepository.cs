@@ -12,7 +12,7 @@ public class UpgradeCheckRepository : IUpgradeCheckRepository
 
     public UpgradeCheckRepository(IJsonSerializer jsonSerializer) => _jsonSerializer = jsonSerializer;
 
-    public async Task<UpgradeResult> CheckUpgradeAsync(SemVersion version)
+    public async Task<UpgradeResult> CheckUpgradeAsync(SemVersion version, CancellationToken? cancellationToken = null)
     {
         try
         {

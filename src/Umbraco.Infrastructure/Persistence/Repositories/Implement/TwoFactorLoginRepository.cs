@@ -20,10 +20,10 @@ internal class TwoFactorLoginRepository : EntityRepositoryBase<int, ITwoFactorLo
     {
     }
 
-    public async Task<bool> DeleteUserLoginsAsync(Guid userOrMemberKey) =>
-        await DeleteUserLoginsAsync(userOrMemberKey, null);
+    public async Task<bool> DeleteUserLoginsAsync(Guid userOrMemberKey, CancellationToken? cancellationToken = null) =>
+        await DeleteUserLoginsAsync(userOrMemberKey, null, cancellationToken);
 
-    public async Task<bool> DeleteUserLoginsAsync(Guid userOrMemberKey, string? providerName)
+    public async Task<bool> DeleteUserLoginsAsync(Guid userOrMemberKey, string? providerName, CancellationToken? cancellationToken = null)
     {
         Sql<ISqlContext> sql = Sql()
             .Delete()
@@ -40,7 +40,7 @@ internal class TwoFactorLoginRepository : EntityRepositoryBase<int, ITwoFactorLo
         return deletedRows > 0;
     }
 
-    public async Task<IEnumerable<ITwoFactorLogin>> GetByUserOrMemberKeyAsync(Guid userOrMemberKey)
+    public async Task<IEnumerable<ITwoFactorLogin>> GetByUserOrMemberKeyAsync(Guid userOrMemberKey, CancellationToken? cancellationToken = null)
     {
         Sql<ISqlContext> sql = Sql()
             .Select<TwoFactorLoginDto>()
