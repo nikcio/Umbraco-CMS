@@ -220,4 +220,41 @@ public abstract class MicrosoftSqlSyntaxProviderBase<TSyntax> : SqlSyntaxProvide
             database.Execute(new Sql(sql));
         }
     }
+
+    public override async Task HandleCreateTableAsync(IDatabase database, TableDefinition tableDefinition, bool skipKeysAndIndexes = false, CancellationToken? cancellationToken = null)
+    {
+        var createSql = Format(tableDefinition);
+        var createPrimaryKeySql = FormatPrimaryKey(tableDefinition);
+        List<string> foreignSql = Format(tableDefinition.ForeignKeys);
+
+        _logger.LogInformation("Create table:\n {Sql}", createSql);
+        await database.ExecuteAsync(new Sql(createSql));
+
+        if (skipKeysAndIndexes)
+        {
+            return;
+        }
+
+        //If any statements exists for the primary key execute them here
+        if (string.IsNullOrEmpty(createPrimaryKeySql) == false)
+        {
+            _logger.LogInformation("Create Primary Key:\n {Sql}", createPrimaryKeySql);
+            await database.ExecuteAsync(new Sql(createPrimaryKeySql));
+        }
+
+        List<string> indexSql = Format(tableDefinition.Indexes);
+        //Loop through index statements and execute sql
+        foreach (var sql in indexSql)
+        {
+            _logger.LogInformation("Create Index:\n {Sql}", sql);
+            await database.ExecuteAsync(new Sql(sql));
+        }
+
+        //Loop through foreignkey statements and execute sql
+        foreach (var sql in foreignSql)
+        {
+            _logger.LogInformation("Create Foreign Key:\n {Sql}", sql);
+             await database.ExecuteAsync(new Sql(sql));
+        }
+    }
 }
