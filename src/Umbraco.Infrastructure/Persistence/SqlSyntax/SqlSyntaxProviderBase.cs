@@ -197,15 +197,25 @@ public abstract class SqlSyntaxProviderBase<TSyntax> : ISqlSyntaxProvider
 
     public virtual IEnumerable<string> GetTablesInSchema(IDatabase db) => new List<string>();
 
+    public virtual Task<IEnumerable<string>> GetTablesInSchemaAsync(IDatabase db, CancellationToken? cancellationToken = null) => Task.FromResult(Enumerable.Empty<string>());
+
     public virtual IEnumerable<ColumnInfo> GetColumnsInSchema(IDatabase db) => new List<ColumnInfo>();
+
+    public virtual Task<IEnumerable<ColumnInfo>> GetColumnsInSchemaAsync(IDatabase db, CancellationToken? cancellationToken = null) => Task.FromResult(Enumerable.Empty<ColumnInfo>());
 
     public virtual IEnumerable<Tuple<string, string>> GetConstraintsPerTable(IDatabase db) =>
         new List<Tuple<string, string>>();
 
+    public virtual Task<IEnumerable<Tuple<string, string>>> GetConstraintsPerTableAsync(IDatabase db, CancellationToken? cancellationToken = null) => Task.FromResult(Enumerable.Empty<Tuple<string, string>>());
+
     public virtual IEnumerable<Tuple<string, string, string>> GetConstraintsPerColumn(IDatabase db) =>
         new List<Tuple<string, string, string>>();
 
+    public virtual Task<IEnumerable<Tuple<string, string, string>>> GetConstraintsPerColumnAsync(IDatabase db, CancellationToken? cancellationToken = null) => Task.FromResult(Enumerable.Empty<Tuple<string, string, string>>());
+
     public abstract IEnumerable<Tuple<string, string, string, bool>> GetDefinedIndexes(IDatabase db);
+
+    public abstract Task<IEnumerable<Tuple<string, string, string, bool>>> GetDefinedIndexesAsync(IDatabase db, CancellationToken? cancellationToken = null);
 
     public abstract bool TryGetDefaultConstraint(IDatabase db, string? tableName, string columnName, [MaybeNullWhen(false)] out string constraintName);
 
@@ -227,6 +237,8 @@ public abstract class SqlSyntaxProviderBase<TSyntax> : ISqlSyntaxProvider
     public virtual IDictionary<Type, IScalarMapper>? ScalarMappers => null;
 
     public virtual bool DoesTableExist(IDatabase db, string tableName) => GetTablesInSchema(db).Contains(tableName);
+
+    public virtual async Task<bool> DoesTableExistAsync(IDatabase db, string tableName, CancellationToken? cancellationToken = null) => (await GetTablesInSchemaAsync(db, cancellationToken)).Contains(tableName);
 
     public virtual bool SupportsClustered() => true;
 
@@ -417,6 +429,8 @@ public abstract class SqlSyntaxProviderBase<TSyntax> : ISqlSyntaxProvider
         IDatabase database,
         TableDefinition tableDefinition,
         bool skipKeysAndIndexes = false);
+
+    public abstract Task HandleCreateTableAsync(IDatabase database, TableDefinition tableDefinition, bool skipKeysAndIndexes = false, CancellationToken? cancellationToken = null);
 
     public virtual string DeleteDefaultConstraint =>
         throw new NotSupportedException("Default constraints are not supported");
