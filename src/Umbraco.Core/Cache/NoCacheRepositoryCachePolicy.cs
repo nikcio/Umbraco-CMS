@@ -18,8 +18,6 @@ public class NoCacheRepositoryCachePolicy<TEntity, TId> : IRepositoryCachePolicy
 
     public TEntity? GetCached(TId id) => null;
 
-    public Task<TEntity?> GetCachedAsync(TId id, CancellationToken? cancellationToken = null) => Task.FromResult<TEntity?>(null);
-
     public bool Exists(TId id, Func<TId, bool> performExists, Func<TId[], IEnumerable<TEntity>?> performGetAll) =>
         performExists(id);
 
