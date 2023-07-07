@@ -100,6 +100,8 @@ public interface ISqlSyntaxProvider
 
     bool DoesTableExist(IDatabase db, string tableName);
 
+    Task<bool> DoesTableExistAsync(IDatabase db, string tableName, CancellationToken? cancellationToken = null);
+
     string GetIndexType(IndexTypes indexTypes);
 
     string GetSpecialDbType(SpecialDbType dbType);
@@ -132,6 +134,8 @@ public interface ISqlSyntaxProvider
 
     void HandleCreateTable(IDatabase database, TableDefinition tableDefinition, bool skipKeysAndIndexes = false);
 
+    Task HandleCreateTableAsync(IDatabase database, TableDefinition tableDefinition, bool skipKeysAndIndexes = false, CancellationToken? cancellationToken = null);
+
     Sql<ISqlContext> SelectTop(Sql<ISqlContext> sql, int top);
 
     bool SupportsClustered();
@@ -140,7 +144,11 @@ public interface ISqlSyntaxProvider
 
     IEnumerable<string> GetTablesInSchema(IDatabase db);
 
+    Task<IEnumerable<string>> GetTablesInSchemaAsync(IDatabase db, CancellationToken? cancellationToken = null);
+
     IEnumerable<ColumnInfo> GetColumnsInSchema(IDatabase db);
+
+    Task<IEnumerable<ColumnInfo>> GetColumnsInSchemaAsync(IDatabase db, CancellationToken? cancellationToken = null);
 
     /// <summary>
     ///     Returns all constraints defined in the database (Primary keys, foreign keys, unique constraints...) (does not
@@ -158,9 +166,29 @@ public interface ISqlSyntaxProvider
     /// </summary>
     /// <param name="db"></param>
     /// <returns>
+    ///     A Tuple containing: TableName, ConstraintName
+    /// </returns>
+    Task<IEnumerable<Tuple<string, string>>> GetConstraintsPerTableAsync(IDatabase db, CancellationToken? cancellationToken = null);
+
+    /// <summary>
+    ///     Returns all constraints defined in the database (Primary keys, foreign keys, unique constraints...) (does not
+    ///     include indexes)
+    /// </summary>
+    /// <param name="db"></param>
+    /// <returns>
     ///     A Tuple containing: TableName, ColumnName, ConstraintName
     /// </returns>
     IEnumerable<Tuple<string, string, string>> GetConstraintsPerColumn(IDatabase db);
+
+    /// <summary>
+    ///     Returns all constraints defined in the database (Primary keys, foreign keys, unique constraints...) (does not
+    ///     include indexes)
+    /// </summary>
+    /// <param name="db"></param>
+    /// <returns>
+    ///     A Tuple containing: TableName, ColumnName, ConstraintName
+    /// </returns>
+    Task<IEnumerable<Tuple<string, string, string>>> GetConstraintsPerColumnAsync(IDatabase db, CancellationToken? cancellationToken = null);
 
     /// <summary>
     ///     Returns all defined Indexes in the database excluding primary keys
@@ -170,6 +198,15 @@ public interface ISqlSyntaxProvider
     ///     A Tuple containing: TableName, IndexName, ColumnName, IsUnique
     /// </returns>
     IEnumerable<Tuple<string, string, string, bool>> GetDefinedIndexes(IDatabase db);
+
+    /// <summary>
+    ///     Returns all defined Indexes in the database excluding primary keys
+    /// </summary>
+    /// <param name="db"></param>
+    /// <returns>
+    ///     A Tuple containing: TableName, IndexName, ColumnName, IsUnique
+    /// </returns>
+    Task<IEnumerable<Tuple<string, string, string, bool>>> GetDefinedIndexesAsync(IDatabase db, CancellationToken? cancellationToken = null);
 
     /// <summary>
     ///     Tries to gets the name of the default constraint on a column.
@@ -189,6 +226,8 @@ public interface ISqlSyntaxProvider
     bool TryGetDefaultConstraint(IDatabase db, string? tableName, string columnName, [MaybeNullWhen(false)] out string constraintName);
 
     bool DoesPrimaryKeyExist(IDatabase db, string tableName, string primaryKeyName) => throw new NotImplementedException();
+
+    Task<bool> DoesPrimaryKeyExistAsync(IDatabase db, string tableName, string primaryKeyName, CancellationToken? cancellationToken = null) => throw new NotImplementedException();
 
     string GetFieldNameForUpdate<TDto>(Expression<Func<TDto, object?>> fieldSelector, string? tableAlias = null);
 
