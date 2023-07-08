@@ -152,6 +152,60 @@ public class MemberRepository : ContentRepositoryBase<int, IMember, MemberReposi
         return membersInGroup;
     }
 
+    public async Task<IEnumerable<IMember>> FindMembersInRoleAsync(string roleName, string usernameToMatch, StringPropertyMatchType matchType = StringPropertyMatchType.StartsWith, CancellationToken? cancellationToken = null)
+    {
+        //get the group id
+        IQuery<IMemberGroup> grpQry = Query<IMemberGroup>().Where(group => group.Name!.Equals(roleName));
+        IMemberGroup? memberGroup = (await _memberGroupRepository.GetAsync(grpQry, cancellationToken))?.FirstOrDefault();
+        if (memberGroup == null)
+        {
+            return Enumerable.Empty<IMember>();
+        }
+
+        // get the members by username
+        IQuery<IMember> query = Query<IMember>();
+        switch (matchType)
+        {
+            case StringPropertyMatchType.Exact:
+                query.Where(member => member.Username.Equals(usernameToMatch));
+                break;
+            case StringPropertyMatchType.Contains:
+                query.Where(member => member.Username.Contains(usernameToMatch));
+                break;
+            case StringPropertyMatchType.StartsWith:
+                query.Where(member => member.Username.StartsWith(usernameToMatch));
+                break;
+            case StringPropertyMatchType.EndsWith:
+                query.Where(member => member.Username.EndsWith(usernameToMatch));
+                break;
+            case StringPropertyMatchType.Wildcard:
+                query.Where(member => member.Username.SqlWildcard(usernameToMatch, TextColumnType.NVarchar));
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(matchType));
+        }
+
+        IMember[] matchedMembers = (await GetAsync(query, cancellationToken)).ToArray();
+
+        var membersInGroup = new List<IMember>();
+
+        // Then we need to filter the matched members that are in the role
+        foreach (IEnumerable<int> group in matchedMembers.Select(x => x.Id)
+                     .InGroupsOf(Constants.Sql.MaxParameterCount))
+        {
+            Sql<ISqlContext> sql = Sql().SelectAll().From<Member2MemberGroupDto>()
+                .Where<Member2MemberGroupDto>(dto => dto.MemberGroup == memberGroup.Id)
+                .WhereIn<Member2MemberGroupDto>(dto => dto.Member, group);
+
+            var memberIdsInGroup = (await Database.FetchAsync<Member2MemberGroupDto>(sql))
+                .Select(x => x.Member).ToArray();
+
+            membersInGroup.AddRange(matchedMembers.Where(x => memberIdsInGroup.Contains(x.Id)));
+        }
+
+        return membersInGroup;
+    }
+
     /// <summary>
     ///     Get all members in a specific group
     /// </summary>
@@ -179,6 +233,28 @@ public class MemberRepository : ContentRepositoryBase<int, IMember, MemberReposi
         return MapDtosToContent(Database.Fetch<MemberDto>(sql));
     }
 
+    public async Task<IEnumerable<IMember>> GetByMemberGroupAsync(string groupName, CancellationToken? cancellationToken = null)
+    {
+        IQuery<IMemberGroup> grpQry = Query<IMemberGroup>().Where(group => group.Name!.Equals(groupName));
+        IMemberGroup? memberGroup = (await _memberGroupRepository.GetAsync(grpQry, cancellationToken))?.FirstOrDefault();
+        if (memberGroup == null)
+        {
+            return Enumerable.Empty<IMember>();
+        }
+
+        Sql<ISqlContext> subQuery = Sql().Select("Member").From<Member2MemberGroupDto>()
+            .Where<Member2MemberGroupDto>(dto => dto.MemberGroup == memberGroup.Id);
+
+        Sql<ISqlContext> sql = GetBaseQuery(false)
+            // TODO: An inner join would be better, though I've read that the query optimizer will always turn a
+            // subquery with an IN clause into an inner join anyways.
+            .Append("WHERE umbracoNode.id IN (" + subQuery.SQL + ")", subQuery.Arguments)
+            .OrderByDescending<ContentVersionDto>(x => x.VersionDate)
+            .OrderBy<NodeDto>(x => x.SortOrder);
+
+        return MapDtosToContent(await Database.FetchAsync<MemberDto>(sql));
+    }
+
     public bool Exists(string username)
     {
         Sql<ISqlContext> sql = Sql()
@@ -187,6 +263,16 @@ public class MemberRepository : ContentRepositoryBase<int, IMember, MemberReposi
             .Where<MemberDto>(x => x.LoginName == username);
 
         return Database.ExecuteScalar<int>(sql) > 0;
+    }
+
+    public async Task<bool> ExistsAsync(string username, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sql = Sql()
+            .SelectCount()
+            .From<MemberDto>()
+            .Where<MemberDto>(x => x.LoginName == username);
+
+        return (await Database.ExecuteScalarAsync<int>(sql)) > 0;
     }
 
     public int GetCountByQuery(IQuery<IMember>? query)
@@ -200,6 +286,19 @@ public class MemberRepository : ContentRepositoryBase<int, IMember, MemberReposi
             .Append(new Sql("WHERE umbracoNode.id IN (" + sql.SQL + ")", sql.Arguments));
 
         return Database.ExecuteScalar<int>(fullSql);
+    }
+
+    public async Task<int> GetCountByQueryAsync(IQuery<IMember>? query, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sqlWithProps = GetNodeIdQueryWithPropertyData();
+        var translator = new SqlTranslator<IMember>(sqlWithProps, query);
+        Sql<ISqlContext> sql = translator.Translate();
+
+        //get the COUNT base query
+        Sql<ISqlContext> fullSql = GetBaseQuery(true)
+            .Append(new Sql("WHERE umbracoNode.id IN (" + sql.SQL + ")", sql.Arguments));
+
+        return await Database.ExecuteScalarAsync<int>(fullSql);
     }
 
     /// <summary>
@@ -227,8 +326,31 @@ public class MemberRepository : ContentRepositoryBase<int, IMember, MemberReposi
             ordering);
     }
 
+    public override async Task<(IEnumerable<IMember> Results, long TotalRecords)> GetPageAsync(IQuery<IMember>? query, long pageIndex, int pageSize, IQuery<IMember>? filter, Ordering? ordering, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext>? filterSql = null;
+
+        if (filter != null)
+        {
+            filterSql = Sql();
+            foreach (Tuple<string, object[]> clause in filter.GetWhereClauses())
+            {
+                filterSql = filterSql.Append($"AND ({clause.Item1})", clause.Item2);
+            }
+        }
+
+        return await GetPageAsync<MemberDto>(query, pageIndex, pageSize,
+            x => MapDtosToContent(x),
+            filterSql,
+            ordering,
+            cancellationToken);
+    }
+
     public IMember? GetByUsername(string? username) =>
         _memberByUsernameCachePolicy.Get(username, PerformGetByUsername, PerformGetAllByUsername);
+
+    public async Task<IMember?> GetByUsernameAsync(string? username, CancellationToken? cancellationToken = null) =>
+        await _memberByUsernameCachePolicy.GetAsync(username, PerformGetByUsernameAsync, PerformGetAllByUsernameAsync, cancellationToken);
 
     public int[] GetMemberIds(string[] usernames)
     {
@@ -246,6 +368,24 @@ public class MemberRepository : ContentRepositoryBase<int, IMember, MemberReposi
                 usernames
             });
         return Database.Fetch<int>(memberSql).ToArray();
+    }
+
+    public async Task<int[]> GetMemberIdsAsync(string[] names, CancellationToken? cancellationToken = null)
+    {
+        Guid memberObjectType = Constants.ObjectTypes.Member;
+
+        Sql<ISqlContext> memberSql = Sql()
+            .Select("umbracoNode.id")
+            .From<NodeDto>()
+            .InnerJoin<MemberDto>()
+            .On<NodeDto, MemberDto>(dto => dto.NodeId, dto => dto.NodeId)
+            .Where<NodeDto>(x => x.NodeObjectType == memberObjectType)
+            .Where("cmsMember.LoginName in (@usernames)", new
+            {
+                /*usernames =*/
+                names
+            });
+        return (await Database.FetchAsync<int>(memberSql)).ToArray();
     }
 
     protected override string ApplySystemOrdering(ref Sql<ISqlContext> sql, Ordering ordering)
@@ -393,10 +533,22 @@ public class MemberRepository : ContentRepositoryBase<int, IMember, MemberReposi
         return PerformGetByQuery(query).FirstOrDefault();
     }
 
+    private async Task<IMember?> PerformGetByUsernameAsync(string? username, CancellationToken? cancellationToken = null)
+    {
+        IQuery<IMember> query = Query<IMember>().Where(x => x.Username.Equals(username));
+        return (await PerformGetByQueryAsync(query, cancellationToken)).FirstOrDefault();
+    }
+
     private IEnumerable<IMember> PerformGetAllByUsername(params string[]? usernames)
     {
         IQuery<IMember> query = Query<IMember>().WhereIn(x => x.Username, usernames);
         return PerformGetByQuery(query);
+    }
+
+    private async Task<IEnumerable<IMember>> PerformGetAllByUsernameAsync(CancellationToken? cancellationToken = null, params string[]? usernames)
+    {
+        IQuery<IMember> query = Query<IMember>().WhereIn(x => x.Username, usernames);
+        return await PerformGetByQueryAsync(query, cancellationToken);
     }
 
     #region Repository Base
@@ -415,6 +567,18 @@ public class MemberRepository : ContentRepositoryBase<int, IMember, MemberReposi
             : MapDtoToContent(dto);
     }
 
+    protected override async Task<IMember?> PerformGetAsync(int id, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sql = GetBaseQuery(QueryType.Single)
+            .Where<NodeDto>(x => x.NodeId == id)
+            .SelectTop(1);
+
+        MemberDto? dto = (await Database.FetchAsync<MemberDto>(sql)).FirstOrDefault();
+        return dto == null
+            ? null
+            : MapDtoToContent(dto);
+    }
+
     protected override IEnumerable<IMember> PerformGetAll(params int[]? ids)
     {
         Sql<ISqlContext> sql = GetBaseQuery(QueryType.Many);
@@ -425,6 +589,18 @@ public class MemberRepository : ContentRepositoryBase<int, IMember, MemberReposi
         }
 
         return MapDtosToContent(Database.Fetch<MemberDto>(sql));
+    }
+
+    protected override async Task<IEnumerable<IMember>> PerformGetAllAsync(CancellationToken? cancellationToken = null, params int[]? ids)
+    {
+        Sql<ISqlContext> sql = GetBaseQuery(QueryType.Many);
+
+        if (ids?.Any() ?? false)
+        {
+            sql.WhereIn<NodeDto>(x => x.NodeId, ids);
+        }
+
+        return MapDtosToContent(await Database.FetchAsync<MemberDto>(sql));
     }
 
     protected override IEnumerable<IMember> PerformGetByQuery(IQuery<IMember> query)
@@ -455,6 +631,37 @@ public class MemberRepository : ContentRepositoryBase<int, IMember, MemberReposi
                 .OrderBy<NodeDto>(x => x.SortOrder);
 
             return MapDtosToContent(Database.Fetch<MemberDto>(sql));
+        }
+    }
+
+    protected override async Task<IEnumerable<IMember>> PerformGetByQueryAsync(IQuery<IMember> query, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> baseQuery = GetBaseQuery(false);
+
+        // TODO: why is this different from content/media?!
+        // check if the query is based on properties or not
+
+        IEnumerable<Tuple<string, object[]>> wheres = query.GetWhereClauses();
+        //this is a pretty rudimentary check but will work, we just need to know if this query requires property
+        // level queries
+        if (wheres.Any(x => x.Item1.Contains("cmsPropertyType")))
+        {
+            Sql<ISqlContext> sqlWithProps = GetNodeIdQueryWithPropertyData();
+            var translator = new SqlTranslator<IMember>(sqlWithProps, query);
+            Sql<ISqlContext> sql = translator.Translate();
+
+            baseQuery.Append("WHERE umbracoNode.id IN (" + sql.SQL + ")", sql.Arguments)
+                .OrderBy<NodeDto>(x => x.SortOrder);
+
+            return MapDtosToContent(await Database.FetchAsync<MemberDto>(baseQuery));
+        }
+        else
+        {
+            var translator = new SqlTranslator<IMember>(baseQuery, query);
+            Sql<ISqlContext> sql = translator.Translate()
+                .OrderBy<NodeDto>(x => x.SortOrder);
+
+            return MapDtosToContent(await Database.FetchAsync<MemberDto>(sql));
         }
     }
 
@@ -573,6 +780,16 @@ public class MemberRepository : ContentRepositoryBase<int, IMember, MemberReposi
         return MapDtosToContent(Database.Fetch<MemberDto>(sql), true);
     }
 
+    public override async Task<IEnumerable<IMember>> GetAllVersionsAsync(int nodeId, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sql = GetBaseQuery(QueryType.Many, false)
+            .Where<NodeDto>(x => x.NodeId == nodeId)
+            .OrderByDescending<ContentVersionDto>(x => x.Current)
+            .AndByDescending<ContentVersionDto>(x => x.VersionDate);
+
+        return MapDtosToContent(await Database.FetchAsync<MemberDto>(sql), true);
+    }
+
     public override IMember? GetVersion(int versionId)
     {
         Sql<ISqlContext> sql = GetBaseQuery(QueryType.Single)
@@ -582,10 +799,26 @@ public class MemberRepository : ContentRepositoryBase<int, IMember, MemberReposi
         return dto == null ? null : MapDtoToContent(dto);
     }
 
+    public override async Task<IMember?> GetVersionAsync(int versionId, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sql = GetBaseQuery(QueryType.Single)
+            .Where<ContentVersionDto>(x => x.Id == versionId);
+
+        MemberDto? dto = (await Database.FetchAsync<MemberDto>(sql)).FirstOrDefault();
+        return dto == null ? null : MapDtoToContent(dto);
+    }
+
     protected override void PerformDeleteVersion(int id, int versionId)
     {
         Database.Delete<PropertyDataDto>("WHERE versionId = @VersionId", new {versionId});
         Database.Delete<ContentVersionDto>("WHERE versionId = @VersionId", new {versionId});
+    }
+
+    protected override Task PerformDeleteVersionAsync(int id, int versionId, CancellationToken? cancellationToken = null)
+    {
+        Database.Delete<PropertyDataDto>("WHERE versionId = @VersionId", new { versionId });
+        Database.Delete<ContentVersionDto>("WHERE versionId = @VersionId", new { versionId });
+        return Task.CompletedTask;
     }
 
     #endregion
@@ -688,6 +921,104 @@ public class MemberRepository : ContentRepositoryBase<int, IMember, MemberReposi
         OnUowRefreshedEntity(new MemberRefreshNotification(entity, new EventMessages()));
 
         entity.ResetDirtyProperties();
+    }
+
+    protected override async Task PersistNewItemAsync(IMember item, CancellationToken? cancellationToken = null)
+    {
+        item.AddingEntity();
+
+        // ensure security stamp if missing
+        if (item.SecurityStamp.IsNullOrWhiteSpace())
+        {
+            item.SecurityStamp = Guid.NewGuid().ToString();
+        }
+
+        // ensure that strings don't contain characters that are invalid in xml
+        // TODO: do we really want to keep doing this here?
+        item.SanitizeEntityPropertiesForXmlStorage();
+
+        // create the dto
+        MemberDto memberDto = ContentBaseFactory.BuildDto(item);
+
+        // check if we have a user config else use the default
+        memberDto.PasswordConfig = item.PasswordConfiguration ?? DefaultPasswordConfigJson;
+
+        // derive path and level from parent
+        NodeDto parent = await GetParentNodeDtoAsync(item.ParentId, cancellationToken);
+        var level = parent.Level + 1;
+
+        // get sort order
+        var sortOrder = await GetNewChildSortOrderAsync(item.ParentId, 0, cancellationToken);
+
+        // persist the node dto
+        NodeDto nodeDto = memberDto.ContentDto.NodeDto;
+        nodeDto.Path = parent.Path;
+        nodeDto.Level = Convert.ToInt16(level);
+        nodeDto.SortOrder = sortOrder;
+
+        // see if there's a reserved identifier for this unique id
+        // and then either update or insert the node dto
+        var id = GetReservedId(nodeDto.UniqueId);
+        if (id > 0)
+        {
+            nodeDto.NodeId = id;
+            nodeDto.Path = string.Concat(parent.Path, ",", nodeDto.NodeId);
+            nodeDto.ValidatePathWithException();
+            await Database.UpdateAsync(nodeDto);
+        }
+        else
+        {
+            await Database.InsertAsync(nodeDto);
+
+            // update path, now that we have an id
+            nodeDto.Path = string.Concat(parent.Path, ",", nodeDto.NodeId);
+            nodeDto.ValidatePathWithException();
+            await Database.UpdateAsync(nodeDto);
+        }
+
+        // update entity
+        item.Id = nodeDto.NodeId;
+        item.Path = nodeDto.Path;
+        item.SortOrder = sortOrder;
+        item.Level = level;
+
+        // persist the content dto
+        ContentDto contentDto = memberDto.ContentDto;
+        contentDto.NodeId = nodeDto.NodeId;
+        await Database.InsertAsync(contentDto);
+
+        // persist the content version dto
+        // assumes a new version id and version date (modified date) has been set
+        ContentVersionDto contentVersionDto = memberDto.ContentVersionDto;
+        contentVersionDto.NodeId = nodeDto.NodeId;
+        contentVersionDto.Current = true;
+        await Database.InsertAsync(contentVersionDto);
+        item.VersionId = contentVersionDto.Id;
+
+        // persist the member dto
+        memberDto.NodeId = nodeDto.NodeId;
+
+        // if the password is empty, generate one with the special prefix
+        // this will hash the guid with a salt so should be nicely random
+        if (item.RawPasswordValue.IsNullOrWhiteSpace())
+        {
+            memberDto.Password = Constants.Security.EmptyPasswordPrefix +
+                                 _passwordHasher.HashPassword(Guid.NewGuid().ToString("N"));
+            item.RawPasswordValue = memberDto.Password;
+        }
+
+        await Database.InsertAsync(memberDto);
+
+        // persist the property data
+        await InsertPropertyValuesAsync(item, 0, cancellationToken);
+
+        await SetEntityTagsAsync(item, _tagRepository, _jsonSerializer, cancellationToken);
+
+        await PersistRelationsAsync(item, cancellationToken);
+
+        OnUowRefreshedEntity(new MemberRefreshNotification(item, new EventMessages()));
+
+        item.ResetDirtyProperties();
     }
 
     protected override void PersistUpdatedItem(IMember entity)
@@ -838,6 +1169,156 @@ public class MemberRepository : ContentRepositoryBase<int, IMember, MemberReposi
         OnUowRefreshedEntity(new MemberRefreshNotification(entity, new EventMessages()));
 
         entity.ResetDirtyProperties();
+    }
+
+    protected override async Task PersistUpdatedItemAsync(IMember item, CancellationToken? cancellationToken = null)
+    {
+        // update
+        item.UpdatingEntity();
+
+        // ensure security stamp if missing
+        if (item.SecurityStamp.IsNullOrWhiteSpace())
+        {
+            item.SecurityStamp = Guid.NewGuid().ToString();
+        }
+
+        // ensure that strings don't contain characters that are invalid in xml
+        // TODO: do we really want to keep doing this here?
+        item.SanitizeEntityPropertiesForXmlStorage();
+
+        // if parent has changed, get path, level and sort order
+        if (item.IsPropertyDirty("ParentId"))
+        {
+            NodeDto parent = GetParentNodeDto(item.ParentId);
+
+            item.Path = string.Concat(parent.Path, ",", item.Id);
+            item.Level = parent.Level + 1;
+            item.SortOrder = GetNewChildSortOrder(item.ParentId, 0);
+        }
+
+        // create the dto
+        MemberDto memberDto = ContentBaseFactory.BuildDto(item);
+
+        // update the node dto
+        NodeDto nodeDto = memberDto.ContentDto.NodeDto;
+        await Database.UpdateAsync(nodeDto);
+
+        // update the content dto
+        await Database.UpdateAsync(memberDto.ContentDto);
+
+        // update the content version dto
+        await Database.UpdateAsync(memberDto.ContentVersionDto);
+
+        // update the member dto
+        // but only the changed columns, 'cos we cannot update password if empty
+        var changedCols = new List<string>();
+
+        if (item.IsPropertyDirty("SecurityStamp"))
+        {
+            changedCols.Add("securityStampToken");
+        }
+
+        if (item.IsPropertyDirty("Email"))
+        {
+            changedCols.Add("Email");
+        }
+
+        if (item.IsPropertyDirty("Username"))
+        {
+            changedCols.Add("LoginName");
+        }
+
+        if (item.IsPropertyDirty(nameof(item.FailedPasswordAttempts)))
+        {
+            changedCols.Add(nameof(item.FailedPasswordAttempts));
+        }
+
+        if (item.IsPropertyDirty(nameof(item.IsApproved)))
+        {
+            changedCols.Add(nameof(item.IsApproved));
+        }
+
+        if (item.IsPropertyDirty(nameof(item.IsLockedOut)))
+        {
+            changedCols.Add(nameof(item.IsLockedOut));
+        }
+
+        if (item.IsPropertyDirty(nameof(item.LastLockoutDate)))
+        {
+            changedCols.Add(nameof(item.LastLockoutDate));
+        }
+
+        if (item.IsPropertyDirty(nameof(item.LastLoginDate)))
+        {
+            changedCols.Add(nameof(item.LastLoginDate));
+        }
+
+        if (item.IsPropertyDirty(nameof(item.LastPasswordChangeDate)))
+        {
+            changedCols.Add(nameof(item.LastPasswordChangeDate));
+        }
+
+        // this can occur from an upgrade
+        if (memberDto.PasswordConfig.IsNullOrWhiteSpace())
+        {
+            memberDto.PasswordConfig = DefaultPasswordConfigJson;
+            changedCols.Add("passwordConfig");
+        }
+        else if (memberDto.PasswordConfig == Constants.Security.UnknownPasswordConfigJson)
+        {
+            changedCols.Add("passwordConfig");
+        }
+
+        // do NOT update the password if it has not changed or if it is null or empty
+        if (item.IsPropertyDirty("RawPasswordValue") && !string.IsNullOrWhiteSpace(item.RawPasswordValue))
+        {
+            changedCols.Add("Password");
+
+            // If the security stamp hasn't already updated we need to force it
+            if (item.IsPropertyDirty("SecurityStamp") == false)
+            {
+                memberDto.SecurityStampToken = item.SecurityStamp = Guid.NewGuid().ToString();
+                changedCols.Add("securityStampToken");
+            }
+
+            // check if we have a user config else use the default
+            memberDto.PasswordConfig = item.PasswordConfiguration ?? DefaultPasswordConfigJson;
+            changedCols.Add("passwordConfig");
+        }
+
+        if (item.IsPropertyDirty("EmailConfirmedDate"))
+        {
+            changedCols.Add("emailConfirmedDate");
+        }
+
+        // If userlogin or the email has changed then need to reset security stamp
+        if (changedCols.Contains("Email") || changedCols.Contains("LoginName"))
+        {
+            memberDto.EmailConfirmedDate = null;
+            changedCols.Add("emailConfirmedDate");
+
+            // If the security stamp hasn't already updated we need to force it
+            if (item.IsPropertyDirty("SecurityStamp") == false)
+            {
+                memberDto.SecurityStampToken = item.SecurityStamp = Guid.NewGuid().ToString();
+                changedCols.Add("securityStampToken");
+            }
+        }
+
+        if (changedCols.Count > 0)
+        {
+            await Database.UpdateAsync(memberDto, changedCols);
+        }
+
+        await ReplacePropertyValuesAsync(item, item.VersionId, 0, cancellationToken);
+
+        await SetEntityTagsAsync(item, _tagRepository, _jsonSerializer, cancellationToken);
+
+        await PersistRelationsAsync(item, cancellationToken);
+
+        OnUowRefreshedEntity(new MemberRefreshNotification(item, new EventMessages()));
+
+        item.ResetDirtyProperties();
     }
 
     #endregion
