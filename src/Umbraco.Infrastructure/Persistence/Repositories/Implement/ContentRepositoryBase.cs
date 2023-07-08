@@ -493,6 +493,71 @@ namespace Umbraco.Cms.Infrastructure.Persistence.Repositories.Implement
             }
         }
 
+        /// <summary>
+        /// Updates tags for an item.
+        /// </summary>
+        protected async Task SetEntityTagsAsync(IContentBase entity, ITagRepository tagRepo, IJsonSerializer serializer, CancellationToken? cancellationToken = null)
+        {
+            foreach (IProperty property in entity.Properties)
+            {
+                if (PropertyEditors.TryGet(property.PropertyType.PropertyEditorAlias, out var editor) is false)
+                {
+                    continue;
+                }
+
+                if (editor.GetValueEditor() is not IDataValueTags tagsProvider)
+                {
+                    // support for legacy tag editors, everything from here down to the last continue can be removed when TagsPropertyEditorAttribute is removed
+                    TagConfiguration? tagConfiguration = property.GetTagConfiguration(PropertyEditors, DataTypeService);
+                    if (tagConfiguration == null)
+                    {
+                        continue;
+                    }
+
+                    if (property.PropertyType.VariesByCulture())
+                    {
+                        var tags = new List<ITag>();
+                        foreach (IPropertyValue pvalue in property.Values)
+                        {
+                            IEnumerable<string> tagsValue = property.GetTagsValue(PropertyEditors, DataTypeService, serializer, pvalue.Culture);
+                            var languageId = LanguageRepository.GetIdByIsoCode(pvalue.Culture);
+                            IEnumerable<Tag> cultureTags = tagsValue.Select(x => new Tag { Group = tagConfiguration.Group, Text = x, LanguageId = languageId });
+                            tags.AddRange(cultureTags);
+                        }
+
+                        tagRepo.Assign(entity.Id, property.PropertyTypeId, tags);
+                    }
+                    else
+                    {
+                        IEnumerable<string> tagsValue = property.GetTagsValue(PropertyEditors, DataTypeService, serializer); // strings
+                        IEnumerable<Tag> tags = tagsValue.Select(x => new Tag { Group = tagConfiguration.Group, Text = x });
+                        tagRepo.Assign(entity.Id, property.PropertyTypeId, tags);
+                    }
+
+                    continue; // not implementing IDataValueTags, continue
+                }
+
+                object? configuration = DataTypeService.GetDataType(property.PropertyType.DataTypeId)?.Configuration;
+
+                if (property.PropertyType.VariesByCulture())
+                {
+                    var tags = new List<ITag>();
+                    foreach (IPropertyValue pvalue in property.Values)
+                    {
+                        var languageId = LanguageRepository.GetIdByIsoCode(pvalue.Culture);
+                        tags.AddRange(tagsProvider.GetTags(pvalue.EditedValue, configuration, languageId));
+                    }
+
+                    tagRepo.Assign(entity.Id, property.PropertyTypeId, tags);
+                }
+                else
+                {
+                    IEnumerable<ITag> tags = tagsProvider.GetTags(property.GetValue(), configuration, null);
+                    tagRepo.Assign(entity.Id, property.PropertyTypeId, tags);
+                }
+            }
+        }
+
         // TODO: should we do it when un-publishing? or?
 
         /// <summary>
@@ -1012,6 +1077,40 @@ namespace Umbraco.Cms.Infrastructure.Persistence.Repositories.Implement
             return mapDtos(pagedResult.Items);
         }
 
+        // here, filter can be null and ordering cannot
+        protected async Task<(IEnumerable<TEntity> Results, long TotalRecords)> GetPageAsync<TDto>(
+            IQuery<TEntity>? query,
+            long pageIndex,
+            int pageSize,
+            Func<List<TDto>, IEnumerable<TEntity>> mapDtos,
+            Sql<ISqlContext>? filter,
+            Ordering? ordering,
+            CancellationToken? cancellationToken = null)
+        {
+            if (ordering == null)
+            {
+                throw new ArgumentNullException(nameof(ordering));
+            }
+
+            // start with base query, and apply the supplied IQuery
+            if (query == null)
+            {
+                query = Query<TEntity>();
+            }
+
+            Sql<ISqlContext> sql = new SqlTranslator<TEntity>(GetBaseQuery(QueryType.Many), query).Translate();
+
+            // sort and filter
+            sql = PreparePageSql(sql, filter, ordering);
+
+            // get a page of DTOs and the total count
+            Page<TDto>? pagedResult = await Database.PageAsync<TDto>(pageIndex + 1, pageSize, sql);
+            var totalRecords = pagedResult.TotalItems;
+
+            // map the DTOs and return
+            return new(mapDtos(pagedResult.Items), totalRecords);
+        }
+
         protected IDictionary<int, PropertyCollection> GetPropertyCollections<T>(List<TempContent<T>> temps)
             where T : class, IContentBase
         {
@@ -1319,6 +1418,19 @@ namespace Umbraco.Cms.Infrastructure.Persistence.Repositories.Implement
             return sortOrder + 1 ?? first;
         }
 
+        protected virtual async Task<int> GetNewChildSortOrderAsync(int parentId, int first, CancellationToken? cancellationToken = null)
+        {
+            SqlTemplate? template = SqlContext.Templates.Get(Constants.SqlTemplates.VersionableRepository.GetSortOrder, tsql => tsql
+                .Select("MAX(sortOrder)")
+                .From<NodeDto>()
+                .Where<NodeDto>(x => x.NodeObjectType == SqlTemplate.Arg<Guid>("nodeObjectType") && x.ParentId == SqlTemplate.Arg<int>("parentId")));
+
+            Sql<ISqlContext> sql = template.Sql(NodeObjectTypeId, parentId);
+            var sortOrder = await Database.ExecuteScalarAsync<int?>(sql);
+
+            return sortOrder + 1 ?? first;
+        }
+
         protected virtual NodeDto GetParentNodeDto(int parentId)
         {
             SqlTemplate? template = SqlContext.Templates.Get(Constants.SqlTemplates.VersionableRepository.GetParentNode, tsql => tsql
@@ -1328,6 +1440,19 @@ namespace Umbraco.Cms.Infrastructure.Persistence.Repositories.Implement
 
             Sql<ISqlContext> sql = template.Sql(parentId);
             NodeDto? nodeDto = Database.First<NodeDto>(sql);
+
+            return nodeDto;
+        }
+
+        protected virtual async Task<NodeDto> GetParentNodeDtoAsync(int parentId, CancellationToken? cancellationToken = null)
+        {
+            SqlTemplate? template = SqlContext.Templates.Get(Constants.SqlTemplates.VersionableRepository.GetParentNode, tsql => tsql
+                .Select<NodeDto>()
+                .From<NodeDto>()
+                .Where<NodeDto>(x => x.NodeId == SqlTemplate.Arg<int>("parentId")));
+
+            Sql<ISqlContext> sql = template.Sql(parentId);
+            NodeDto? nodeDto = await Database.FirstAsync<NodeDto>(sql);
 
             return nodeDto;
         }
@@ -1418,6 +1543,61 @@ namespace Umbraco.Cms.Infrastructure.Persistence.Repositories.Implement
             RelationRepository.SaveBulk(toSave);
         }
 
+        protected async Task PersistRelationsAsync(TEntity entity, CancellationToken? cancellationToken = null)
+        {
+            // Get all references from our core built in DataEditors/Property Editors
+            // Along with seeing if deverlopers want to collect additional references from the DataValueReferenceFactories collection
+            var trackedRelations = new List<UmbracoEntityReference>();
+            trackedRelations.AddRange(_dataValueReferenceFactories.GetAllReferences(entity.Properties, PropertyEditors));
+
+            var relationTypeAliases = GetAutomaticRelationTypesAliases(entity.Properties, PropertyEditors).ToArray();
+
+            // First delete all auto-relations for this entity
+            await RelationRepository.DeleteByParentAsync(entity.Id, cancellationToken, relationTypeAliases);
+
+            if (trackedRelations.Count == 0)
+            {
+                return;
+            }
+
+            trackedRelations = trackedRelations.Distinct().ToList();
+            var udiToGuids = trackedRelations.Select(x => x.Udi as GuidUdi)
+                .ToDictionary(x => (Udi)x!, x => x!.Guid);
+
+            // lookup in the DB all INT ids for the GUIDs and chuck into a dictionary
+            var keyToIds = (await Database.FetchAsync<NodeIdKey>(Sql()
+                .Select<NodeDto>(x => x.NodeId, x => x.UniqueId)
+                .From<NodeDto>()
+                .WhereIn<NodeDto>(x => x.UniqueId, udiToGuids.Values)))
+                .ToDictionary(x => x.UniqueId, x => x.NodeId);
+
+            var allRelationTypes = (await RelationTypeRepository.GetManyAsync(cancellationToken, Array.Empty<int>()))?
+                .ToDictionary(x => x.Alias, x => x);
+
+            IEnumerable<ReadOnlyRelation> toSave = trackedRelations.Select(rel =>
+            {
+                if (allRelationTypes is null || !allRelationTypes.TryGetValue(rel.RelationTypeAlias, out IRelationType? relationType))
+                {
+                    throw new InvalidOperationException($"The relation type {rel.RelationTypeAlias} does not exist");
+                }
+
+                if (!udiToGuids.TryGetValue(rel.Udi, out Guid guid))
+                {
+                    return null; // This shouldn't happen!
+                }
+
+                if (!keyToIds.TryGetValue(guid, out var id))
+                {
+                    return null; // This shouldn't happen!
+                }
+
+                return new ReadOnlyRelation(entity.Id, id, relationType.Id);
+            }).WhereNotNull();
+
+            // Save bulk relations
+            await RelationRepository.SaveBulkAsync(toSave, cancellationToken);
+        }
+
         private IEnumerable<string> GetAutomaticRelationTypesAliases(
             IPropertyCollection properties,
             PropertyEditorCollection propertyEditors)
@@ -1464,6 +1644,30 @@ namespace Umbraco.Cms.Infrastructure.Persistence.Repositories.Implement
 
             // TODO: we can speed this up: Use BulkInsert and then do one SELECT to re-retrieve the property data inserted with assigned IDs.
             // This is a perfect thing to benchmark with Benchmark.NET to compare perf between Nuget releases.
+        }
+
+        /// <summary>
+        /// Inserts property values for the content entity
+        /// </summary>
+        /// <param name="entity"></param>
+        /// <param name="publishedVersionId"></param>
+        /// <param name="edited"></param>
+        /// <param name="editedCultures"></param>
+        /// <remarks>
+        /// Used when creating a new entity
+        /// </remarks>
+        protected async Task<(bool Edited, HashSet<string>? EditedCultures)> InsertPropertyValuesAsync(TEntity entity, int publishedVersionId, CancellationToken? cancellationToken = null)
+        {
+            // persist the property data
+            IEnumerable<PropertyDataDto> propertyDataDtos = PropertyFactory.BuildDtos(entity.ContentType.Variations, entity.VersionId, publishedVersionId, entity.Properties, LanguageRepository, out var edited, out var editedCultures);
+            foreach (PropertyDataDto? propertyDataDto in propertyDataDtos)
+            {
+                await Database.InsertAsync(propertyDataDto);
+            }
+
+            // TODO: we can speed this up: Use BulkInsert and then do one SELECT to re-retrieve the property data inserted with assigned IDs.
+            // This is a perfect thing to benchmark with Benchmark.NET to compare perf between Nuget releases.
+            return new(edited, editedCultures);
         }
 
         /// <summary>
@@ -1516,6 +1720,59 @@ namespace Umbraco.Cms.Infrastructure.Persistence.Repositories.Implement
             {
                 Database.Execute(SqlContext.Sql().Delete<PropertyDataDto>().WhereIn<PropertyDataDto>(x => x.Id, existingPropDataIds));
             }
+        }
+
+        /// <summary>
+        /// Used to atomically replace the property values for the entity version specified
+        /// </summary>
+        /// <param name="entity"></param>
+        /// <param name="versionId"></param>
+        /// <param name="publishedVersionId"></param>
+        /// <param name="edited"></param>
+        /// <param name="editedCultures"></param>
+
+        protected async Task<(bool Edited, HashSet<string>? EditedCultures)> ReplacePropertyValuesAsync(TEntity entity, int versionId, int publishedVersionId, CancellationToken? cancellationToken = null)
+        {
+            // Replace the property data.
+            // Lookup the data to update with a UPDLOCK (using ForUpdate()) this is because we need to be atomic
+            // and handle DB concurrency. Doing a clear and then re-insert is prone to concurrency issues.
+            Sql<ISqlContext> propDataSql = SqlContext.Sql().Select("*").From<PropertyDataDto>().Where<PropertyDataDto>(x => x.VersionId == versionId).ForUpdate();
+            List<PropertyDataDto>? existingPropData = await Database.FetchAsync<PropertyDataDto>(propDataSql);
+            var propertyTypeToPropertyData = new Dictionary<(int propertyTypeId, int versionId, int? languageId, string? segment), PropertyDataDto>();
+            var existingPropDataIds = new List<int>();
+            foreach (PropertyDataDto? p in existingPropData)
+            {
+                existingPropDataIds.Add(p.Id);
+                propertyTypeToPropertyData[(p.PropertyTypeId, p.VersionId, p.LanguageId, p.Segment)] = p;
+            }
+
+            IEnumerable<PropertyDataDto> propertyDataDtos = PropertyFactory.BuildDtos(entity.ContentType.Variations, entity.VersionId, publishedVersionId, entity.Properties, LanguageRepository, out var edited, out var editedCultures);
+
+            foreach (PropertyDataDto propertyDataDto in propertyDataDtos)
+            {
+                // Check if this already exists and update, else insert a new one
+                if (propertyTypeToPropertyData.TryGetValue((propertyDataDto.PropertyTypeId, propertyDataDto.VersionId, propertyDataDto.LanguageId, propertyDataDto.Segment), out PropertyDataDto? propData))
+                {
+                    propertyDataDto.Id = propData.Id;
+                    await Database.UpdateAsync(propertyDataDto);
+                }
+                else
+                {
+                    // TODO: we can speed this up: Use BulkInsert and then do one SELECT to re-retrieve the property data inserted with assigned IDs.
+                    // This is a perfect thing to benchmark with Benchmark.NET to compare perf between Nuget releases.
+                    await Database.InsertAsync(propertyDataDto);
+                }
+
+                // track which ones have been processed
+                existingPropDataIds.Remove(propertyDataDto.Id);
+            }
+
+            // For any remaining that haven't been processed they need to be deleted
+            if (existingPropDataIds.Count > 0)
+            {
+                await Database.ExecuteAsync(SqlContext.Sql().Delete<PropertyDataDto>().WhereIn<PropertyDataDto>(x => x.Id, existingPropDataIds));
+            }
+            return new(edited, editedCultures);
         }
 
         private class NodeIdKey
