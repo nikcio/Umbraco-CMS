@@ -25,9 +25,4 @@ public interface IContentTypeCommonRepository
     ///     Clears the cache.
     /// </summary>
     void ClearCache();
-
-    /// <summary>
-    ///     Clears the cache.
-    /// </summary>
-    Task ClearCacheAsync(CancellationToken? cancellationToken = null);
 }
