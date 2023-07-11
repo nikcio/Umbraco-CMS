@@ -147,7 +147,7 @@ public abstract class EntityRepositoryBase<TId, TEntity> : RepositoryBase, IRead
     ///     Deletes the passed in entity
     /// </summary>
     public virtual async Task DeleteAsync(TEntity entity, CancellationToken? cancellationToken = null)
-        => CachePolicy.DeleteAsync(entity, PersistDeletedItemAsync, cancellationToken);
+        => await CachePolicy.DeleteAsync(entity, PersistDeletedItemAsync, cancellationToken);
 
     /// <summary>
     ///     Gets an entity by the passed in Id utilizing the repository's cache policy
