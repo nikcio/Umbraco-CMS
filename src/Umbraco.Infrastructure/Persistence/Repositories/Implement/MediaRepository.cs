@@ -759,7 +759,8 @@ public class MediaRepository : ContentRepositoryBase<int, IMedia, MediaRepositor
         var cacheKey = CacheKeys.MediaRecycleBinCacheKey;
 
         // always cache either true or false
-        return await cache.GetCacheItemAsync(cacheKey, async () => await CountChildrenAsync(RecycleBinId, cancellationToken: cancellationToken) > 0);
+        var countOverZero = await CountChildrenAsync(RecycleBinId, cancellationToken: cancellationToken) > 0;
+        return cache.GetCacheItem(cacheKey, () => countOverZero);
     }
 
     #endregion
