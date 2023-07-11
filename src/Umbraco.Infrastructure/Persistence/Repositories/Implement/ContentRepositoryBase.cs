@@ -568,6 +568,14 @@ namespace Umbraco.Cms.Infrastructure.Persistence.Repositories.Implement
             tagRepo.RemoveAll(entity.Id);
         }
 
+        /// <summary>
+        /// Clears tags for an item.
+        /// </summary>
+        protected async Task ClearEntityTagsAsync(IContentBase entity, ITagRepository tagRepo, CancellationToken? cancellationToken = null)
+        {
+            await tagRepo.RemoveAllAsync(entity.Id, cancellationToken);
+        }
+
         #endregion
 
         private Sql<ISqlContext> PreparePageSql(Sql<ISqlContext> sql, Sql<ISqlContext>? filterSql, Ordering ordering)
@@ -1168,6 +1176,63 @@ namespace Umbraco.Cms.Infrastructure.Persistence.Repositories.Implement
             return GetPropertyCollections(temps, allPropertyDataDtos);
         }
 
+        protected async Task<IDictionary<int, PropertyCollection>> GetPropertyCollectionsAsync<T>(List<TempContent<T>> temps, CancellationToken? cancellationToken = null)
+            where T : class, IContentBase
+        {
+            var versions = new List<int>();
+            foreach (TempContent<T> temp in temps)
+            {
+                versions.Add(temp.VersionId);
+                if (temp.PublishedVersionId > 0)
+                {
+                    versions.Add(temp.PublishedVersionId);
+                }
+            }
+
+            if (versions.Count == 0)
+            {
+                return new Dictionary<int, PropertyCollection>();
+            }
+
+            // TODO: This is a bugger of a query and I believe is the main issue with regards to SQL performance drain when querying content
+            // which is done when rebuilding caches/indexes/etc... in bulk. We are using an "IN" query on umbracoPropertyData.VersionId
+            // which then performs a Clustered Index Scan on PK_umbracoPropertyData which means it iterates the entire table which can be enormous!
+            // especially if there are both a lot of content but worse if there is a lot of versions of that content.
+            // So is it possible to return this property data without doing an index scan on PK_umbracoPropertyData and without iterating every row
+            // in the table?
+
+            // get all PropertyDataDto for all definitions / versions
+            var allPropertyDataDtos = (await Database.FetchByGroupsAsync<PropertyDataDto, int>(versions, Constants.Sql.MaxParameterCount, batch =>
+                SqlContext.Sql()
+                    .Select<PropertyDataDto>()
+                    .From<PropertyDataDto>()
+                    .WhereIn<PropertyDataDto>(x => x.VersionId, batch)))
+                .ToList();
+
+            // get PropertyDataDto distinct PropertyTypeDto
+            var allPropertyTypeIds = allPropertyDataDtos.Select(x => x.PropertyTypeId).Distinct().ToList();
+            IEnumerable<PropertyTypeDto> allPropertyTypeDtos = await Database.FetchByGroupsAsync<PropertyTypeDto, int>(allPropertyTypeIds, Constants.Sql.MaxParameterCount, batch =>
+                SqlContext.Sql()
+                    .Select<PropertyTypeDto>(r => r.Select(x => x.DataTypeDto))
+                    .From<PropertyTypeDto>()
+                    .InnerJoin<DataTypeDto>().On<PropertyTypeDto, DataTypeDto>((left, right) => left.DataTypeId == right.NodeId)
+                    .WhereIn<PropertyTypeDto>(x => x.Id, batch));
+
+            // index the types for perfs, and assign to PropertyDataDto
+            var indexedPropertyTypeDtos = allPropertyTypeDtos.ToDictionary(x => x.Id, x => x);
+            foreach (PropertyDataDto a in allPropertyDataDtos)
+            {
+                a.PropertyTypeDto = indexedPropertyTypeDtos[a.PropertyTypeId];
+            }
+
+            // now we have
+            // - the definitions
+            // - all property data dtos
+            // - tag editors (Actually ... no we don't since i removed that code, but we don't need them anyways it seems)
+            // and we need to build the proper property collections
+            return GetPropertyCollections(temps, allPropertyDataDtos);
+        }
+
         private IDictionary<int, PropertyCollection> GetPropertyCollections<T>(List<TempContent<T>> temps, IEnumerable<PropertyDataDto> allPropertyDataDtos)
             where T : class, IContentBase
         {
@@ -1390,6 +1455,19 @@ namespace Umbraco.Cms.Infrastructure.Persistence.Repositories.Implement
             return SimilarNodeName.GetUniqueName(names, id, nodeName);
         }
 
+        protected virtual async Task<string?> EnsureUniqueNodeNameAsync(int parentId, string? nodeName, int id = 0, CancellationToken? cancellationToken = null)
+        {
+            SqlTemplate? template = SqlContext.Templates.Get(Constants.SqlTemplates.VersionableRepository.EnsureUniqueNodeName, tsql => tsql
+                .Select<NodeDto>(x => Alias(x.NodeId, "id"), x => Alias(x.Text!, "name"))
+                .From<NodeDto>()
+                .Where<NodeDto>(x => x.NodeObjectType == SqlTemplate.Arg<Guid>("nodeObjectType") && x.ParentId == SqlTemplate.Arg<int>("parentId")));
+
+            Sql<ISqlContext> sql = template.Sql(NodeObjectTypeId, parentId);
+            List<SimilarNodeName>? names = await Database.FetchAsync<SimilarNodeName>(sql);
+
+            return SimilarNodeName.GetUniqueName(names, id, nodeName);
+        }
+
         protected virtual bool SortorderExists(int parentId, int sortOrder)
         {
             SqlTemplate? template = SqlContext.Templates.Get(Constants.SqlTemplates.VersionableRepository.SortOrderExists, tsql => tsql
@@ -1401,6 +1479,21 @@ namespace Umbraco.Cms.Infrastructure.Persistence.Repositories.Implement
 
             Sql<ISqlContext> sql = template.Sql(NodeObjectTypeId, parentId, sortOrder);
             var result = Database.ExecuteScalar<int?>(sql);
+
+            return result != null;
+        }
+
+        protected virtual async Task<bool> SortorderExistsAsync(int parentId, int sortOrder, CancellationToken? cancellationToken = null)
+        {
+            SqlTemplate? template = SqlContext.Templates.Get(Constants.SqlTemplates.VersionableRepository.SortOrderExists, tsql => tsql
+                .Select("sortOrder")
+                .From<NodeDto>()
+                .Where<NodeDto>(x => x.NodeObjectType == SqlTemplate.Arg<Guid>("nodeObjectType") &&
+                x.ParentId == SqlTemplate.Arg<int>("parentId") &&
+                x.SortOrder == SqlTemplate.Arg<int>("sortOrder")));
+
+            Sql<ISqlContext> sql = template.Sql(NodeObjectTypeId, parentId, sortOrder);
+            var result = await Database.ExecuteScalarAsync<int?>(sql);
 
             return result != null;
         }
@@ -1466,6 +1559,19 @@ namespace Umbraco.Cms.Infrastructure.Persistence.Repositories.Implement
 
             Sql<ISqlContext> sql = template.Sql(new { uniqueId });
             var id = Database.ExecuteScalar<int?>(sql);
+
+            return id ?? 0;
+        }
+
+        protected virtual async Task<int> GetReservedIdAsync(Guid uniqueId, CancellationToken? cancellationToken = null)
+        {
+            SqlTemplate template = SqlContext.Templates.Get(Constants.SqlTemplates.VersionableRepository.GetReservedId, tsql => tsql
+                .Select<NodeDto>(x => x.NodeId)
+                .From<NodeDto>()
+                .Where<NodeDto>(x => x.UniqueId == SqlTemplate.Arg<Guid>("uniqueId") && x.NodeObjectType == Constants.ObjectTypes.IdReservation));
+
+            Sql<ISqlContext> sql = template.Sql(new { uniqueId });
+            var id = await Database.ExecuteScalarAsync<int?>(sql);
 
             return id ?? 0;
         }
