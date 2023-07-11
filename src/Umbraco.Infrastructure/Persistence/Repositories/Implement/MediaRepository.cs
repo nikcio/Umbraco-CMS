@@ -85,6 +85,26 @@ public class MediaRepository : ContentRepositoryBase<int, IMedia, MediaRepositor
             ordering);
     }
 
+    public override async Task<(IEnumerable<IMedia> Results, long TotalRecords)> GetPageAsync(IQuery<IMedia>? query, long pageIndex, int pageSize, IQuery<IMedia>? filter, Ordering? ordering, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext>? filterSql = null;
+
+        if (filter != null)
+        {
+            filterSql = Sql();
+            foreach (Tuple<string, object[]> clause in filter.GetWhereClauses())
+            {
+                filterSql = filterSql.Append($"AND ({clause.Item1})", clause.Item2);
+            }
+        }
+
+        return await GetPageAsync<ContentDto>(query, pageIndex, pageSize,
+            x => MapDtosToContent(x),
+            filterSql,
+            ordering,
+            cancellationToken);
+    }
+
     private IEnumerable<IMedia> MapDtosToContent(List<ContentDto> dtos, bool withCache = false)
     {
         var temps = new List<TempContent<Core.Models.Media>>();
@@ -175,6 +195,18 @@ public class MediaRepository : ContentRepositoryBase<int, IMedia, MediaRepositor
             : MapDtoToContent(dto);
     }
 
+    protected override async Task<IMedia?> PerformGetAsync(int id, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sql = GetBaseQuery(QueryType.Single)
+            .Where<NodeDto>(x => x.NodeId == id)
+            .SelectTop(1);
+
+        ContentDto? dto = (await Database.FetchAsync<ContentDto>(sql)).FirstOrDefault();
+        return dto == null
+            ? null
+            : MapDtoToContent(dto);
+    }
+
     protected override IEnumerable<IMedia> PerformGetAll(params int[]? ids)
     {
         Sql<ISqlContext> sql = GetBaseQuery(QueryType.Many);
@@ -185,6 +217,18 @@ public class MediaRepository : ContentRepositoryBase<int, IMedia, MediaRepositor
         }
 
         return MapDtosToContent(Database.Fetch<ContentDto>(sql));
+    }
+
+    protected override async Task<IEnumerable<IMedia>> PerformGetAllAsync(CancellationToken? cancellationToken = null, params int[]? ids)
+    {
+        Sql<ISqlContext> sql = GetBaseQuery(QueryType.Many);
+
+        if (ids?.Any() ?? false)
+        {
+            sql.WhereIn<NodeDto>(x => x.NodeId, ids);
+        }
+
+        return MapDtosToContent(await Database.FetchAsync<ContentDto>(sql));
     }
 
     protected override IEnumerable<IMedia> PerformGetByQuery(IQuery<IMedia> query)
@@ -199,6 +243,20 @@ public class MediaRepository : ContentRepositoryBase<int, IMedia, MediaRepositor
             .OrderBy<NodeDto>(x => x.SortOrder);
 
         return MapDtosToContent(Database.Fetch<ContentDto>(sql));
+    }
+
+    protected override async Task<IEnumerable<IMedia>> PerformGetByQueryAsync(IQuery<IMedia> query, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sqlClause = GetBaseQuery(QueryType.Many);
+
+        var translator = new SqlTranslator<IMedia>(sqlClause, query);
+        Sql<ISqlContext> sql = translator.Translate();
+
+        sql
+            .OrderBy<NodeDto>(x => x.Level)
+            .OrderBy<NodeDto>(x => x.SortOrder);
+
+        return MapDtosToContent(await Database.FetchAsync<ContentDto>(sql));
     }
 
     protected override Sql<ISqlContext> GetBaseQuery(QueryType queryType) => GetBaseQuery(queryType);
@@ -294,12 +352,31 @@ public class MediaRepository : ContentRepositoryBase<int, IMedia, MediaRepositor
         return MapDtosToContent(Database.Fetch<ContentDto>(sql), true);
     }
 
+    public override async Task<IEnumerable<IMedia>> GetAllVersionsAsync(int nodeId, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sql = GetBaseQuery(QueryType.Many, false)
+            .Where<NodeDto>(x => x.NodeId == nodeId)
+            .OrderByDescending<ContentVersionDto>(x => x.Current)
+            .AndByDescending<ContentVersionDto>(x => x.VersionDate);
+
+        return MapDtosToContent(await Database.FetchAsync<ContentDto>(sql), true);
+    }
+
     public override IMedia? GetVersion(int versionId)
     {
         Sql<ISqlContext> sql = GetBaseQuery(QueryType.Single)
             .Where<ContentVersionDto>(x => x.Id == versionId);
 
         ContentDto? dto = Database.Fetch<ContentDto>(sql).FirstOrDefault();
+        return dto == null ? null : MapDtoToContent(dto);
+    }
+
+    public override async Task<IMedia?> GetVersionAsync(int versionId, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sql = GetBaseQuery(QueryType.Single)
+            .Where<ContentVersionDto>(x => x.Id == versionId);
+
+        ContentDto? dto = (await Database.FetchAsync<ContentDto>(sql)).FirstOrDefault();
         return dto == null ? null : MapDtoToContent(dto);
     }
 
@@ -327,10 +404,41 @@ public class MediaRepository : ContentRepositoryBase<int, IMedia, MediaRepositor
             : MapDtoToContent(dto);
     }
 
+    public async Task<IMedia?> GetMediaByPathAsync(string mediaPath, CancellationToken? cancellationToken = null)
+    {
+        var umbracoFileValue = mediaPath;
+        const string pattern = ".*[_][0-9]+[x][0-9]+[.].*";
+        var isResized = Regex.IsMatch(mediaPath, pattern);
+
+        // If the image has been resized we strip the "_403x328" of the original "/media/1024/koala_403x328.jpg" URL.
+        if (isResized)
+        {
+            var underscoreIndex = mediaPath.LastIndexOf('_');
+            var dotIndex = mediaPath.LastIndexOf('.');
+            umbracoFileValue = string.Concat(mediaPath.Substring(0, underscoreIndex), mediaPath.Substring(dotIndex));
+        }
+
+        Sql<ISqlContext> sql = GetBaseQuery(QueryType.Single, joinMediaVersion: true)
+            .Where<MediaVersionDto>(x => x.Path == umbracoFileValue)
+            .SelectTop(1);
+
+        ContentDto? dto = (await Database.FetchAsync<ContentDto>(sql)).FirstOrDefault();
+        return dto == null
+            ? null
+            : MapDtoToContent(dto);
+    }
+
     protected override void PerformDeleteVersion(int id, int versionId)
     {
         Database.Delete<PropertyDataDto>("WHERE versionId = @versionId", new { versionId });
         Database.Delete<ContentVersionDto>("WHERE versionId = @versionId", new { versionId });
+    }
+
+    protected override Task PerformDeleteVersionAsync(int id, int versionId, CancellationToken? cancellationToken = null)
+    {
+        Database.Delete<PropertyDataDto>("WHERE versionId = @versionId", new { versionId });
+        Database.Delete<ContentVersionDto>("WHERE versionId = @versionId", new { versionId });
+        return Task.CompletedTask;
     }
 
     #endregion
@@ -417,6 +525,86 @@ public class MediaRepository : ContentRepositoryBase<int, IMedia, MediaRepositor
         entity.ResetDirtyProperties();
     }
 
+    protected override async Task PersistNewItemAsync(IMedia item, CancellationToken? cancellationToken = null)
+    {
+        item.AddingEntity();
+
+        // ensure unique name on the same level
+        item.Name = EnsureUniqueNodeName(item.ParentId, item.Name)!;
+
+        // ensure that strings don't contain characters that are invalid in xml
+        // TODO: do we really want to keep doing this here?
+        item.SanitizeEntityPropertiesForXmlStorage();
+
+        // create the dto
+        MediaDto dto = ContentBaseFactory.BuildDto(_mediaUrlGenerators, item);
+
+        // derive path and level from parent
+        NodeDto parent = await GetParentNodeDtoAsync(item.ParentId, cancellationToken);
+        var level = parent.Level + 1;
+
+        // get sort order
+        var sortOrder = GetNewChildSortOrder(item.ParentId, 0);
+
+        // persist the node dto
+        NodeDto nodeDto = dto.ContentDto.NodeDto;
+        nodeDto.Path = parent.Path;
+        nodeDto.Level = Convert.ToInt16(level);
+        nodeDto.SortOrder = sortOrder;
+
+        // see if there's a reserved identifier for this unique id
+        // and then either update or insert the node dto
+        var id = await GetReservedIdAsync(nodeDto.UniqueId, cancellationToken);
+        if (id > 0)
+        {
+            nodeDto.NodeId = id;
+        }
+        else
+        {
+            await Database.InsertAsync(nodeDto);
+        }
+
+        nodeDto.Path = string.Concat(parent.Path, ",", nodeDto.NodeId);
+        nodeDto.ValidatePathWithException();
+        await Database.UpdateAsync(nodeDto);
+
+        // update entity
+        item.Id = nodeDto.NodeId;
+        item.Path = nodeDto.Path;
+        item.SortOrder = sortOrder;
+        item.Level = level;
+
+        // persist the content dto
+        ContentDto contentDto = dto.ContentDto;
+        contentDto.NodeId = nodeDto.NodeId;
+        await Database.InsertAsync(contentDto);
+
+        // persist the content version dto
+        // assumes a new version id and version date (modified date) has been set
+        ContentVersionDto contentVersionDto = dto.MediaVersionDto.ContentVersionDto;
+        contentVersionDto.NodeId = nodeDto.NodeId;
+        contentVersionDto.Current = true;
+        await Database.InsertAsync(contentVersionDto);
+        item.VersionId = contentVersionDto.Id;
+
+        // persist the media version dto
+        MediaVersionDto mediaVersionDto = dto.MediaVersionDto;
+        mediaVersionDto.Id = item.VersionId;
+        await Database.InsertAsync(mediaVersionDto);
+
+        // persist the property data
+        await InsertPropertyValuesAsync(item, 0, cancellationToken);
+
+        // set tags
+        await SetEntityTagsAsync(item, _tagRepository, _serializer, cancellationToken);
+
+        await PersistRelationsAsync(item, cancellationToken);
+
+        OnUowRefreshedEntity(new MediaRefreshNotification(item, new EventMessages()));
+
+        item.ResetDirtyProperties();
+    }
+
     protected override void PersistUpdatedItem(IMedia entity)
     {
         // update
@@ -480,6 +668,69 @@ public class MediaRepository : ContentRepositoryBase<int, IMedia, MediaRepositor
         entity.ResetDirtyProperties();
     }
 
+    protected override async Task PersistUpdatedItemAsync(IMedia item, CancellationToken? cancellationToken = null)
+    {
+        // update
+        item.UpdatingEntity();
+
+        // Check if this entity is being moved as a descendant as part of a bulk moving operations.
+        // In this case we can bypass a lot of the below operations which will make this whole operation go much faster.
+        // When moving we don't need to create new versions, etc... because we cannot roll this operation back anyways.
+        var isMoving = item.IsMoving();
+
+        if (!isMoving)
+        {
+            // ensure unique name on the same level
+            item.Name = EnsureUniqueNodeName(item.ParentId, item.Name, item.Id)!;
+
+            // ensure that strings don't contain characters that are invalid in xml
+            // TODO: do we really want to keep doing this here?
+            item.SanitizeEntityPropertiesForXmlStorage();
+
+            // if parent has changed, get path, level and sort order
+            if (item.IsPropertyDirty(nameof(item.ParentId)))
+            {
+                NodeDto parent = await GetParentNodeDtoAsync(item.ParentId, cancellationToken);
+
+                item.Path = string.Concat(parent.Path, ",", item.Id);
+                item.Level = parent.Level + 1;
+                item.SortOrder = await GetNewChildSortOrderAsync(item.ParentId, 0, cancellationToken);
+            }
+        }
+
+        // create the dto
+        MediaDto dto = ContentBaseFactory.BuildDto(_mediaUrlGenerators, item);
+
+        // update the node dto
+        NodeDto nodeDto = dto.ContentDto.NodeDto;
+        nodeDto.ValidatePathWithException();
+        await Database.UpdateAsync(nodeDto);
+
+        if (!isMoving)
+        {
+            // update the content dto
+            await Database.UpdateAsync(dto.ContentDto);
+
+            // update the content & media version dtos
+            ContentVersionDto contentVersionDto = dto.MediaVersionDto.ContentVersionDto;
+            MediaVersionDto mediaVersionDto = dto.MediaVersionDto;
+            contentVersionDto.Current = true;
+            await Database.UpdateAsync(contentVersionDto);
+            await Database.UpdateAsync(mediaVersionDto);
+
+            // replace the property data
+            await ReplacePropertyValuesAsync(item, item.VersionId, 0, cancellationToken);
+
+            await SetEntityTagsAsync(item, _tagRepository, _serializer, cancellationToken);
+
+            await PersistRelationsAsync(item, cancellationToken);
+        }
+
+        OnUowRefreshedEntity(new MediaRefreshNotification(item, new EventMessages()));
+
+        item.ResetDirtyProperties();
+    }
+
     protected override void PersistDeletedItem(IMedia entity)
     {
         // Raise event first else potential FK issues
@@ -502,16 +753,30 @@ public class MediaRepository : ContentRepositoryBase<int, IMedia, MediaRepositor
         return cache.GetCacheItem(cacheKey, () => CountChildren(RecycleBinId) > 0);
     }
 
+    public async Task<bool> RecycleBinSmellsAsync(CancellationToken? cancellationToken = null)
+    {
+        IAppPolicyCache cache = _cache.RuntimeCache;
+        var cacheKey = CacheKeys.MediaRecycleBinCacheKey;
+
+        // always cache either true or false
+        return await cache.GetCacheItemAsync(cacheKey, async () => await CountChildrenAsync(RecycleBinId, cancellationToken: cancellationToken) > 0);
+    }
+
     #endregion
 
     #region Read Repository implementation for Guid keys
 
     public IMedia? Get(Guid id) => _mediaByGuidReadRepository.Get(id);
 
+    public async Task<IMedia?> GetAsync(Guid id, CancellationToken? cancellationToken = null) => await _mediaByGuidReadRepository.GetAsync(id, cancellationToken);
+
     IEnumerable<IMedia> IReadRepository<Guid, IMedia>.GetMany(params Guid[]? ids) =>
         _mediaByGuidReadRepository.GetMany(ids);
+    public async Task<IEnumerable<IMedia>> GetManyAsync(CancellationToken? cancellationToken = null, params Guid[]? ids) =>
+        await _mediaByGuidReadRepository.GetManyAsync(cancellationToken, ids);
 
     public bool Exists(Guid id) => _mediaByGuidReadRepository.Exists(id);
+    public async Task<bool> ExistsAsync(Guid id, CancellationToken? cancellationToken = null) => await _mediaByGuidReadRepository.ExistsAsync(id, cancellationToken);
 
     // A reading repository purely for looking up by GUID
     // TODO: This is ugly and to fix we need to decouple the IRepositoryQueryable -> IRepository -> IReadRepository which should all be separate things!
@@ -540,6 +805,22 @@ public class MediaRepository : ContentRepositoryBase<int, IMedia, MediaRepositor
 
             return content;
         }
+        protected override async Task<IMedia?> PerformGetAsync(Guid id, CancellationToken? cancellationToken = null)
+        {
+            Sql<ISqlContext> sql = _outerRepo.GetBaseQuery(QueryType.Single)
+                .Where<NodeDto>(x => x.UniqueId == id);
+
+            ContentDto? dto = (await Database.FetchAsync<ContentDto>(sql.SelectTop(1))).FirstOrDefault();
+
+            if (dto == null)
+            {
+                return null;
+            }
+
+            IMedia content = _outerRepo.MapDtoToContent(dto);
+
+            return content;
+        }
 
         protected override IEnumerable<IMedia> PerformGetAll(params Guid[]? ids)
         {
@@ -552,7 +833,21 @@ public class MediaRepository : ContentRepositoryBase<int, IMedia, MediaRepositor
             return _outerRepo.MapDtosToContent(Database.Fetch<ContentDto>(sql));
         }
 
+        protected override async Task<IEnumerable<IMedia>> PerformGetAllAsync(CancellationToken? cancellationToken = null, params Guid[]? ids)
+        {
+            Sql<ISqlContext> sql = _outerRepo.GetBaseQuery(QueryType.Many);
+            if (ids?.Length > 0)
+            {
+                sql.WhereIn<NodeDto>(x => x.UniqueId, ids);
+            }
+
+            return _outerRepo.MapDtosToContent(await Database.FetchAsync<ContentDto>(sql));
+        }
+
         protected override IEnumerable<IMedia> PerformGetByQuery(IQuery<IMedia> query) =>
+            throw new InvalidOperationException("This method won't be implemented.");
+
+        protected override Task<IEnumerable<IMedia>> PerformGetByQueryAsync(IQuery<IMedia> query, CancellationToken? cancellationToken = null) =>
             throw new InvalidOperationException("This method won't be implemented.");
 
         protected override IEnumerable<string> GetDeleteClauses() =>
@@ -560,8 +855,13 @@ public class MediaRepository : ContentRepositoryBase<int, IMedia, MediaRepositor
 
         protected override void PersistNewItem(IMedia entity) =>
             throw new InvalidOperationException("This method won't be implemented.");
+        protected override Task PersistNewItemAsync(IMedia item, CancellationToken? cancellationToken = null) =>
+            throw new InvalidOperationException("This method won't be implemented.");
 
         protected override void PersistUpdatedItem(IMedia entity) =>
+            throw new InvalidOperationException("This method won't be implemented.");
+
+        protected override Task PersistUpdatedItemAsync(IMedia item, CancellationToken? cancellationToken = null) =>
             throw new InvalidOperationException("This method won't be implemented.");
 
         protected override Sql<ISqlContext> GetBaseQuery(bool isCount) =>
