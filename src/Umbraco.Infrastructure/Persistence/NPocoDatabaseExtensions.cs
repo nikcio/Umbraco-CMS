@@ -124,6 +124,50 @@ public static partial class NPocoDatabaseExtensions
         where T : class =>
         db.InsertOrUpdate(poco, null, null);
 
+    // NOTE
+    //
+    // proper way to do it with TSQL and SQLCE
+    //   IF EXISTS (SELECT ... FROM table WITH (UPDLOCK,HOLDLOCK)) WHERE ...)
+    //   BEGIN
+    //     UPDATE table SET ... WHERE ...
+    //   END
+    //   ELSE
+    //   BEGIN
+    //     INSERT INTO table (...) VALUES (...)
+    //   END
+    //
+    // works in READ COMMITED, TSQL & SQLCE lock the constraint even if it does not exist, so INSERT is OK
+    //
+    // TODO: use the proper database syntax, not this kludge
+
+    /// <summary>
+    ///     Safely inserts a record, or updates if it exists, based on a unique constraint.
+    /// </summary>
+    /// <param name="db"></param>
+    /// <param name="poco"></param>
+    /// <returns>
+    ///     The action that executed, either an insert or an update. If an insert occurred and a PK value got generated, the
+    ///     poco object
+    ///     passed in will contain the updated value.
+    /// </returns>
+    /// <remarks>
+    ///     <para>
+    ///         We cannot rely on database-specific options because SQLCE
+    ///         does not support any of them. Ideally this should be achieved with proper transaction isolation levels but that
+    ///         would mean revisiting
+    ///         isolation levels globally. We want to keep it simple for the time being and manage it manually.
+    ///     </para>
+    ///     <para>We handle it by trying to update, then insert, etc. until something works, or we get bored.</para>
+    ///     <para>
+    ///         Note that with proper transactions, if T2 begins after T1 then we are sure that the database will contain T2's
+    ///         value
+    ///         once T1 and T2 have completed. Whereas here, it could contain T1's value.
+    ///     </para>
+    /// </remarks>
+    public static async Task<RecordPersistenceType> InsertOrUpdateAsync<T>(this IUmbracoDatabase db, T poco, CancellationToken? cancellationToken = null)
+        where T : class =>
+        await db.InsertOrUpdateAsync(poco, null, null, cancellationToken);
+
     /// <summary>
     ///     Safely inserts a record, or updates if it exists, based on a unique constraint.
     /// </summary>
@@ -194,6 +238,92 @@ public static partial class NPocoDatabaseExtensions
                 // try to update
                 rowCount = updateCommand.IsNullOrWhiteSpace() || updateArgs is null
                     ? db.Update(poco)
+                    : db.Update<T>(updateCommand!, updateArgs);
+                if (rowCount > 0)
+                {
+                    return RecordPersistenceType.Update;
+                }
+
+                // failed: does not exist (due to race cond RC2), need to insert
+                // loop
+            }
+        }
+
+        // this can go on forever... have to break at some point and report an error.
+        throw new DataException("Record could not be inserted or updated.");
+    }
+
+    /// <summary>
+    ///     Safely inserts a record, or updates if it exists, based on a unique constraint.
+    /// </summary>
+    /// <param name="db"></param>
+    /// <param name="poco"></param>
+    /// <param name="updateArgs"></param>
+    /// <param name="updateCommand">If the entity has a composite key they you need to specify the update command explicitly</param>
+    /// <returns>
+    ///     The action that executed, either an insert or an update. If an insert occurred and a PK value got generated, the
+    ///     poco object
+    ///     passed in will contain the updated value.
+    /// </returns>
+    /// <remarks>
+    ///     <para>
+    ///         We cannot rely on database-specific options because SQLCE
+    ///         does not support any of them. Ideally this should be achieved with proper transaction isolation levels but that
+    ///         would mean revisiting
+    ///         isolation levels globally. We want to keep it simple for the time being and manage it manually.
+    ///     </para>
+    ///     <para>We handle it by trying to update, then insert, etc. until something works, or we get bored.</para>
+    ///     <para>
+    ///         Note that with proper transactions, if T2 begins after T1 then we are sure that the database will contain T2's
+    ///         value
+    ///         once T1 and T2 have completed. Whereas here, it could contain T1's value.
+    ///     </para>
+    /// </remarks>
+    public static async Task<RecordPersistenceType> InsertOrUpdateAsync<T>(
+        this IUmbracoDatabase db,
+        T poco,
+        string? updateCommand,
+        object? updateArgs,
+        CancellationToken? cancellationToken = null)
+        where T : class
+    {
+        if (poco == null)
+        {
+            throw new ArgumentNullException(nameof(poco));
+        }
+
+        // TODO: NPoco has a Save method that works with the primary key
+        //  in any case, no point trying to update if there's no primary key!
+
+        // try to update
+        var rowCount = updateCommand.IsNullOrWhiteSpace() || updateArgs is null
+            ? await db.UpdateAsync(poco)
+            : db.Update<T>(updateCommand!, updateArgs);
+        if (rowCount > 0)
+        {
+            return RecordPersistenceType.Update;
+        }
+
+        // failed: does not exist, need to insert
+        // RC1 race cond here: another thread may insert a record with the same constraint
+        var i = 0;
+        while (i++ < 4)
+        {
+            try
+            {
+                // try to insert
+                await db.InsertAsync(poco);
+                return RecordPersistenceType.Insert;
+            }
+            catch (DbException)
+            {
+                // assuming all db engines will throw SQLException exception
+                // failed: exists (due to race cond RC1)
+                // RC2 race cond here: another thread may remove the record
+
+                // try to update
+                rowCount = updateCommand.IsNullOrWhiteSpace() || updateArgs is null
+                    ? await db.UpdateAsync(poco)
                     : db.Update<T>(updateCommand!, updateArgs);
                 if (rowCount > 0)
                 {
@@ -323,4 +453,10 @@ public static partial class NPocoDatabaseExtensions
 
     public static IEnumerable<TResult> FetchByGroups<TResult, TSource>(this IDatabase db, IEnumerable<TSource> source, int groupSize, Func<IEnumerable<TSource>, Sql<ISqlContext>> sqlFactory) =>
         source.SelectByGroups(x => db.Fetch<TResult>(sqlFactory(x)), groupSize);
+
+    public static async Task<IEnumerable<TResult>> FetchByGroupsAsync<TResult, TSource>(this IDatabase db, IEnumerable<TSource> source, int groupSize, Func<IEnumerable<TSource>, Sql<ISqlContext>> sqlFactory)
+    {
+        var results = await db.FetchAsync<TResult>(sqlFactory(source));
+        return source.SelectByGroups(_ => results, groupSize);
+    }
 }
