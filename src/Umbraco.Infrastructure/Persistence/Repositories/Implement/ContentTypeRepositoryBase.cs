@@ -2494,7 +2494,7 @@ AND umbracoNode.id <> @id",
         // This is a reader (Query), we are not fetching this all into memory so we cannot make any changes during this iteration, we are just collecting data.
         // Published data will always come before Current data based on the version id sort.
         // There will only be one published row (max) and one current row per property.
-        foreach (PropertyValueVersionDto? row in await Database.QueryAsync<PropertyValueVersionDto>(propertySql))
+        await foreach(PropertyValueVersionDto? row in Database.QueryAsync<PropertyValueVersionDto>(propertySql))
         {
             // make sure to reset on each node/property change
             if (nodeId != row.NodeId || propertyTypeId != row.PropertyTypeId)
@@ -2560,7 +2560,7 @@ AND umbracoNode.id <> @id",
                     .WhereIn<DocumentCultureVariationDto>(x => x.LanguageId, languageIds)
                     .WhereIn<DocumentCultureVariationDto>(x => x.NodeId, group);
 
-                return await Database.FetchAsync<DocumentCultureVariationDto>(sql);
+                return Database.Fetch<DocumentCultureVariationDto>(sql);
             })
             .ToDictionary(
                 x => (x.NodeId, (int?)x.LanguageId),
