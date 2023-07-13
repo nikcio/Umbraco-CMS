@@ -320,6 +320,42 @@ internal class ContentTypeRepository : ContentTypeRepositoryBase<IContentType>, 
         base.PersistDeletedItem(entity);
     }
 
+    /// <summary>
+    ///     Deletes a content type
+    /// </summary>
+    /// <param name="entity"></param>
+    /// <remarks>
+    ///     First checks for children and removes those first
+    /// </remarks>
+    protected override async Task PersistDeletedItemAsync(IContentType entity, CancellationToken? cancellationToken = null)
+    {
+        IQuery<IContentType> query = Query<IContentType>().Where(x => x.ParentId == entity.Id);
+        IEnumerable<IContentType> children = await GetAsync(query, cancellationToken);
+        foreach (IContentType child in children)
+        {
+            await PersistDeletedItemAsync(child, cancellationToken);
+        }
+
+        // Before we call the base class methods to run all delete clauses, we need to first
+        // delete all of the property data associated with this document type. Normally this will
+        // be done in the ContentTypeService by deleting all associated content first, but in some cases
+        // like when we switch a document type, there is property data left over that is linked
+        // to the previous document type. So we need to ensure it's removed.
+        Sql<ISqlContext> sql = Sql()
+            .Select("DISTINCT " + Constants.DatabaseSchema.Tables.PropertyData + ".propertytypeid")
+            .From<PropertyDataDto>()
+            .InnerJoin<PropertyTypeDto>()
+            .On<PropertyDataDto, PropertyTypeDto>(dto => dto.PropertyTypeId, dto => dto.Id)
+            .InnerJoin<ContentTypeDto>()
+            .On<ContentTypeDto, PropertyTypeDto>(dto => dto.NodeId, dto => dto.ContentTypeId)
+            .Where<ContentTypeDto>(dto => dto.NodeId == entity.Id);
+
+        // Delete all PropertyData where propertytypeid EXISTS in the subquery above
+        await Database.ExecuteAsync(SqlSyntax.GetDeleteSubquery(Constants.DatabaseSchema.Tables.PropertyData, "propertytypeid", sql));
+
+        await base.PersistDeletedItemAsync(entity, cancellationToken);
+    }
+
     protected override void PersistNewItem(IContentType entity)
     {
         if (string.IsNullOrWhiteSpace(entity.Alias))
