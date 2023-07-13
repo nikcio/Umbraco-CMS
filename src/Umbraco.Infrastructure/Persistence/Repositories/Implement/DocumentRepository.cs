@@ -2040,7 +2040,7 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
     /// <param name="permission"></param>
     public void AddOrUpdatePermissions(ContentPermissionSet permission) => PermissionRepository.Save(permission);
 
-    public Task AddOrUpdatePermissionsAsync(ContentPermissionSet permission, CancellationToken? cancellationToken = null) => await PermissionRepository.SaveAsync(permission, cancellationToken);
+    public async Task AddOrUpdatePermissionsAsync(ContentPermissionSet permission, CancellationToken? cancellationToken = null) => await PermissionRepository.SaveAsync(permission, cancellationToken);
 
     /// <inheritdoc />
     public override IEnumerable<IContent> GetPage(IQuery<IContent>? query,
