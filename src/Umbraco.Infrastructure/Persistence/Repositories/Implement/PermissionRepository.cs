@@ -620,5 +620,8 @@ internal class PermissionRepository<TEntity> : EntityRepositoryBase<int, Content
     protected override void PersistDeletedItem(ContentPermissionSet entity) =>
         throw new InvalidOperationException("This method won't be implemented.");
 
+    protected override Task PersistDeletedItemAsync(ContentPermissionSet entity, CancellationToken? cancellationToken = null) =>
+        throw new InvalidOperationException("This method won't be implemented.");
+
     #endregion
 }
