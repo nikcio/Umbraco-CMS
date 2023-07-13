@@ -98,6 +98,58 @@ internal class DataTypeRepository : EntityRepositoryBase<int, IDataType>, IDataT
         return moveInfo;
     }
 
+    public async Task<IEnumerable<MoveEventInfo<IDataType>>> MoveAsync(IDataType toMove, EntityContainer? container, CancellationToken? cancellationToken = null)
+    {
+        var parentId = -1;
+        if (container != null)
+        {
+            // Check on paths
+            if (string.Format(",{0},", container.Path)
+                    .IndexOf(string.Format(",{0},", toMove.Id), StringComparison.Ordinal) > -1)
+            {
+                throw new DataOperationException<MoveOperationStatusType>(
+                    MoveOperationStatusType.FailedNotAllowedByPath);
+            }
+
+            parentId = container.Id;
+        }
+
+        // used to track all the moved entities to be given to the event
+        var moveInfo = new List<MoveEventInfo<IDataType>> { new(toMove, toMove.Path, parentId) };
+
+        var origPath = toMove.Path;
+
+        // do the move to a new parent
+        toMove.ParentId = parentId;
+
+        // set the updated path
+        toMove.Path = string.Concat(container == null ? parentId.ToInvariantString() : container.Path, ",", toMove.Id);
+
+        // schedule it for updating in the transaction
+        await SaveAsync(toMove, cancellationToken);
+
+        // update all descendants from the original path, update in order of level
+        IEnumerable<IDataType> descendants =
+            await GetAsync(Query<IDataType>().Where(type => type.Path.StartsWith(origPath + ",")), cancellationToken);
+
+        IDataType lastParent = toMove;
+        if (descendants is not null)
+        {
+            foreach (IDataType descendant in descendants.OrderBy(x => x.Level))
+            {
+                moveInfo.Add(new MoveEventInfo<IDataType>(descendant, descendant.Path, descendant.ParentId));
+
+                descendant.ParentId = lastParent.Id;
+                descendant.Path = string.Concat(lastParent.Path, ",", descendant.Id);
+
+                // schedule it for updating in the transaction
+                await SaveAsync(descendant, cancellationToken);
+            }
+        }
+
+        return moveInfo;
+    }
+
     public IReadOnlyDictionary<Udi, IEnumerable<string>> FindUsages(int id)
     {
         if (id == default)
@@ -124,9 +176,37 @@ internal class DataTypeRepository : EntityRepositoryBase<int, IDataType>, IDataT
             x => (IEnumerable<string>)x.PropertyTypes.Select(p => p.Alias).ToList());
     }
 
+    public Task<IReadOnlyDictionary<Udi, IEnumerable<string>>> FindUsagesAsync(int id, CancellationToken? cancellationToken = null)
+    {
+        if (id == default)
+        {
+            return Task.FromResult<IReadOnlyDictionary<Udi, IEnumerable<string>>>(new Dictionary<Udi, IEnumerable<string>>());
+        }
+
+        Sql<ISqlContext> sql = Sql()
+            .Select<ContentTypeDto>(ct => ct.Select(node => node.NodeDto))
+            .AndSelect<PropertyTypeDto>(pt => Alias(pt.Alias, "ptAlias"), pt => Alias(pt.Name, "ptName"))
+            .From<PropertyTypeDto>()
+            .InnerJoin<ContentTypeDto>().On<ContentTypeDto, PropertyTypeDto>(ct => ct.NodeId, pt => pt.ContentTypeId)
+            .InnerJoin<NodeDto>().On<NodeDto, ContentTypeDto>(n => n.NodeId, ct => ct.NodeId)
+            .Where<PropertyTypeDto>(pt => pt.DataTypeId == id)
+            .OrderBy<NodeDto>(node => node.NodeId)
+            .AndBy<PropertyTypeDto>(pt => pt.Alias);
+
+        List<ContentTypeReferenceDto>? dtos =
+            Database.FetchOneToMany<ContentTypeReferenceDto>(ct => ct.PropertyTypes, sql);
+
+        return Task.FromResult<IReadOnlyDictionary<Udi, IEnumerable<string>>>(dtos.ToDictionary(
+            x => (Udi)new GuidUdi(ObjectTypes.GetUdiType(x.NodeDto.NodeObjectType!.Value), x.NodeDto.UniqueId)
+                .EnsureClosed(),
+            x => (IEnumerable<string>)x.PropertyTypes.Select(p => p.Alias).ToList()));
+    }
+
     #region Overrides of RepositoryBase<int,DataTypeDefinition>
 
     protected override IDataType? PerformGet(int id) => GetMany(id).FirstOrDefault();
+
+    protected override async Task<IDataType?> PerformGetAsync(int id, CancellationToken? cancellationToken = null) => (await GetManyAsync(cancellationToken, id)).FirstOrDefault();
 
     private string? EnsureUniqueNodeName(string? nodeName, int id = 0)
     {
@@ -139,6 +219,21 @@ internal class DataTypeRepository : EntityRepositoryBase<int, IDataType>, IDataT
 
         Sql<ISqlContext> sql = template.Sql(NodeObjectTypeId);
         List<SimilarNodeName>? names = Database.Fetch<SimilarNodeName>(sql);
+
+        return SimilarNodeName.GetUniqueName(names, id, nodeName);
+    }
+
+    private async Task<string?> EnsureUniqueNodeNameAsync(string? nodeName, int id = 0, CancellationToken? cancellationToken = null)
+    {
+        SqlTemplate template = SqlContext.Templates.Get(
+            Constants.SqlTemplates.DataTypeRepository.EnsureUniqueNodeName,
+            tsql => tsql
+                .Select<NodeDto>(x => Alias(x.NodeId, "id"), x => Alias(x.Text, "name"))
+                .From<NodeDto>()
+                .Where<NodeDto>(x => x.NodeObjectType == SqlTemplate.Arg<Guid>("nodeObjectType")));
+
+        Sql<ISqlContext> sql = template.Sql(NodeObjectTypeId);
+        List<SimilarNodeName>? names = await Database.FetchAsync<SimilarNodeName>(sql);
 
         return SimilarNodeName.GetUniqueName(names, id, nodeName);
     }
@@ -178,6 +273,23 @@ internal class DataTypeRepository : EntityRepositoryBase<int, IDataType>, IDataT
         return dtos.Select(x => DataTypeFactory.BuildEntity(x, _editors, _dataTypeLogger, _serializer)).ToArray();
     }
 
+    protected override async Task<IEnumerable<IDataType>> PerformGetAllAsync(CancellationToken? cancellationToken = null, params int[]? ids)
+    {
+        Sql<ISqlContext> dataTypeSql = GetBaseQuery(false);
+
+        if (ids?.Any() ?? false)
+        {
+            dataTypeSql.Where("umbracoNode.id in (@ids)", new { ids });
+        }
+        else
+        {
+            dataTypeSql.Where<NodeDto>(x => x.NodeObjectType == NodeObjectTypeId);
+        }
+
+        List<DataTypeDto>? dtos = await Database.FetchAsync<DataTypeDto>(dataTypeSql);
+        return dtos.Select(x => DataTypeFactory.BuildEntity(x, _editors, _dataTypeLogger, _serializer)).ToArray();
+    }
+
     protected override IEnumerable<IDataType> PerformGetByQuery(IQuery<IDataType> query)
     {
         Sql<ISqlContext> sqlClause = GetBaseQuery(false);
@@ -185,6 +297,17 @@ internal class DataTypeRepository : EntityRepositoryBase<int, IDataType>, IDataT
         Sql<ISqlContext> sql = translator.Translate();
 
         List<DataTypeDto>? dtos = Database.Fetch<DataTypeDto>(sql);
+
+        return dtos.Select(x => DataTypeFactory.BuildEntity(x, _editors, _dataTypeLogger, _serializer)).ToArray();
+    }
+
+    protected override async Task<IEnumerable<IDataType>> PerformGetByQueryAsync(IQuery<IDataType> query, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sqlClause = GetBaseQuery(false);
+        var translator = new SqlTranslator<IDataType>(sqlClause, query);
+        Sql<ISqlContext> sql = translator.Translate();
+
+        List<DataTypeDto>? dtos = await Database.FetchAsync<DataTypeDto>(sql);
 
         return dtos.Select(x => DataTypeFactory.BuildEntity(x, _editors, _dataTypeLogger, _serializer)).ToArray();
     }
@@ -270,6 +393,59 @@ internal class DataTypeRepository : EntityRepositoryBase<int, IDataType>, IDataT
         entity.ResetDirtyProperties();
     }
 
+    protected override async Task PersistNewItemAsync(IDataType item, CancellationToken? cancellationToken = null)
+    {
+        item.AddingEntity();
+
+        // ensure a datatype has a unique name before creating it
+        item.Name = await EnsureUniqueNodeNameAsync(item.Name, cancellationToken: cancellationToken)!;
+
+        // TODO: should the below be removed?
+        // Cannot add a duplicate data type
+        Sql<ISqlContext> existsSql = Sql()
+            .SelectCount()
+            .From<DataTypeDto>()
+            .InnerJoin<NodeDto>().On<DataTypeDto, NodeDto>((left, right) => left.NodeId == right.NodeId)
+            .Where<NodeDto>(x => x.Text == item.Name);
+        var exists = (await Database.ExecuteScalarAsync<int>(existsSql)) > 0;
+        if (exists)
+        {
+            throw new DuplicateNameException("A data type with the name " + item.Name + " already exists");
+        }
+
+        DataTypeDto dto = DataTypeFactory.BuildDto(item, _serializer);
+
+        // Logic for setting Path, Level and SortOrder
+        NodeDto? parent = await Database.FirstAsync<NodeDto>("WHERE id = @ParentId", new { item.ParentId });
+        var level = parent.Level + 1;
+        var sortOrder =
+            await Database.ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM umbracoNode WHERE parentID = @ParentId AND nodeObjectType = @NodeObjectType",
+                new { item.ParentId, NodeObjectType = NodeObjectTypeId });
+
+        // Create the (base) node data - umbracoNode
+        NodeDto nodeDto = dto.NodeDto;
+        nodeDto.Path = parent.Path;
+        nodeDto.Level = short.Parse(level.ToString(CultureInfo.InvariantCulture));
+        nodeDto.SortOrder = sortOrder;
+        var o = await Database.IsNewAsync(nodeDto) ? Convert.ToInt32(await Database.InsertAsync(nodeDto)) : await Database.UpdateAsync(nodeDto);
+
+        // Update with new correct path
+        nodeDto.Path = string.Concat(parent.Path, ",", nodeDto.NodeId);
+        await Database.UpdateAsync(nodeDto);
+
+        // Update entity with correct values
+        item.Id = nodeDto.NodeId; // Set Id on entity to ensure an Id is set
+        item.Path = nodeDto.Path;
+        item.SortOrder = sortOrder;
+        item.Level = level;
+
+        dto.NodeId = nodeDto.NodeId;
+        await Database.InsertAsync(dto);
+
+        item.ResetDirtyProperties();
+    }
+
     protected override void PersistUpdatedItem(IDataType entity)
     {
         entity.Name = EnsureUniqueNodeName(entity.Name, entity.Id)!;
@@ -310,6 +486,48 @@ internal class DataTypeRepository : EntityRepositoryBase<int, IDataType>, IDataT
         Database.Update(dto);
 
         entity.ResetDirtyProperties();
+    }
+
+    protected override async Task PersistUpdatedItemAsync(IDataType item, CancellationToken? cancellationToken = null)
+    {
+        item.Name = EnsureUniqueNodeName(item.Name, item.Id)!;
+
+        // Cannot change to a duplicate alias
+        Sql<ISqlContext> existsSql = Sql()
+            .SelectCount()
+            .From<DataTypeDto>()
+            .InnerJoin<NodeDto>().On<DataTypeDto, NodeDto>((left, right) => left.NodeId == right.NodeId)
+            .Where<NodeDto>(x => x.Text == item.Name && x.NodeId != item.Id);
+        var exists = await Database.ExecuteScalarAsync<int>(existsSql) > 0;
+        if (exists)
+        {
+            throw new DuplicateNameException("A data type with the name " + item.Name + " already exists");
+        }
+
+        // Updates Modified date
+        item.UpdatingEntity();
+
+        // Look up parent to get and set the correct Path if ParentId has changed
+        if (item.IsPropertyDirty("ParentId"))
+        {
+            NodeDto? parent = Database.First<NodeDto>("WHERE id = @ParentId", new { item.ParentId });
+            item.Path = string.Concat(parent.Path, ",", item.Id);
+            item.Level = parent.Level + 1;
+            var maxSortOrder =
+                await Database.ExecuteScalarAsync<int>(
+                    "SELECT coalesce(max(sortOrder),0) FROM umbracoNode WHERE parentid = @ParentId AND nodeObjectType = @NodeObjectType",
+                    new { item.ParentId, NodeObjectType = NodeObjectTypeId });
+            item.SortOrder = maxSortOrder + 1;
+        }
+
+        DataTypeDto dto = DataTypeFactory.BuildDto(item, _serializer);
+
+        // Updates the (base) node data - umbracoNode
+        NodeDto nodeDto = dto.NodeDto;
+        await Database.UpdateAsync(nodeDto);
+        await Database.UpdateAsync(dto);
+
+        item.ResetDirtyProperties();
     }
 
     protected override void PersistDeletedItem(IDataType entity)
