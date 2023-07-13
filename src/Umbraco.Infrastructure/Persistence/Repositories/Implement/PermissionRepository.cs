@@ -539,6 +539,11 @@ internal class PermissionRepository<TEntity> : EntityRepositoryBase<int, Content
         // Does the same thing as update
         PersistUpdatedItem(entity);
 
+    protected override async Task PersistNewItemAsync(ContentPermissionSet item, CancellationToken? cancellationToken = null) =>
+
+        // Does the same thing as update
+        await PersistUpdatedItemAsync(item, cancellationToken);
+
     /// <summary>
     ///     Used to add or update entity permissions during a content item being updated
     /// </summary>
@@ -552,6 +557,17 @@ internal class PermissionRepository<TEntity> : EntityRepositoryBase<int, Content
         }
 
         ReplaceEntityPermissions(entity);
+    }
+
+    protected override async Task PersistUpdatedItemAsync(ContentPermissionSet item, CancellationToken? cancellationToken = null)
+    {
+        var asIEntity = (IEntity)item;
+        if (asIEntity.HasIdentity == false)
+        {
+            throw new InvalidOperationException("Cannot create permissions for an entity without an Id");
+        }
+
+        await ReplaceEntityPermissionsAsync(item, cancellationToken);
     }
 
     private static EntityPermissionCollection ConvertToPermissionList(
@@ -580,10 +596,17 @@ internal class PermissionRepository<TEntity> : EntityRepositoryBase<int, Content
     protected override ContentPermissionSet PerformGet(int id) =>
         throw new InvalidOperationException("This method won't be implemented.");
 
+    protected override Task<ContentPermissionSet?> PerformGetAsync(int id, CancellationToken? cancellationToken = null) =>
+        throw new InvalidOperationException("This method won't be implemented.");
+
     protected override IEnumerable<ContentPermissionSet> PerformGetAll(params int[]? ids) =>
+        throw new InvalidOperationException("This method won't be implemented.");
+    protected override Task<IEnumerable<ContentPermissionSet>> PerformGetAllAsync(CancellationToken? cancellationToken = null, params int[]? ids) =>
         throw new InvalidOperationException("This method won't be implemented.");
 
     protected override IEnumerable<ContentPermissionSet> PerformGetByQuery(IQuery<ContentPermissionSet> query) =>
+        throw new InvalidOperationException("This method won't be implemented.");
+    protected override Task<IEnumerable<ContentPermissionSet>> PerformGetByQueryAsync(IQuery<ContentPermissionSet> query, CancellationToken? cancellationToken = null) =>
         throw new InvalidOperationException("This method won't be implemented.");
 
     protected override Sql<ISqlContext> GetBaseQuery(bool isCount) =>
