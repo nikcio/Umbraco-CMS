@@ -33,11 +33,25 @@ internal class DictionaryRepository : EntityRepositoryBase<int, IDictionaryItem>
         return uniqueIdRepo.Get(uniqueId);
     }
 
+    public async Task<IDictionaryItem?> GetAsync(Guid uniqueId, CancellationToken? cancellationToken = null)
+    {
+        var uniqueIdRepo = new DictionaryByUniqueIdRepository(this, ScopeAccessor, AppCaches,
+            _loggerFactory.CreateLogger<DictionaryByUniqueIdRepository>());
+        return await uniqueIdRepo.GetAsync(uniqueId, cancellationToken);
+    }
+
     public IEnumerable<IDictionaryItem> GetMany(params Guid[] uniqueIds)
     {
         var uniqueIdRepo = new DictionaryByUniqueIdRepository(this, ScopeAccessor, AppCaches,
             _loggerFactory.CreateLogger<DictionaryByUniqueIdRepository>());
         return uniqueIdRepo.GetMany(uniqueIds);
+    }
+
+    public async Task<IEnumerable<IDictionaryItem>> GetManyAsync(CancellationToken? cancellationToken = null, params Guid[] uniqueIds)
+    {
+        var uniqueIdRepo = new DictionaryByUniqueIdRepository(this, ScopeAccessor, AppCaches,
+            _loggerFactory.CreateLogger<DictionaryByUniqueIdRepository>());
+        return await uniqueIdRepo.GetManyAsync(cancellationToken, uniqueIds);
     }
 
     public IDictionaryItem? Get(string key)
@@ -47,6 +61,13 @@ internal class DictionaryRepository : EntityRepositoryBase<int, IDictionaryItem>
         return keyRepo.Get(key);
     }
 
+    public async Task<IDictionaryItem?> GetAsync(string key, CancellationToken? cancellationToken = null)
+    {
+        var keyRepo = new DictionaryByKeyRepository(this, ScopeAccessor, AppCaches,
+            _loggerFactory.CreateLogger<DictionaryByKeyRepository>());
+        return await keyRepo.GetAsync(key, cancellationToken);
+    }
+
     public IEnumerable<IDictionaryItem> GetManyByKeys(string[] keys)
     {
         var keyRepo = new DictionaryByKeyRepository(this, ScopeAccessor, AppCaches,
@@ -54,11 +75,25 @@ internal class DictionaryRepository : EntityRepositoryBase<int, IDictionaryItem>
         return keyRepo.GetMany(keys);
     }
 
+    public async Task<IEnumerable<IDictionaryItem>> GetManyByKeysAsync(string[] keys, CancellationToken? cancellationToken = null)
+    {
+        var keyRepo = new DictionaryByKeyRepository(this, ScopeAccessor, AppCaches,
+            _loggerFactory.CreateLogger<DictionaryByKeyRepository>());
+        return await keyRepo.GetManyAsync(keys, cancellationToken);
+    }
+
     public Dictionary<string, Guid> GetDictionaryItemKeyMap()
     {
         var columns = new[] { "key", "id" }.Select(x => (object)SqlSyntax.GetQuotedColumnName(x)).ToArray();
         Sql<ISqlContext> sql = Sql().Select(columns).From<DictionaryDto>();
         return Database.Fetch<DictionaryItemKeyIdDto>(sql).ToDictionary(x => x.Key, x => x.Id);
+    }
+
+    public async Task<Dictionary<string, Guid>> GetDictionaryItemKeyMapAsync(CancellationToken? cancellationToken = null)
+    {
+        var columns = new[] { "key", "id" }.Select(x => (object)SqlSyntax.GetQuotedColumnName(x)).ToArray();
+        Sql<ISqlContext> sql = Sql().Select(columns).From<DictionaryDto>();
+        return (await Database.FetchAsync<DictionaryItemKeyIdDto>(sql)).ToDictionary(x => x.Key, x => x.Id);
     }
 
     public IEnumerable<IDictionaryItem> GetDictionaryItemDescendants(Guid? parentId)
@@ -95,6 +130,42 @@ internal class DictionaryRepository : EntityRepositoryBase<int, IDictionaryItem>
         }
 
         return getItemsFromParents(new[] { parentId.Value }).SelectRecursive(items => getItemsFromParents(items.Select(x => x.Key).ToArray())).SelectMany(items => items);
+    }
+
+    public Task<IEnumerable<IDictionaryItem>> GetDictionaryItemDescendantsAsync(Guid? parentId, CancellationToken? cancellationToken = null)
+    {
+        // This methods will look up children at each level, since we do not store a path for dictionary (ATM), we need to do a recursive
+        // lookup to get descendants. Currently this is the most efficient way to do it
+        Func<Guid[], IEnumerable<IEnumerable<IDictionaryItem>>> getItemsFromParents = guids =>
+        {
+            return guids.InGroupsOf(Constants.Sql.MaxParameterCount)
+                .Select(group =>
+                {
+                    Sql<ISqlContext> sqlClause = GetBaseQuery(false)
+                        .Where<DictionaryDto>(x => x.Parent != null)
+                        .WhereIn<DictionaryDto>(x => x.Parent, group);
+
+                    var translator = new SqlTranslator<IDictionaryItem>(sqlClause, Query<IDictionaryItem>());
+                    Sql<ISqlContext> sql = translator.Translate();
+                    sql.OrderBy<DictionaryDto>(x => x.UniqueId);
+
+                    return Database
+                        .FetchOneToMany<DictionaryDto>(x => x.LanguageTextDtos, sql)
+                        .Select(ConvertFromDto);
+                });
+        };
+
+        if (!parentId.HasValue)
+        {
+            Sql<ISqlContext> sql = GetBaseQuery(false)
+                .Where<DictionaryDto>(x => x.PrimaryKey > 0)
+                .OrderBy<DictionaryDto>(x => x.UniqueId);
+            return Task.FromResult(Database
+                .FetchOneToMany<DictionaryDto>(x => x.LanguageTextDtos, sql)
+                .Select(ConvertFromDto));
+        }
+
+        return Task.FromResult(getItemsFromParents(new[] { parentId.Value }).SelectRecursive(items => getItemsFromParents(items.Select(x => x.Key).ToArray())).SelectMany(items => items));
     }
 
     protected override IRepositoryCachePolicy<IDictionaryItem, int> CreateCachePolicy()
@@ -144,6 +215,29 @@ internal class DictionaryRepository : EntityRepositoryBase<int, IDictionaryItem>
         ((EntityBase)entity).ResetDirtyProperties(false);
 
         return entity;
+    }
+
+    protected override Task<IDictionaryItem?> PerformGetAsync(int id, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sql = GetBaseQuery(false)
+            .Where(GetBaseWhereClause(), new { id })
+            .OrderBy<DictionaryDto>(x => x.UniqueId);
+
+        DictionaryDto? dto = Database
+            .FetchOneToMany<DictionaryDto>(x => x.LanguageTextDtos, sql)
+            .FirstOrDefault();
+
+        if (dto == null)
+        {
+            return Task.FromResult<IDictionaryItem?>(null);
+        }
+
+        IDictionaryItem entity = ConvertFromDto(dto);
+
+        // reset dirty initial properties (U4-1946)
+        ((EntityBase)entity).ResetDirtyProperties(false);
+
+        return Task.FromResult<IDictionaryItem?>(entity);
     }
 
     private IEnumerable<IDictionaryItem> GetRootDictionaryItems()
@@ -250,6 +344,19 @@ internal class DictionaryRepository : EntityRepositoryBase<int, IDictionaryItem>
             .Select(ConvertFromDto);
     }
 
+    protected override Task<IEnumerable<IDictionaryItem>> PerformGetAllAsync(CancellationToken? cancellationToken = null, params int[]? ids)
+    {
+        Sql<ISqlContext> sql = GetBaseQuery(false).Where<DictionaryDto>(x => x.PrimaryKey > 0);
+        if (ids?.Any() ?? false)
+        {
+            sql.WhereIn<DictionaryDto>(x => x.PrimaryKey, ids);
+        }
+
+        return Task.FromResult(Database
+            .FetchOneToMany<DictionaryDto>(x => x.LanguageTextDtos, sql)
+            .Select(ConvertFromDto));
+    }
+
     protected override IEnumerable<IDictionaryItem> PerformGetByQuery(IQuery<IDictionaryItem> query)
     {
         Sql<ISqlContext> sqlClause = GetBaseQuery(false);
@@ -260,6 +367,18 @@ internal class DictionaryRepository : EntityRepositoryBase<int, IDictionaryItem>
         return Database
             .FetchOneToMany<DictionaryDto>(x => x.LanguageTextDtos, sql)
             .Select(ConvertFromDto);
+    }
+
+    protected override Task<IEnumerable<IDictionaryItem>> PerformGetByQueryAsync(IQuery<IDictionaryItem> query, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sqlClause = GetBaseQuery(false);
+        var translator = new SqlTranslator<IDictionaryItem>(sqlClause, query);
+        Sql<ISqlContext> sql = translator.Translate();
+        sql.OrderBy<DictionaryDto>(x => x.UniqueId);
+
+        return Task.FromResult(Database
+            .FetchOneToMany<DictionaryDto>(x => x.LanguageTextDtos, sql)
+            .Select(ConvertFromDto));
     }
 
     #endregion
@@ -319,6 +438,32 @@ internal class DictionaryRepository : EntityRepositoryBase<int, IDictionaryItem>
         dictionaryItem.ResetDirtyProperties();
     }
 
+    protected override async Task PersistNewItemAsync(IDictionaryItem item, CancellationToken? cancellationToken = null)
+    {
+        var dictionaryItem = (DictionaryItem)item;
+
+        dictionaryItem.AddingEntity();
+
+        foreach (IDictionaryTranslation translation in dictionaryItem.Translations)
+        {
+            translation.Value = translation.Value.ToValidXmlString();
+        }
+
+        DictionaryDto dto = DictionaryItemFactory.BuildDto(dictionaryItem);
+
+        var id = Convert.ToInt32(await Database.InsertAsync(dto));
+        dictionaryItem.Id = id;
+
+        foreach (IDictionaryTranslation translation in dictionaryItem.Translations)
+        {
+            LanguageTextDto textDto = DictionaryTranslationFactory.BuildDto(translation, dictionaryItem.Key);
+            translation.Id = Convert.ToInt32(await Database.InsertAsync(textDto));
+            translation.Key = dictionaryItem.Key;
+        }
+
+        dictionaryItem.ResetDirtyProperties();
+    }
+
     protected override void PersistUpdatedItem(IDictionaryItem entity)
     {
         entity.UpdatingEntity();
@@ -351,6 +496,40 @@ internal class DictionaryRepository : EntityRepositoryBase<int, IDictionaryItem>
         // Clear the cache entries that exist by uniqueid/item key
         IsolatedCache.Clear(RepositoryCacheKeys.GetKey<IDictionaryItem, string>(entity.ItemKey));
         IsolatedCache.Clear(RepositoryCacheKeys.GetKey<IDictionaryItem, Guid>(entity.Key));
+    }
+
+    protected override async Task PersistUpdatedItemAsync(IDictionaryItem item, CancellationToken? cancellationToken = null)
+    {
+        item.UpdatingEntity();
+
+        foreach (IDictionaryTranslation translation in item.Translations)
+        {
+            translation.Value = translation.Value.ToValidXmlString();
+        }
+
+        DictionaryDto dto = DictionaryItemFactory.BuildDto(item);
+
+        await Database.UpdateAsync(dto);
+
+        foreach (IDictionaryTranslation translation in item.Translations)
+        {
+            LanguageTextDto textDto = DictionaryTranslationFactory.BuildDto(translation, item.Key);
+            if (translation.HasIdentity)
+            {
+                await Database.UpdateAsync(textDto);
+            }
+            else
+            {
+                translation.Id = Convert.ToInt32(await Database.InsertAsync(textDto));
+                translation.Key = item.Key;
+            }
+        }
+
+        item.ResetDirtyProperties();
+
+        // Clear the cache entries that exist by uniqueid/item key
+        IsolatedCache.Clear(RepositoryCacheKeys.GetKey<IDictionaryItem, string>(item.ItemKey));
+        IsolatedCache.Clear(RepositoryCacheKeys.GetKey<IDictionaryItem, Guid>(item.Key));
     }
 
     protected override void PersistDeletedItem(IDictionaryItem entity)
