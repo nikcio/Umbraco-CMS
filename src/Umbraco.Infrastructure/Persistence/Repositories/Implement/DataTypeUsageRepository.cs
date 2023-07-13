@@ -36,4 +36,26 @@ public class DataTypeUsageRepository : IDataTypeUsageRepository
 
         return database.ExecuteScalar<bool>(hasValueQuery);
     }
+
+    public async Task<bool> HasSavedValuesAsync(int dataTypeId, CancellationToken? cancellationToken = null)
+    {
+        IUmbracoDatabase? database = _scopeAccessor.AmbientScope?.Database;
+
+        if (database is null)
+        {
+            throw new InvalidOperationException("A scope is required to query the database");
+        }
+
+        Sql<ISqlContext> selectQuery = database.SqlContext.Sql()
+            .SelectAll()
+            .From<PropertyTypeDto>("pt")
+            .InnerJoin<PropertyDataDto>("pd")
+            .On<PropertyDataDto, PropertyTypeDto>((left, right) => left.PropertyTypeId == right.Id, "pd", "pt")
+            .Where<PropertyTypeDto>(pt => pt.DataTypeId == dataTypeId, "pt");
+
+        Sql<ISqlContext> hasValueQuery = database.SqlContext.Sql()
+            .SelectAnyIfExists(selectQuery);
+
+        return await database.ExecuteScalarAsync<bool>(hasValueQuery);
+    }
 }
