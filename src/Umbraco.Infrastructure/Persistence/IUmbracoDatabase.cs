@@ -30,6 +30,8 @@ public interface IUmbracoDatabase : IDatabase
 
     int BulkInsertRecords<T>(IEnumerable<T> records);
 
+    Task<int> BulkInsertRecordsAsync<T>(IEnumerable<T> records, CancellationToken? cancellationToken = null);
+
     bool IsUmbracoInstalled();
 
     DatabaseSchemaResult ValidateSchema();
