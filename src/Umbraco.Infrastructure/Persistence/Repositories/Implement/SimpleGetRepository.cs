@@ -31,7 +31,7 @@ internal abstract class SimpleGetRepository<TId, TEntity, TDto> : EntityReposito
 
     protected virtual IEnumerable<TDto> PerformFetch(Sql sql) => Database.Fetch<TDto>(sql);
 
-    protected virtual Task<IEnumerable<TDto>> PerformFetchAsync(Sql sql, CancellationToken? cancellationToken = null) => await Database.FetchAsync<TDto>(sql);
+    protected virtual async Task<IEnumerable<TDto>> PerformFetchAsync(Sql sql, CancellationToken? cancellationToken = null) => await Database.FetchAsync<TDto>(sql);
 
     protected override TEntity? PerformGet(TId? id)
     {
