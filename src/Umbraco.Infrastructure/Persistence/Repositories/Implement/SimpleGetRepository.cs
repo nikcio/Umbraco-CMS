@@ -31,12 +31,36 @@ internal abstract class SimpleGetRepository<TId, TEntity, TDto> : EntityReposito
 
     protected virtual IEnumerable<TDto> PerformFetch(Sql sql) => Database.Fetch<TDto>(sql);
 
+    protected virtual Task<IEnumerable<TDto>> PerformFetchAsync(Sql sql, CancellationToken? cancellationToken = null) => await Database.FetchAsync<TDto>(sql);
+
     protected override TEntity? PerformGet(TId? id)
     {
         Sql<ISqlContext> sql = GetBaseQuery(false);
         sql.Where(GetBaseWhereClause(), GetBaseWhereClauseArguments(id));
 
         TDto? dto = PerformFetch(sql).FirstOrDefault();
+        if (dto == null)
+        {
+            return null;
+        }
+
+        TEntity entity = ConvertToEntity(dto);
+
+        if (entity is EntityBase dirtyEntity)
+        {
+            // reset dirty initial properties (U4-1946)
+            dirtyEntity.ResetDirtyProperties(false);
+        }
+
+        return entity;
+    }
+
+    protected override async Task<TEntity?> PerformGetAsync(TId? id, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sql = GetBaseQuery(false);
+        sql.Where(GetBaseWhereClause(), GetBaseWhereClauseArguments(id));
+
+        TDto? dto = (await PerformFetchAsync(sql, cancellationToken)).FirstOrDefault();
         if (dto == null)
         {
             return null;
@@ -68,6 +92,21 @@ internal abstract class SimpleGetRepository<TId, TEntity, TDto> : EntityReposito
         return Database.Fetch<TDto>(sql).Select(ConvertToEntity);
     }
 
+    protected override async Task<IEnumerable<TEntity>> PerformGetAllAsync(CancellationToken? cancellationToken = null, params TId[]? ids)
+    {
+        Sql<ISqlContext> sql = Sql().From<TDto>();
+
+        if (ids?.Any() ?? false)
+        {
+            sql.Where(GetWhereInClauseForGetAll(), new
+            {
+                ids,
+            });
+        }
+
+        return (await Database.FetchAsync<TDto>(sql)).Select(ConvertToEntity);
+    }
+
     protected sealed override IEnumerable<TEntity> PerformGetByQuery(IQuery<TEntity> query)
     {
         Sql<ISqlContext> sqlClause = GetBaseQuery(false);
@@ -76,12 +115,26 @@ internal abstract class SimpleGetRepository<TId, TEntity, TDto> : EntityReposito
         return Database.Fetch<TDto>(sql).Select(ConvertToEntity);
     }
 
+    protected sealed override async Task<IEnumerable<TEntity>> PerformGetByQueryAsync(IQuery<TEntity> query, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sqlClause = GetBaseQuery(false);
+        var translator = new SqlTranslator<TEntity>(sqlClause, query);
+        Sql<ISqlContext> sql = translator.Translate();
+        return (await Database.FetchAsync<TDto>(sql)).Select(ConvertToEntity);
+    }
+
     protected sealed override IEnumerable<string> GetDeleteClauses() =>
         throw new InvalidOperationException("This method won't be implemented.");
 
     protected sealed override void PersistNewItem(TEntity entity) =>
         throw new InvalidOperationException("This method won't be implemented.");
 
+    protected sealed override Task PersistNewItemAsync(TEntity entity, CancellationToken? cancellationToken = null) =>
+        throw new InvalidOperationException("This method won't be implemented.");
+
     protected sealed override void PersistUpdatedItem(TEntity entity) =>
+        throw new InvalidOperationException("This method won't be implemented.");
+
+    protected sealed override Task PersistUpdatedItemAsync(TEntity entity, CancellationToken? cancellationToken = null) =>
         throw new InvalidOperationException("This method won't be implemented.");
 }
