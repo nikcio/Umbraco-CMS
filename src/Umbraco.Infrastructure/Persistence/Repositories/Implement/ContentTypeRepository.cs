@@ -41,12 +41,21 @@ internal class ContentTypeRepository : ContentTypeRepositoryBase<IContentType>, 
         return ints.Length > 0 ? GetMany(ints) : Enumerable.Empty<IContentType>();
     }
 
+    public async Task<IEnumerable<IContentType>> GetByQueryAsync(IQuery<PropertyType> query, CancellationToken? cancellationToken = null)
+    {
+        var ints = (await PerformGetByQueryAsync(query, cancellationToken)).ToArray();
+        return ints.Length > 0 ? await GetManyAsync(cancellationToken, ints) : Enumerable.Empty<IContentType>();
+    }
+
     /// <summary>
     ///     Gets all property type aliases.
     /// </summary>
     /// <returns></returns>
     public IEnumerable<string> GetAllPropertyTypeAliases() =>
         Database.Fetch<string>("SELECT DISTINCT Alias FROM cmsPropertyType ORDER BY Alias");
+
+    public async Task<IEnumerable<string>> GetAllPropertyTypeAliasesAsync(CancellationToken? cancellationToken = null) =>
+        await Database.FetchAsync<string>("SELECT DISTINCT Alias FROM cmsPropertyType ORDER BY Alias");
 
     /// <summary>
     ///     Gets all content type aliases
@@ -72,6 +81,22 @@ internal class ContentTypeRepository : ContentTypeRepositoryBase<IContentType>, 
         return Database.Fetch<string>(sql);
     }
 
+    public async Task<IEnumerable<string>> GetAllContentTypeAliasesAsync(CancellationToken? cancellationToken = null, params Guid[] objectTypes)
+    {
+        Sql<ISqlContext> sql = Sql()
+            .Select("cmsContentType.alias")
+            .From<ContentTypeDto>()
+            .InnerJoin<NodeDto>()
+            .On<ContentTypeDto, NodeDto>(dto => dto.NodeId, dto => dto.NodeId);
+
+        if (objectTypes.Any())
+        {
+            sql = sql.WhereIn<NodeDto>(dto => dto.NodeObjectType, objectTypes);
+        }
+
+        return await Database.FetchAsync<string>(sql);
+    }
+
     public IEnumerable<int> GetAllContentTypeIds(string[] aliases)
     {
         if (aliases.Length == 0)
@@ -87,6 +112,23 @@ internal class ContentTypeRepository : ContentTypeRepositoryBase<IContentType>, 
             .Where<ContentTypeDto>(dto => aliases.Contains(dto.Alias));
 
         return Database.Fetch<int>(sql);
+    }
+
+    public async Task<IEnumerable<int>> GetAllContentTypeIdsAsync(string[] aliases, CancellationToken? cancellationToken = null)
+    {
+        if (aliases.Length == 0)
+        {
+            return Enumerable.Empty<int>();
+        }
+
+        Sql<ISqlContext> sql = Sql()
+            .Select<ContentTypeDto>(x => x.NodeId)
+            .From<ContentTypeDto>()
+            .InnerJoin<NodeDto>()
+            .On<ContentTypeDto, NodeDto>(dto => dto.NodeId, dto => dto.NodeId)
+            .Where<ContentTypeDto>(dto => aliases.Contains(dto.Alias));
+
+        return await Database.FetchAsync<int>(sql);
     }
 
     protected override IRepositoryCachePolicy<IContentType, int> CreateCachePolicy() =>
@@ -105,21 +147,42 @@ internal class ContentTypeRepository : ContentTypeRepositoryBase<IContentType>, 
     protected override IContentType? PerformGet(int id)
         => GetMany().FirstOrDefault(x => x.Id == id);
 
+    protected override async Task<IContentType?> PerformGetAsync(int id, CancellationToken? cancellationToken = null)
+        => (await GetManyAsync(cancellationToken)).FirstOrDefault(x => x.Id == id);
+
     protected override IContentType? PerformGet(Guid id)
         => GetMany().FirstOrDefault(x => x.Key == id);
+
+    protected override async Task<IContentType?> PerformGetAsync(Guid id, CancellationToken? cancellationToken = null)
+        => (await GetManyAsync(cancellationToken)).FirstOrDefault(x => x.Key == id);
 
     protected override IContentType? PerformGet(string alias)
         => GetMany().FirstOrDefault(x => x.Alias.InvariantEquals(alias));
 
+    protected override async Task<IContentType?> PerformGetAsync(string alias, CancellationToken? cancellationToken = null)
+        => (await GetManyAsync(cancellationToken)).FirstOrDefault(x => x.Alias.InvariantEquals(alias));
+
     protected override bool PerformExists(Guid id)
         => GetMany().FirstOrDefault(x => x.Key == id) != null;
+
+    protected override async Task<bool> PerformExistsAsync(Guid id, CancellationToken? cancellationToken = null)
+        => (await GetManyAsync(cancellationToken)).FirstOrDefault(x => x.Key == id) != null;
 
     protected override IEnumerable<IContentType>? GetAllWithFullCachePolicy() =>
         CommonRepository.GetAllTypes()?.OfType<IContentType>();
 
+    protected override async Task<IEnumerable<IContentType>?> GetAllWithFullCachePolicyAsync(CancellationToken? cancellationToken = null) =>
+        (await CommonRepository.GetAllTypesAsync(cancellationToken))?.OfType<IContentType>();
+
     protected override IEnumerable<IContentType> PerformGetAll(params Guid[]? ids)
     {
         IEnumerable<IContentType> all = GetMany();
+        return ids?.Any() ?? false ? all.Where(x => ids.Contains(x.Key)) : all;
+    }
+
+    protected override async Task<IEnumerable<IContentType>?> PerformGetAllAsync(CancellationToken? cancellationToken = null, params Guid[]? ids)
+    {
+        IEnumerable<IContentType> all = await GetManyAsync(cancellationToken);
         return ids?.Any() ?? false ? all.Where(x => ids.Contains(x.Key)) : all;
     }
 
@@ -132,6 +195,18 @@ internal class ContentTypeRepository : ContentTypeRepositoryBase<IContentType>, 
 
         return ids.Length > 0
             ? GetMany(ids).OrderBy(x => x.Name)
+            : Enumerable.Empty<IContentType>();
+    }
+
+    protected override async Task<IEnumerable<IContentType>> PerformGetByQueryAsync(IQuery<IContentType> query, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> baseQuery = GetBaseQuery(false);
+        var translator = new SqlTranslator<IContentType>(baseQuery, query);
+        Sql<ISqlContext> sql = translator.Translate();
+        var ids = (await Database.FetchAsync<int>(sql)).Distinct().ToArray();
+
+        return ids.Length > 0
+            ? (await GetManyAsync(cancellationToken, ids)).OrderBy(x => x.Name)
             : Enumerable.Empty<IContentType>();
     }
 
@@ -155,6 +230,28 @@ internal class ContentTypeRepository : ContentTypeRepositoryBase<IContentType>, 
         return Database
             .FetchOneToMany<PropertyTypeGroupDto>(x => x.PropertyTypeDtos, sql)
             .Select(x => x.ContentTypeNodeId).Distinct();
+    }
+
+    protected Task<IEnumerable<int>> PerformGetByQueryAsync(IQuery<PropertyType> query, CancellationToken? cancellationToken = null)
+    {
+        // used by DataTypeService to remove properties
+        // from content types if they have a deleted data type - see
+        // notes in DataTypeService.Delete as it's a bit weird
+        Sql<ISqlContext> sqlClause = Sql()
+            .SelectAll()
+            .From<PropertyTypeDto>()
+            .LeftJoin<PropertyTypeGroupDto>()
+            .On<PropertyTypeGroupDto, PropertyTypeDto>(left => left.Id, right => right.PropertyTypeGroupId)
+            .InnerJoin<DataTypeDto>()
+            .On<PropertyTypeDto, DataTypeDto>(left => left.DataTypeId, right => right.NodeId);
+
+        var translator = new SqlTranslator<PropertyType>(sqlClause, query);
+        Sql<ISqlContext> sql = translator.Translate()
+            .OrderBy<PropertyTypeDto>(x => x.PropertyTypeGroupId);
+
+        return Task.FromResult(Database
+            .FetchOneToMany<PropertyTypeGroupDto>(x => x.PropertyTypeDtos, sql)
+            .Select(x => x.ContentTypeNodeId).Distinct());
     }
 
     protected override Sql<ISqlContext> GetBaseQuery(bool isCount)
@@ -244,6 +341,26 @@ internal class ContentTypeRepository : ContentTypeRepositoryBase<IContentType>, 
         entity.ResetDirtyProperties();
     }
 
+    protected override async Task PersistNewItemAsync(IContentType item, CancellationToken? cancellationToken = null)
+    {
+        if (string.IsNullOrWhiteSpace(item.Alias))
+        {
+            var ex = new Exception(
+                $"ContentType '{item.Name}' cannot have an empty Alias. This is most likely due to invalid characters stripped from the Alias.");
+            Logger.LogError(
+                "ContentType '{EntityName}' cannot have an empty Alias. This is most likely due to invalid characters stripped from the Alias.",
+                item.Name);
+            throw ex;
+        }
+        item.AddingEntity();
+
+        await PersistNewBaseContentTypeAsync(item, cancellationToken);
+        await PersistTemplatesAsync(item, false, cancellationToken);
+        await PersistHistoryCleanupAsync(item, cancellationToken);
+
+        item.ResetDirtyProperties();
+    }
+
     protected void PersistTemplates(IContentType entity, bool clearAll)
     {
         // remove and insert, if required
@@ -265,6 +382,35 @@ internal class ContentTypeRepository : ContentTypeRepositoryBase<IContentType>, 
             Database.Insert(new ContentTypeTemplateDto
             {
                 ContentTypeNodeId = entity.Id, TemplateNodeId = template.Id, IsDefault = false,
+            });
+        }
+    }
+
+    protected async Task PersistTemplatesAsync(IContentType entity, bool clearAll, CancellationToken? cancellationToken = null)
+    {
+        // remove and insert, if required
+        Database.Delete<ContentTypeTemplateDto>("WHERE contentTypeNodeId = @Id", new { entity.Id });
+
+        // we could do it all in foreach if we assume that the default template is an allowed template??
+        var defaultTemplateId = entity.DefaultTemplateId;
+        if (defaultTemplateId > 0)
+        {
+            await Database.InsertAsync(new ContentTypeTemplateDto
+            {
+                ContentTypeNodeId = entity.Id,
+                TemplateNodeId = defaultTemplateId,
+                IsDefault = true,
+            });
+        }
+
+        foreach (ITemplate template in entity.AllowedTemplates?.Where(x => x.Id != defaultTemplateId) ??
+                                       Array.Empty<ITemplate>())
+        {
+            await Database.InsertAsync(new ContentTypeTemplateDto
+            {
+                ContentTypeNodeId = entity.Id,
+                TemplateNodeId = template.Id,
+                IsDefault = false,
             });
         }
     }
@@ -296,6 +442,33 @@ internal class ContentTypeRepository : ContentTypeRepositoryBase<IContentType>, 
         entity.ResetDirtyProperties();
     }
 
+    protected override async Task PersistUpdatedItemAsync(IContentType item, CancellationToken? cancellationToken = null)
+    {
+        ValidateAlias(item);
+
+        // Updates Modified date
+        item.UpdatingEntity();
+
+        // Look up parent to get and set the correct Path if ParentId has changed
+        if (item.IsPropertyDirty("ParentId"))
+        {
+            NodeDto? parent = await Database.FirstAsync<NodeDto>("WHERE id = @ParentId", new { item.ParentId });
+            item.Path = string.Concat(parent.Path, ",", item.Id);
+            item.Level = parent.Level + 1;
+            var maxSortOrder =
+                await Database.ExecuteScalarAsync<int>(
+                    "SELECT coalesce(max(sortOrder),0) FROM umbracoNode WHERE parentid = @ParentId AND nodeObjectType = @NodeObjectType",
+                    new { item.ParentId, NodeObjectType = NodeObjectTypeId });
+            item.SortOrder = maxSortOrder + 1;
+        }
+
+        await PersistUpdatedBaseContentTypeAsync(item, cancellationToken);
+        await PersistTemplatesAsync(item, true, cancellationToken);
+        await PersistHistoryCleanupAsync(item, cancellationToken);
+
+        item.ResetDirtyProperties();
+    }
+
     private void PersistHistoryCleanup(IContentType entity)
     {
         // historyCleanup property is not mandatory for api endpoint, handle the case where it's not present.
@@ -314,5 +487,26 @@ internal class ContentTypeRepository : ContentTypeRepositoryBase<IContentType>, 
             };
             Database.InsertOrUpdate(dto);
         }
+    }
+
+    private Task PersistHistoryCleanupAsync(IContentType entity, CancellationToken? cancellationToken = null)
+    {
+        // historyCleanup property is not mandatory for api endpoint, handle the case where it's not present.
+        // DocumentTypeSave doesn't handle this for us like ContentType constructors do.
+        if (entity is IContentType entityWithHistoryCleanup)
+        {
+            var dto = new ContentVersionCleanupPolicyDto
+            {
+                ContentTypeId = entity.Id,
+                Updated = DateTime.Now,
+                PreventCleanup = entityWithHistoryCleanup.HistoryCleanup?.PreventCleanup ?? false,
+                KeepAllVersionsNewerThanDays =
+                    entityWithHistoryCleanup.HistoryCleanup?.KeepAllVersionsNewerThanDays,
+                KeepLatestVersionPerDayForDays =
+                    entityWithHistoryCleanup.HistoryCleanup?.KeepLatestVersionPerDayForDays,
+            };
+            Database.InsertOrUpdate(dto);
+        }
+        return Task.CompletedTask;
     }
 }
