@@ -128,6 +128,28 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
         return result;
     }
 
+    public async Task<ContentScheduleCollection> GetContentScheduleAsync(int contentId, CancellationToken? cancellationToken = null)
+    {
+        var result = new ContentScheduleCollection();
+
+        List<ContentScheduleDto>? scheduleDtos = await Database.FetchAsync<ContentScheduleDto>(Sql()
+            .Select<ContentScheduleDto>()
+            .From<ContentScheduleDto>()
+            .Where<ContentScheduleDto>(x => x.NodeId == contentId));
+
+        foreach (ContentScheduleDto? scheduleDto in scheduleDtos)
+        {
+            result.Add(new ContentSchedule(scheduleDto.Id,
+                await LanguageRepository.GetIsoCodeByIdAsync(scheduleDto.LanguageId, cancellationToken: cancellationToken) ?? string.Empty,
+                scheduleDto.Date,
+                scheduleDto.Action == ContentScheduleAction.Release.ToString()
+                    ? ContentScheduleAction.Release
+                    : ContentScheduleAction.Expire));
+        }
+
+        return result;
+    }
+
     protected override string ApplySystemOrdering(ref Sql<ISqlContext> sql, Ordering ordering)
     {
         // note: 'updater' is the user who created the latest draft version,
@@ -594,6 +616,18 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
             : MapDtoToContent(dto);
     }
 
+    protected override async Task<IContent?> PerformGetAsync(int id, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sql = GetBaseQuery(QueryType.Single)
+            .Where<NodeDto>(x => x.NodeId == id)
+            .SelectTop(1);
+
+        DocumentDto? dto = (await Database.FetchAsync<DocumentDto>(sql)).FirstOrDefault();
+        return dto == null
+            ? null
+            : MapDtoToContent(dto);
+    }
+
     protected override IEnumerable<IContent> PerformGetAll(params int[]? ids)
     {
         Sql<ISqlContext> sql = GetBaseQuery(QueryType.Many);
@@ -606,6 +640,18 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
         return MapDtosToContent(Database.Fetch<DocumentDto>(sql));
     }
 
+    protected override async Task<IEnumerable<IContent>> PerformGetAllAsync(CancellationToken? cancellationToken = null, params int[]? ids)
+    {
+        Sql<ISqlContext> sql = GetBaseQuery(QueryType.Many);
+
+        if (ids?.Any() ?? false)
+        {
+            sql.WhereIn<NodeDto>(x => x.NodeId, ids);
+        }
+
+        return MapDtosToContent(await Database.FetchAsync<DocumentDto>(sql));
+    }
+
     protected override IEnumerable<IContent> PerformGetByQuery(IQuery<IContent> query)
     {
         Sql<ISqlContext> sqlClause = GetBaseQuery(QueryType.Many);
@@ -616,6 +662,18 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
         AddGetByQueryOrderBy(sql);
 
         return MapDtosToContent(Database.Fetch<DocumentDto>(sql));
+    }
+
+    protected override async Task<IEnumerable<IContent>> PerformGetByQueryAsync(IQuery<IContent> query, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sqlClause = GetBaseQuery(QueryType.Many);
+
+        var translator = new SqlTranslator<IContent>(sqlClause, query);
+        Sql<ISqlContext> sql = translator.Translate();
+
+        AddGetByQueryOrderBy(sql);
+
+        return MapDtosToContent(await Database.FetchAsync<DocumentDto>(sql));
     }
 
     private void AddGetByQueryOrderBy(Sql<ISqlContext> sql) =>
@@ -763,6 +821,16 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
         return MapDtosToContent(Database.Fetch<DocumentDto>(sql), true);
     }
 
+    public override async Task<IEnumerable<IContent>> GetAllVersionsAsync(int nodeId, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sql = GetBaseQuery(QueryType.Many, false)
+            .Where<NodeDto>(x => x.NodeId == nodeId)
+            .OrderByDescending<ContentVersionDto>(x => x.Current)
+            .AndByDescending<ContentVersionDto>(x => x.VersionDate);
+
+        return MapDtosToContent(await Database.FetchAsync<DocumentDto>(sql), true);
+    }
+
     // TODO: This method needs to return a readonly version of IContent! The content returned
     // from this method does not contain all of the data required to re-persist it and if that
     // is attempted some odd things will occur.
@@ -798,6 +866,15 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
             .Where<ContentVersionDto>(x => x.Id == versionId);
 
         DocumentDto? dto = Database.Fetch<DocumentDto>(sql).FirstOrDefault();
+        return dto == null ? null : MapDtoToContent(dto);
+    }
+
+    public override async Task<IContent?> GetVersionAsync(int versionId, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sql = GetBaseQuery(QueryType.Single, false)
+            .Where<ContentVersionDto>(x => x.Id == versionId);
+
+        DocumentDto? dto = (await Database.FetchAsync<DocumentDto>(sql)).FirstOrDefault();
         return dto == null ? null : MapDtoToContent(dto);
     }
 
@@ -868,6 +945,15 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
         Database.Delete<ContentVersionCultureVariationDto>("WHERE versionId = @versionId", new {versionId});
         Database.Delete<DocumentVersionDto>("WHERE id = @versionId", new {versionId});
         Database.Delete<ContentVersionDto>("WHERE id = @versionId", new {versionId});
+    }
+
+    protected override Task PerformDeleteVersionAsync(int id, int versionId, CancellationToken? cancellationToken = null)
+    {
+        Database.Delete<PropertyDataDto>("WHERE versionId = @versionId", new { versionId });
+        Database.Delete<ContentVersionCultureVariationDto>("WHERE versionId = @versionId", new { versionId });
+        Database.Delete<DocumentVersionDto>("WHERE id = @versionId", new { versionId });
+        Database.Delete<ContentVersionDto>("WHERE id = @versionId", new { versionId });
+        return Task.CompletedTask;
     }
 
     #endregion
@@ -1053,6 +1139,199 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
         PersistRelations(entity);
 
         entity.ResetDirtyProperties();
+
+        // troubleshooting
+        //if (Database.ExecuteScalar<int>($"SELECT COUNT(*) FROM {Constants.DatabaseSchema.Tables.DocumentVersion} JOIN {Constants.DatabaseSchema.Tables.ContentVersion} ON {Constants.DatabaseSchema.Tables.DocumentVersion}.id={Constants.DatabaseSchema.Tables.ContentVersion}.id WHERE published=1 AND nodeId=" + content.Id) > 1)
+        //{
+        //    Debugger.Break();
+        //    throw new Exception("oops");
+        //}
+        //if (Database.ExecuteScalar<int>($"SELECT COUNT(*) FROM {Constants.DatabaseSchema.Tables.DocumentVersion} JOIN {Constants.DatabaseSchema.Tables.ContentVersion} ON {Constants.DatabaseSchema.Tables.DocumentVersion}.id={Constants.DatabaseSchema.Tables.ContentVersion}.id WHERE [current]=1 AND nodeId=" + content.Id) > 1)
+        //{
+        //    Debugger.Break();
+        //    throw new Exception("oops");
+        //}
+    }
+
+    protected override async Task PersistNewItemAsync(IContent item, CancellationToken? cancellationToken = null)
+    {
+        item.AddingEntity();
+
+        var publishing = item.PublishedState == PublishedState.Publishing;
+
+        // ensure that the default template is assigned
+        if (item.TemplateId.HasValue == false)
+        {
+            item.TemplateId = item.ContentType.DefaultTemplate?.Id;
+        }
+
+        // sanitize names
+        SanitizeNames(item, publishing);
+
+        // ensure that strings don't contain characters that are invalid in xml
+        // TODO: do we really want to keep doing this here?
+        item.SanitizeEntityPropertiesForXmlStorage();
+
+        // create the dto
+        DocumentDto dto = ContentBaseFactory.BuildDto(item, NodeObjectTypeId);
+
+        // derive path and level from parent
+        NodeDto parent = await GetParentNodeDtoAsync(item.ParentId, cancellationToken);
+        var level = parent.Level + 1;
+
+        var sortOrderExists = SortorderExists(item.ParentId, item.SortOrder);
+        // if the sortorder of the entity already exists get a new one, else use the sortOrder of the entity
+        var sortOrder = sortOrderExists ? await GetNewChildSortOrderAsync(item.ParentId, 0, cancellationToken) : item.SortOrder;
+
+        // persist the node dto
+        NodeDto nodeDto = dto.ContentDto.NodeDto;
+        nodeDto.Path = parent.Path;
+        nodeDto.Level = Convert.ToInt16(level);
+        nodeDto.SortOrder = sortOrder;
+
+        // see if there's a reserved identifier for this unique id
+        // and then either update or insert the node dto
+        var id = await GetReservedIdAsync(nodeDto.UniqueId, cancellationToken);
+        if (id > 0)
+        {
+            nodeDto.NodeId = id;
+        }
+        else
+        {
+            await Database.InsertAsync(nodeDto);
+        }
+
+        nodeDto.Path = string.Concat(parent.Path, ",", nodeDto.NodeId);
+        nodeDto.ValidatePathWithException();
+        await Database.UpdateAsync(nodeDto);
+
+        // update entity
+        item.Id = nodeDto.NodeId;
+        item.Path = nodeDto.Path;
+        item.SortOrder = sortOrder;
+        item.Level = level;
+
+        // persist the content dto
+        ContentDto contentDto = dto.ContentDto;
+        contentDto.NodeId = nodeDto.NodeId;
+        await Database.InsertAsync(contentDto);
+
+        // persist the content version dto
+        ContentVersionDto contentVersionDto = dto.DocumentVersionDto.ContentVersionDto;
+        contentVersionDto.NodeId = nodeDto.NodeId;
+        contentVersionDto.Current = !publishing;
+        await Database.InsertAsync(contentVersionDto);
+        item.VersionId = contentVersionDto.Id;
+
+        // persist the document version dto
+        DocumentVersionDto documentVersionDto = dto.DocumentVersionDto;
+        documentVersionDto.Id = item.VersionId;
+        if (publishing)
+        {
+            documentVersionDto.Published = true;
+        }
+
+        await Database.InsertAsync(documentVersionDto);
+
+        // and again in case we're publishing immediately
+        if (publishing)
+        {
+            item.PublishedVersionId = item.VersionId;
+            contentVersionDto.Id = 0;
+            contentVersionDto.Current = true;
+            contentVersionDto.Text = item.Name;
+            await Database.InsertAsync(contentVersionDto);
+            item.VersionId = contentVersionDto.Id;
+
+            documentVersionDto.Id = item.VersionId;
+            documentVersionDto.Published = false;
+            await Database.InsertAsync(documentVersionDto);
+        }
+
+        // persist the property data
+        IEnumerable<PropertyDataDto> propertyDataDtos = PropertyFactory.BuildDtos(item.ContentType.Variations,
+            item.VersionId, item.PublishedVersionId, item.Properties, LanguageRepository, out var edited,
+            out HashSet<string>? editedCultures);
+        foreach (PropertyDataDto propertyDataDto in propertyDataDtos)
+        {
+            await Database.InsertAsync(propertyDataDto);
+        }
+
+        // if !publishing, we may have a new name != current publish name,
+        // also impacts 'edited'
+        if (!publishing && item.PublishName != item.Name)
+        {
+            edited = true;
+        }
+
+        // persist the document dto
+        // at that point, when publishing, the entity still has its old Published value
+        // so we need to explicitly update the dto to persist the correct value
+        if (item.PublishedState == PublishedState.Publishing)
+        {
+            dto.Published = true;
+        }
+
+        dto.NodeId = nodeDto.NodeId;
+        item.Edited = dto.Edited = !dto.Published || edited; // if not published, always edited
+        await Database.InsertAsync(dto);
+
+        // persist the variations
+        if (item.ContentType.VariesByCulture())
+        {
+            // names also impact 'edited'
+            // ReSharper disable once UseDeconstruction
+            foreach (ContentCultureInfos cultureInfo in item.CultureInfos!)
+            {
+                if (cultureInfo.Name != item.GetPublishName(cultureInfo.Culture))
+                {
+                    (editedCultures ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase)).Add(cultureInfo.Culture);
+                }
+            }
+
+            // refresh content
+            item.SetCultureEdited(editedCultures!);
+
+            // bump dates to align cultures to version
+            item.AdjustDates(contentVersionDto.VersionDate, publishing);
+
+            // insert content variations
+            await Database.BulkInsertRecordsAsync(GetContentVariationDtos(item, publishing), cancellationToken);
+
+            // insert document variations
+            await Database.BulkInsertRecordsAsync(GetDocumentVariationDtos(item, editedCultures!), cancellationToken);
+        }
+
+        // trigger here, before we reset Published etc
+        OnUowRefreshedEntity(new ContentRefreshNotification(item, new EventMessages()));
+
+        // flip the entity's published property
+        // this also flips its published state
+        // note: what depends on variations (eg PublishNames) is managed directly by the content
+        if (item.PublishedState == PublishedState.Publishing)
+        {
+            item.Published = true;
+            item.PublishTemplateId = item.TemplateId;
+            item.PublisherId = item.WriterId;
+            item.PublishName = item.Name;
+            item.PublishDate = item.UpdateDate;
+
+            SetEntityTags(item, _tagRepository, _serializer);
+        }
+        else if (item.PublishedState == PublishedState.Unpublishing)
+        {
+            item.Published = false;
+            item.PublishTemplateId = null;
+            item.PublisherId = null;
+            item.PublishName = null;
+            item.PublishDate = null;
+
+            ClearEntityTags(item, _tagRepository);
+        }
+
+        await PersistRelationsAsync(item, cancellationToken);
+
+        item.ResetDirtyProperties();
 
         // troubleshooting
         //if (Database.ExecuteScalar<int>($"SELECT COUNT(*) FROM {Constants.DatabaseSchema.Tables.DocumentVersion} JOIN {Constants.DatabaseSchema.Tables.ContentVersion} ON {Constants.DatabaseSchema.Tables.DocumentVersion}.id={Constants.DatabaseSchema.Tables.ContentVersion}.id WHERE published=1 AND nodeId=" + content.Id) > 1)
@@ -1321,6 +1600,260 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
         //}
     }
 
+    protected override async Task PersistUpdatedItemAsync(IContent item, CancellationToken? cancellationToken = null)
+    {
+        var isEntityDirty = item.IsDirty();
+        var editedSnapshot = item.Edited;
+
+        // check if we need to make any database changes at all
+        if ((item.PublishedState == PublishedState.Published || item.PublishedState == PublishedState.Unpublished)
+            && !isEntityDirty && !item.IsAnyUserPropertyDirty())
+        {
+            return; // no change to save, do nothing, don't even update dates
+        }
+
+        // whatever we do, we must check that we are saving the current version
+        ContentVersionDto? version = (await Database.FetchAsync<ContentVersionDto>(SqlContext.Sql().Select<ContentVersionDto>()
+            .From<ContentVersionDto>().Where<ContentVersionDto>(x => x.Id == item.VersionId))).FirstOrDefault();
+        if (version == null || !version.Current)
+        {
+            throw new InvalidOperationException("Cannot save a non-current version.");
+        }
+
+        // update
+        item.UpdatingEntity();
+
+        // Check if this entity is being moved as a descendant as part of a bulk moving operations.
+        // In this case we can bypass a lot of the below operations which will make this whole operation go much faster.
+        // When moving we don't need to create new versions, etc... because we cannot roll this operation back anyways.
+        var isMoving = item.IsMoving();
+        // TODO: I'm sure we can also detect a "Copy" (of a descendant) operation and probably perform similar checks below.
+        // There is probably more stuff that would be required for copying but I'm sure not all of this logic would be, we could more than likely boost
+        // copy performance by 95% just like we did for Move
+
+
+        var publishing = item.PublishedState == PublishedState.Publishing;
+
+        if (!isMoving)
+        {
+            // check if we need to create a new version
+            if (publishing && item.PublishedVersionId > 0)
+            {
+                // published version is not published anymore
+                await Database.ExecuteAsync(Sql().Update<DocumentVersionDto>(u => u.Set(x => x.Published, false))
+                    .Where<DocumentVersionDto>(x => x.Id == item.PublishedVersionId));
+            }
+
+            // sanitize names
+            SanitizeNames(item, publishing);
+
+            // ensure that strings don't contain characters that are invalid in xml
+            // TODO: do we really want to keep doing this here?
+            item.SanitizeEntityPropertiesForXmlStorage();
+
+            // if parent has changed, get path, level and sort order
+            if (item.IsPropertyDirty("ParentId"))
+            {
+                NodeDto parent = GetParentNodeDto(item.ParentId);
+                item.Path = string.Concat(parent.Path, ",", item.Id);
+                item.Level = parent.Level + 1;
+                item.SortOrder = GetNewChildSortOrder(item.ParentId, 0);
+            }
+        }
+
+        // create the dto
+        DocumentDto dto = ContentBaseFactory.BuildDto(item, NodeObjectTypeId);
+
+        // update the node dto
+        NodeDto nodeDto = dto.ContentDto.NodeDto;
+        nodeDto.ValidatePathWithException();
+        await Database.UpdateAsync(nodeDto);
+
+        if (!isMoving)
+        {
+            // update the content dto
+            await Database.UpdateAsync(dto.ContentDto);
+
+            // update the content & document version dtos
+            ContentVersionDto contentVersionDto = dto.DocumentVersionDto.ContentVersionDto;
+            DocumentVersionDto documentVersionDto = dto.DocumentVersionDto;
+            if (publishing)
+            {
+                documentVersionDto.Published = true; // now published
+                contentVersionDto.Current = false; // no more current
+            }
+
+            // Ensure existing version retains current preventCleanup flag (both saving and publishing).
+            contentVersionDto.PreventCleanup = version.PreventCleanup;
+
+            await Database.UpdateAsync(contentVersionDto);
+            await Database.UpdateAsync(documentVersionDto);
+
+            // and, if publishing, insert new content & document version dtos
+            if (publishing)
+            {
+                item.PublishedVersionId = item.VersionId;
+
+                contentVersionDto.Id = 0; // want a new id
+                contentVersionDto.Current = true; // current version
+                contentVersionDto.Text = item.Name;
+                contentVersionDto.PreventCleanup = false; // new draft version disregards prevent cleanup flag
+                await Database.InsertAsync(contentVersionDto);
+                item.VersionId = documentVersionDto.Id = contentVersionDto.Id; // get the new id
+
+                documentVersionDto.Published = false; // non-published version
+                await Database.InsertAsync(documentVersionDto);
+            }
+
+            // replace the property data (rather than updating)
+            // only need to delete for the version that existed, the new version (if any) has no property data yet
+            var versionToDelete = publishing ? item.PublishedVersionId : item.VersionId;
+
+            // insert property data
+            ReplacePropertyValues(item, versionToDelete, publishing ? item.PublishedVersionId : 0, out var edited,
+                out HashSet<string>? editedCultures);
+
+            // if !publishing, we may have a new name != current publish name,
+            // also impacts 'edited'
+            if (!publishing && item.PublishName != item.Name)
+            {
+                edited = true;
+            }
+
+            // To establish the new value of "edited" we compare all properties publishedValue to editedValue and look
+            // for differences.
+            //
+            // If we SaveAndPublish but the publish fails (e.g. already scheduled for release)
+            // we have lost the publishedValue on IContent (in memory vs database) so we cannot correctly make that comparison.
+            //
+            // This is a slight change to behaviour, historically a publish, followed by change & save, followed by undo change & save
+            // would change edited back to false.
+            if (!publishing && editedSnapshot)
+            {
+                edited = true;
+            }
+
+            if (item.ContentType.VariesByCulture())
+            {
+                // names also impact 'edited'
+                // ReSharper disable once UseDeconstruction
+                foreach (ContentCultureInfos cultureInfo in item.CultureInfos!)
+                {
+                    if (cultureInfo.Name != item.GetPublishName(cultureInfo.Culture))
+                    {
+                        edited = true;
+                        (editedCultures ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase)).Add(cultureInfo
+                            .Culture);
+
+                        // TODO: change tracking
+                        // at the moment, we don't do any dirty tracking on property values, so we don't know whether the
+                        // culture has just been edited or not, so we don't update its update date - that date only changes
+                        // when the name is set, and it all works because the controller does it - but, if someone uses a
+                        // service to change a property value and save (without setting name), the update date does not change.
+                    }
+                }
+
+                // refresh content
+                item.SetCultureEdited(editedCultures!);
+
+                // bump dates to align cultures to version
+                item.AdjustDates(contentVersionDto.VersionDate, publishing);
+
+                // replace the content version variations (rather than updating)
+                // only need to delete for the version that existed, the new version (if any) has no property data yet
+                Sql<ISqlContext> deleteContentVariations = Sql().Delete<ContentVersionCultureVariationDto>()
+                    .Where<ContentVersionCultureVariationDto>(x => x.VersionId == versionToDelete);
+                await Database.ExecuteAsync(deleteContentVariations);
+
+                // replace the document version variations (rather than updating)
+                Sql<ISqlContext> deleteDocumentVariations = Sql().Delete<DocumentCultureVariationDto>()
+                    .Where<DocumentCultureVariationDto>(x => x.NodeId == item.Id);
+                await Database.ExecuteAsync(deleteDocumentVariations);
+
+                // TODO: NPoco InsertBulk issue?
+                // we should use the native NPoco InsertBulk here but it causes problems (not sure exactly all scenarios)
+                // but by using SQL Server and updating a variants name will cause: Unable to cast object of type
+                // 'Umbraco.Core.Persistence.FaultHandling.RetryDbConnection' to type 'System.Data.SqlClient.SqlConnection'.
+                // (same in PersistNewItem above)
+
+                // insert content variations
+                await Database.BulkInsertRecordsAsync(GetContentVariationDtos(item, publishing), cancellationToken);
+
+                // insert document variations
+                await Database.BulkInsertRecordsAsync(GetDocumentVariationDtos(item, editedCultures!), cancellationToken);
+            }
+
+            // update the document dto
+            // at that point, when un/publishing, the entity still has its old Published value
+            // so we need to explicitly update the dto to persist the correct value
+            if (item.PublishedState == PublishedState.Publishing)
+            {
+                dto.Published = true;
+            }
+            else if (item.PublishedState == PublishedState.Unpublishing)
+            {
+                dto.Published = false;
+            }
+
+            item.Edited = dto.Edited = !dto.Published || edited; // if not published, always edited
+            await Database.UpdateAsync(dto);
+
+            // if entity is publishing, update tags, else leave tags there
+            // means that implicitly unpublished, or trashed, entities *still* have tags in db
+            if (item.PublishedState == PublishedState.Publishing)
+            {
+                SetEntityTags(item, _tagRepository, _serializer);
+            }
+        }
+
+        // trigger here, before we reset Published etc
+        OnUowRefreshedEntity(new ContentRefreshNotification(item, new EventMessages()));
+
+        if (!isMoving)
+        {
+            // flip the entity's published property
+            // this also flips its published state
+            if (item.PublishedState == PublishedState.Publishing)
+            {
+                item.Published = true;
+                item.PublishTemplateId = item.TemplateId;
+                item.PublisherId = item.WriterId;
+                item.PublishName = item.Name;
+                item.PublishDate = item.UpdateDate;
+
+                SetEntityTags(item, _tagRepository, _serializer);
+            }
+            else if (item.PublishedState == PublishedState.Unpublishing)
+            {
+                item.Published = false;
+                item.PublishTemplateId = null;
+                item.PublisherId = null;
+                item.PublishName = null;
+                item.PublishDate = null;
+
+                ClearEntityTags(item, _tagRepository);
+            }
+
+            await PersistRelationsAsync(item, cancellationToken);
+
+            // TODO: note re. tags: explicitly unpublished entities have cleared tags, but masked or trashed entities *still* have tags in the db - so what?
+        }
+
+        item.ResetDirtyProperties();
+
+        // troubleshooting
+        //if (Database.ExecuteScalar<int>($"SELECT COUNT(*) FROM {Constants.DatabaseSchema.Tables.DocumentVersion} JOIN {Constants.DatabaseSchema.Tables.ContentVersion} ON {Constants.DatabaseSchema.Tables.DocumentVersion}.id={Constants.DatabaseSchema.Tables.ContentVersion}.id WHERE published=1 AND nodeId=" + content.Id) > 1)
+        //{
+        //    Debugger.Break();
+        //    throw new Exception("oops");
+        //}
+        //if (Database.ExecuteScalar<int>($"SELECT COUNT(*) FROM {Constants.DatabaseSchema.Tables.DocumentVersion} JOIN {Constants.DatabaseSchema.Tables.ContentVersion} ON {Constants.DatabaseSchema.Tables.DocumentVersion}.id={Constants.DatabaseSchema.Tables.ContentVersion}.id WHERE [current]=1 AND nodeId=" + content.Id) > 1)
+        //{
+        //    Debugger.Break();
+        //    throw new Exception("oops");
+        //}
+    }
+
     /// <inheritdoc />
     public void PersistContentSchedule(IContent content, ContentScheduleCollection contentSchedule)
     {
@@ -1354,6 +1887,42 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
             else
             {
                 Database.Update(schedule.Dto);
+            }
+        }
+    }
+
+    public async Task PersistContentScheduleAsync(IContent content, ContentScheduleCollection schedule, CancellationToken? cancellationToken = null)
+    {
+        if (content == null)
+        {
+            throw new ArgumentNullException(nameof(content));
+        }
+
+        if (schedule == null)
+        {
+            throw new ArgumentNullException(nameof(schedule));
+        }
+
+        var schedules = ContentBaseFactory.BuildScheduleDto(content, schedule, LanguageRepository).ToList();
+
+        //remove any that no longer exist
+        IEnumerable<Guid> ids = schedules.Where(x => x.Model.Id != Guid.Empty).Select(x => x.Model.Id).Distinct();
+        await Database.ExecuteAsync(Sql()
+            .Delete<ContentScheduleDto>()
+            .Where<ContentScheduleDto>(x => x.NodeId == content.Id)
+            .WhereNotIn<ContentScheduleDto>(x => x.Id, ids));
+
+        //add/update the rest
+        foreach ((ContentSchedule Model, ContentScheduleDto Dto) contentSchedule in schedules)
+        {
+            if (contentSchedule.Model.Id == Guid.Empty)
+            {
+                contentSchedule.Model.Id = contentSchedule.Dto.Id = Guid.NewGuid();
+                await Database.InsertAsync(contentSchedule.Dto);
+            }
+            else
+            {
+                await Database.UpdateAsync(contentSchedule.Dto);
             }
         }
     }
@@ -1411,8 +1980,41 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
         return Database.ExecuteScalar<int>(sql);
     }
 
+    public async Task<int> CountPublishedAsync(string? contentTypeAlias = null, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sql = SqlContext.Sql();
+        if (contentTypeAlias.IsNullOrWhiteSpace())
+        {
+            sql.SelectCount()
+                .From<NodeDto>()
+                .InnerJoin<DocumentDto>()
+                .On<NodeDto, DocumentDto>(left => left.NodeId, right => right.NodeId)
+                .Where<NodeDto>(x => x.NodeObjectType == NodeObjectTypeId && x.Trashed == false)
+                .Where<DocumentDto>(x => x.Published);
+        }
+        else
+        {
+            sql.SelectCount()
+                .From<NodeDto>()
+                .InnerJoin<ContentDto>()
+                .On<NodeDto, ContentDto>(left => left.NodeId, right => right.NodeId)
+                .InnerJoin<DocumentDto>()
+                .On<NodeDto, DocumentDto>(left => left.NodeId, right => right.NodeId)
+                .InnerJoin<ContentTypeDto>()
+                .On<ContentTypeDto, ContentDto>(left => left.NodeId, right => right.ContentTypeId)
+                .Where<NodeDto>(x => x.NodeObjectType == NodeObjectTypeId && x.Trashed == false)
+                .Where<ContentTypeDto>(x => x.Alias == contentTypeAlias)
+                .Where<DocumentDto>(x => x.Published);
+        }
+
+        return await Database.ExecuteScalarAsync<int>(sql);
+    }
+
     public void ReplaceContentPermissions(EntityPermissionSet permissionSet) =>
         PermissionRepository.ReplaceEntityPermissions(permissionSet);
+
+    public async Task ReplaceContentPermissionsAsync(EntityPermissionSet permissionSet, CancellationToken? cancellationToken = null) =>
+        await PermissionRepository.ReplaceEntityPermissionsAsync(permissionSet, cancellationToken);
 
     /// <summary>
     ///     Assigns a single permission to the current content item for the specified group ids
@@ -1423,14 +2025,22 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
     public void AssignEntityPermission(IContent entity, char permission, IEnumerable<int> groupIds) =>
         PermissionRepository.AssignEntityPermission(entity, permission, groupIds);
 
+    public async Task AssignEntityPermissionAsync(IContent entity, char permission, IEnumerable<int> groupIds, CancellationToken? cancellationToken = null) =>
+        await PermissionRepository.AssignEntityPermissionAsync(entity, permission, groupIds, cancellationToken);
+
     public EntityPermissionCollection GetPermissionsForEntity(int entityId) =>
         PermissionRepository.GetPermissionsForEntity(entityId);
+
+    public async Task<EntityPermissionCollection> GetPermissionsForEntityAsync(int entityId, CancellationToken? cancellationToken = null) =>
+        await PermissionRepository.GetPermissionsForEntityAsync(entityId, cancellationToken);
 
     /// <summary>
     ///     Used to add/update a permission for a content item
     /// </summary>
     /// <param name="permission"></param>
     public void AddOrUpdatePermissions(ContentPermissionSet permission) => PermissionRepository.Save(permission);
+
+    public Task AddOrUpdatePermissionsAsync(ContentPermissionSet permission, CancellationToken? cancellationToken = null) => await PermissionRepository.SaveAsync(permission, cancellationToken);
 
     /// <inheritdoc />
     public override IEnumerable<IContent> GetPage(IQuery<IContent>? query,
@@ -1469,6 +2079,41 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
             ordering);
     }
 
+    public override async Task<(IEnumerable<IContent> Results, long TotalRecords)> GetPageAsync(IQuery<IContent>? query, long pageIndex, int pageSize, IQuery<IContent>? filter, Ordering? ordering, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext>? filterSql = null;
+
+        // if we have a filter, map its clauses to an Sql statement
+        if (filter != null)
+        {
+            // if the clause works on "name", we need to swap the field and use the variantName instead,
+            // so that querying also works on variant content (for instance when searching a listview).
+
+            // figure out how the "name" field is going to look like - so we can look for it
+            var nameField = SqlContext.VisitModelField<IContent>(x => x.Name);
+
+            filterSql = Sql();
+            foreach (Tuple<string, object[]> filterClause in filter.GetWhereClauses())
+            {
+                var clauseSql = filterClause.Item1;
+                var clauseArgs = filterClause.Item2;
+
+                // replace the name field
+                // we cannot reference an aliased field in a WHERE clause, so have to repeat the expression here
+                clauseSql = clauseSql.Replace(nameField, VariantNameSqlExpression);
+
+                // append the clause
+                filterSql.Append($"AND ({clauseSql})", clauseArgs);
+            }
+        }
+
+        return await GetPageAsync<DocumentDto>(query, pageIndex, pageSize,
+            x => MapDtosToContent(x),
+            filterSql,
+            ordering,
+            cancellationToken);
+    }
+
     public bool IsPathPublished(IContent? content)
     {
         // fail fast
@@ -1496,6 +2141,33 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
         return count == content?.Level;
     }
 
+    public async Task<bool> IsPathPublishedAsync(IContent? content, CancellationToken? cancellationToken = null)
+    {
+        // fail fast
+        if (content?.Path.StartsWith("-1,-20,") ?? false)
+        {
+            return false;
+        }
+
+        // succeed fast
+        if (content?.ParentId == -1)
+        {
+            return content.Published;
+        }
+
+        IEnumerable<int>? ids = content?.Path.Split(Constants.CharArrays.Comma).Skip(1)
+            .Select(s => int.Parse(s, CultureInfo.InvariantCulture));
+
+        Sql<ISqlContext> sql = SqlContext.Sql()
+            .SelectCount<NodeDto>(x => x.NodeId)
+            .From<NodeDto>()
+            .InnerJoin<DocumentDto>().On<NodeDto, DocumentDto>((n, d) => n.NodeId == d.NodeId && d.Published)
+            .WhereIn<NodeDto>(x => x.NodeId, ids);
+
+        var count = await Database.ExecuteScalarAsync<int>(sql);
+        return count == content?.Level;
+    }
+
     #endregion
 
     #region Recycle Bin
@@ -1511,16 +2183,33 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
         return cache.GetCacheItem(cacheKey, () => CountChildren(RecycleBinId) > 0);
     }
 
+    public async Task<bool> RecycleBinSmellsAsync(CancellationToken? cancellationToken = null)
+    {
+        IAppPolicyCache cache = _appCaches.RuntimeCache;
+        var cacheKey = CacheKeys.ContentRecycleBinCacheKey;
+
+        // always cache either true or false
+        var cacheItem = (await CountChildrenAsync(RecycleBinId, cacheKey)) > 0;
+        return cache.GetCacheItem(cacheKey, () => cacheItem);
+    }
+
     #endregion
 
     #region Read Repository implementation for Guid keys
 
     public IContent? Get(Guid id) => _contentByGuidReadRepository.Get(id);
 
+    public async Task<IContent?> GetAsync(Guid id, CancellationToken? cancellationToken = null) => await _contentByGuidReadRepository.GetAsync(id, cancellationToken);
+
     IEnumerable<IContent> IReadRepository<Guid, IContent>.GetMany(params Guid[]? ids) =>
         _contentByGuidReadRepository.GetMany(ids);
 
+    public async Task<IEnumerable<IContent>> GetManyAsync(CancellationToken? cancellationToken = null, params Guid[]? ids) =>
+        await _contentByGuidReadRepository.GetManyAsync(cancellationToken, ids);
+
     public bool Exists(Guid id) => _contentByGuidReadRepository.Exists(id);
+
+    public async Task<bool> ExistsAsync(Guid id, CancellationToken? cancellationToken = null) => await _contentByGuidReadRepository.ExistsAsync(id, cancellationToken);
 
     // reading repository purely for looking up by GUID
     // TODO: ugly and to fix we need to decouple the IRepositoryQueryable -> IRepository -> IReadRepository which should all be separate things!
@@ -1551,6 +2240,23 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
             return content;
         }
 
+        protected override async Task<IContent?> PerformGetAsync(Guid id, CancellationToken? cancellationToken = null)
+        {
+            Sql<ISqlContext> sql = _outerRepo.GetBaseQuery(QueryType.Single)
+                .Where<NodeDto>(x => x.UniqueId == id);
+
+            DocumentDto? dto = (await Database.FetchAsync<DocumentDto>(sql.SelectTop(1))).FirstOrDefault();
+
+            if (dto == null)
+            {
+                return null;
+            }
+
+            IContent content = _outerRepo.MapDtoToContent(dto);
+
+            return content;
+        }
+
         protected override IEnumerable<IContent> PerformGetAll(params Guid[]? ids)
         {
             Sql<ISqlContext> sql = _outerRepo.GetBaseQuery(QueryType.Many);
@@ -1562,7 +2268,21 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
             return _outerRepo.MapDtosToContent(Database.Fetch<DocumentDto>(sql));
         }
 
+        protected override async Task<IEnumerable<IContent>> PerformGetAllAsync(CancellationToken? cancellationToken = null, params Guid[]? ids)
+        {
+            Sql<ISqlContext> sql = _outerRepo.GetBaseQuery(QueryType.Many);
+            if (ids?.Length > 0)
+            {
+                sql.WhereIn<NodeDto>(x => x.UniqueId, ids);
+            }
+
+            return _outerRepo.MapDtosToContent(await Database.FetchAsync<DocumentDto>(sql));
+        }
+
         protected override IEnumerable<IContent> PerformGetByQuery(IQuery<IContent> query) =>
+            throw new InvalidOperationException("This method won't be implemented.");
+
+        protected override Task<IEnumerable<IContent>> PerformGetByQueryAsync(IQuery<IContent> query, CancellationToken? cancellationToken = null) =>
             throw new InvalidOperationException("This method won't be implemented.");
 
         protected override IEnumerable<string> GetDeleteClauses() =>
@@ -1571,7 +2291,13 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
         protected override void PersistNewItem(IContent entity) =>
             throw new InvalidOperationException("This method won't be implemented.");
 
+        protected override Task PersistNewItemAsync(IContent item, CancellationToken? cancellationToken = null) =>
+            throw new InvalidOperationException("This method won't be implemented.");
+
         protected override void PersistUpdatedItem(IContent entity) =>
+            throw new InvalidOperationException("This method won't be implemented.");
+
+        protected override Task PersistUpdatedItemAsync(IContent item, CancellationToken? cancellationToken = null) =>
             throw new InvalidOperationException("This method won't be implemented.");
 
         protected override Sql<ISqlContext> GetBaseQuery(bool isCount) =>
@@ -1592,6 +2318,12 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
         Database.Execute(sql);
     }
 
+    public async Task ClearScheduleAsync(DateTime date, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sql = Sql().Delete<ContentScheduleDto>().Where<ContentScheduleDto>(x => x.Date <= date);
+        await Database.ExecuteAsync(sql);
+    }
+
     /// <inheritdoc />
     public void ClearSchedule(DateTime date, ContentScheduleAction action)
     {
@@ -1599,6 +2331,14 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
         Sql<ISqlContext> sql = Sql().Delete<ContentScheduleDto>()
             .Where<ContentScheduleDto>(x => x.Date <= date && x.Action == a);
         Database.Execute(sql);
+    }
+
+    public async Task ClearScheduleAsync(DateTime date, ContentScheduleAction action, CancellationToken? cancellationToken = null)
+    {
+        var a = action.ToString();
+        Sql<ISqlContext> sql = Sql().Delete<ContentScheduleDto>()
+            .Where<ContentScheduleDto>(x => x.Date <= date && x.Action == a);
+        await Database.ExecuteAsync(sql);
     }
 
     private Sql GetSqlForHasScheduling(ContentScheduleAction action, DateTime date)
@@ -1620,10 +2360,22 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
         return Database.ExecuteScalar<int>(sql) > 0;
     }
 
+    public async Task<bool> HasContentForExpirationAsync(DateTime date, CancellationToken? cancellationToken = null)
+    {
+        Sql sql = GetSqlForHasScheduling(ContentScheduleAction.Expire, date);
+        return await Database.ExecuteScalarAsync<int>(sql) > 0;
+    }
+
     public bool HasContentForRelease(DateTime date)
     {
         Sql sql = GetSqlForHasScheduling(ContentScheduleAction.Release, date);
         return Database.ExecuteScalar<int>(sql) > 0;
+    }
+
+    public async Task<bool> HasContentForReleaseAsync(DateTime date, CancellationToken? cancellationToken = null)
+    {
+        Sql sql = GetSqlForHasScheduling(ContentScheduleAction.Release, date);
+        return await Database.ExecuteScalarAsync<int>(sql) > 0;
     }
 
     /// <inheritdoc />
@@ -1642,6 +2394,21 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
         return MapDtosToContent(Database.Fetch<DocumentDto>(sql));
     }
 
+    public async Task<IEnumerable<IContent>> GetContentForReleaseAsync(DateTime date, CancellationToken? cancellationToken = null)
+    {
+        var action = ContentScheduleAction.Release.ToString();
+
+        Sql<ISqlContext> sql = GetBaseQuery(QueryType.Many)
+            .WhereIn<NodeDto>(x => x.NodeId, Sql()
+                .Select<ContentScheduleDto>(x => x.NodeId)
+                .From<ContentScheduleDto>()
+                .Where<ContentScheduleDto>(x => x.Action == action && x.Date <= date));
+
+        AddGetByQueryOrderBy(sql);
+
+        return MapDtosToContent(await Database.FetchAsync<DocumentDto>(sql));
+    }
+
     /// <inheritdoc />
     public IEnumerable<IContent> GetContentForExpiration(DateTime date)
     {
@@ -1656,6 +2423,21 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
         AddGetByQueryOrderBy(sql);
 
         return MapDtosToContent(Database.Fetch<DocumentDto>(sql));
+    }
+
+    public async Task<IEnumerable<IContent>> GetContentForExpirationAsync(DateTime date, CancellationToken? cancellationToken = null)
+    {
+        var action = ContentScheduleAction.Expire.ToString();
+
+        Sql<ISqlContext> sql = GetBaseQuery(QueryType.Many)
+            .WhereIn<NodeDto>(x => x.NodeId, Sql()
+                .Select<ContentScheduleDto>(x => x.NodeId)
+                .From<ContentScheduleDto>()
+                .Where<ContentScheduleDto>(x => x.Action == action && x.Date <= date));
+
+        AddGetByQueryOrderBy(sql);
+
+        return MapDtosToContent(await Database.FetchAsync<DocumentDto>(sql));
     }
 
     #endregion
