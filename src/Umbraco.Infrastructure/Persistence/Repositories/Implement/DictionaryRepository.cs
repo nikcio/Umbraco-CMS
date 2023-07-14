@@ -79,7 +79,7 @@ internal class DictionaryRepository : EntityRepositoryBase<int, IDictionaryItem>
     {
         var keyRepo = new DictionaryByKeyRepository(this, ScopeAccessor, AppCaches,
             _loggerFactory.CreateLogger<DictionaryByKeyRepository>());
-        return await keyRepo.GetManyAsync(keys, cancellationToken);
+        return await keyRepo.GetManyAsync(cancellationToken, keys);
     }
 
     public Dictionary<string, Guid> GetDictionaryItemKeyMap()
