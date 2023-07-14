@@ -43,6 +43,14 @@ internal class EntityContainerRepository : EntityRepositoryBase<int, EntityConta
         return nodeDto == null ? null : CreateEntity(nodeDto);
     }
 
+    public async Task<EntityContainer?> GetAsync(Guid id, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sql = GetBaseQuery(false).Where("UniqueId=@uniqueId", new { uniqueId = id });
+
+        NodeDto? nodeDto = (await Database.FetchAsync<NodeDto>(sql)).FirstOrDefault();
+        return nodeDto == null ? null : CreateEntity(nodeDto);
+    }
+
     public IEnumerable<EntityContainer> Get(string name, int level)
     {
         Sql<ISqlContext> sql = GetBaseQuery(false)
@@ -50,6 +58,15 @@ internal class EntityContainerRepository : EntityRepositoryBase<int, EntityConta
                 "text=@name AND level=@level AND nodeObjectType=@umbracoObjectTypeId",
                 new { name, level, umbracoObjectTypeId = NodeObjectTypeId });
         return Database.Fetch<NodeDto>(sql).Select(CreateEntity);
+    }
+
+    public async Task<IEnumerable<EntityContainer>> GetAsync(string name, int level, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sql = GetBaseQuery(false)
+            .Where(
+                "text=@name AND level=@level AND nodeObjectType=@umbracoObjectTypeId",
+                new { name, level, umbracoObjectTypeId = NodeObjectTypeId });
+        return (await Database.FetchAsync<NodeDto>(sql)).Select(CreateEntity);
     }
 
     // never cache
@@ -62,6 +79,15 @@ internal class EntityContainerRepository : EntityRepositoryBase<int, EntityConta
             .Where(GetBaseWhereClause(), new { id, NodeObjectType = NodeObjectTypeId });
 
         NodeDto? nodeDto = Database.Fetch<NodeDto>(SqlSyntax.SelectTop(sql, 1)).FirstOrDefault();
+        return nodeDto == null ? null : CreateEntity(nodeDto);
+    }
+
+    protected override async Task<EntityContainer?> PerformGetAsync(int id, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext> sql = GetBaseQuery(false)
+            .Where(GetBaseWhereClause(), new { id, NodeObjectType = NodeObjectTypeId });
+
+        NodeDto? nodeDto = (await Database.FetchAsync<NodeDto>(SqlSyntax.SelectTop(sql, 1))).FirstOrDefault();
         return nodeDto == null ? null : CreateEntity(nodeDto);
     }
 
@@ -84,7 +110,29 @@ internal class EntityContainerRepository : EntityRepositoryBase<int, EntityConta
         return Database.Fetch<NodeDto>(sql).Select(CreateEntity);
     }
 
+    protected override async Task<IEnumerable<EntityContainer>> PerformGetAllAsync(CancellationToken? cancellationToken = null, params int[]? ids)
+    {
+        if (ids?.Any() ?? false)
+        {
+            return (await Database.FetchByGroupsAsync<NodeDto, int>(ids, Constants.Sql.MaxParameterCount, batch =>
+                    GetBaseQuery(false)
+                        .Where<NodeDto>(x => x.NodeObjectType == NodeObjectTypeId)
+                        .WhereIn<NodeDto>(x => x.NodeId, batch)))
+                .Select(CreateEntity);
+        }
+
+        // else
+        Sql<ISqlContext> sql = GetBaseQuery(false)
+            .Where("nodeObjectType=@umbracoObjectTypeId", new { umbracoObjectTypeId = NodeObjectTypeId })
+            .OrderBy<NodeDto>(x => x.Level);
+
+        return (await Database.FetchAsync<NodeDto>(sql)).Select(CreateEntity);
+    }
+
     protected override IEnumerable<EntityContainer> PerformGetByQuery(IQuery<EntityContainer> query) =>
+        throw new NotImplementedException();
+
+    protected override Task<IEnumerable<EntityContainer>> PerformGetByQueryAsync(IQuery<EntityContainer> query, CancellationToken? cancellationToken = null) =>
         throw new NotImplementedException();
 
     protected override Sql<ISqlContext> GetBaseQuery(bool isCount)
@@ -170,6 +218,49 @@ internal class EntityContainerRepository : EntityRepositoryBase<int, EntityConta
         entity.DeleteDate = DateTime.Now;
     }
 
+
+    protected override async Task PersistDeletedItemAsync(EntityContainer entity, CancellationToken? cancellationToken = null)
+    {
+        if (entity == null)
+        {
+            throw new ArgumentNullException(nameof(entity));
+        }
+
+        EnsureContainerType(entity);
+
+        NodeDto nodeDto = await Database.FirstOrDefaultAsync<NodeDto>(Sql().SelectAll()
+            .From<NodeDto>()
+            .Where<NodeDto>(dto => dto.NodeId == entity.Id && dto.NodeObjectType == entity.ContainerObjectType));
+
+        if (nodeDto == null)
+        {
+            return;
+        }
+
+        // move children to the parent so they are not orphans
+        List<NodeDto> childDtos = await Database.FetchAsync<NodeDto>(Sql().SelectAll()
+            .From<NodeDto>()
+            .Where(
+                "parentID=@parentID AND (nodeObjectType=@containedObjectType OR nodeObjectType=@containerObjectType)",
+                new
+                {
+                    parentID = entity.Id,
+                    containedObjectType = entity.ContainedObjectType,
+                    containerObjectType = entity.ContainerObjectType,
+                }));
+
+        foreach (NodeDto childDto in childDtos)
+        {
+            childDto.ParentId = nodeDto.ParentId;
+            await Database.UpdateAsync(childDto);
+        }
+
+        // delete
+        await Database.DeleteAsync(nodeDto);
+
+        entity.DeleteDate = DateTime.Now;
+    }
+
     protected override void PersistNewItem(EntityContainer entity)
     {
         if (entity == null)
@@ -248,6 +339,86 @@ internal class EntityContainerRepository : EntityRepositoryBase<int, EntityConta
         entity.SortOrder = 0;
         entity.CreateDate = nodeDto.CreateDate;
         entity.ResetDirtyProperties();
+    }
+
+    protected override async Task PersistNewItemAsync(EntityContainer item, CancellationToken? cancellationToken = null)
+    {
+        if (item == null)
+        {
+            throw new ArgumentNullException(nameof(item));
+        }
+
+        EnsureContainerType(item);
+
+        if (item.Name == null)
+        {
+            throw new InvalidOperationException("Entity name can't be null.");
+        }
+
+        if (string.IsNullOrWhiteSpace(item.Name))
+        {
+            throw new InvalidOperationException(
+                "Entity name can't be empty or consist only of white-space characters.");
+        }
+
+        item.Name = item.Name.Trim();
+
+        // guard against duplicates
+        NodeDto nodeDto = await Database.FirstOrDefaultAsync<NodeDto>(Sql().SelectAll()
+            .From<NodeDto>()
+            .Where<NodeDto>(dto =>
+                dto.ParentId == item.ParentId && dto.Text == item.Name &&
+                dto.NodeObjectType == item.ContainerObjectType));
+        if (nodeDto != null)
+        {
+            throw new InvalidOperationException("A container with the same name already exists.");
+        }
+
+        // create
+        var level = 0;
+        var path = "-1";
+        if (item.ParentId > -1)
+        {
+            NodeDto parentDto = await Database.FirstOrDefaultAsync<NodeDto>(Sql().SelectAll()
+                .From<NodeDto>()
+                .Where<NodeDto>(dto =>
+                    dto.NodeId == item.ParentId && dto.NodeObjectType == item.ContainerObjectType));
+
+            if (parentDto == null)
+            {
+                throw new InvalidOperationException("Could not find parent container with id " + item.ParentId);
+            }
+
+            level = parentDto.Level;
+            path = parentDto.Path;
+        }
+
+        // note: sortOrder is NOT managed and always zero for containers
+        nodeDto = new NodeDto
+        {
+            CreateDate = DateTime.Now,
+            Level = Convert.ToInt16(level + 1),
+            NodeObjectType = item.ContainerObjectType,
+            ParentId = item.ParentId,
+            Path = path,
+            SortOrder = 0,
+            Text = item.Name,
+            UserId = item.CreatorId,
+            UniqueId = item.Key,
+        };
+
+        // insert, get the id, update the path with the id
+        var id = Convert.ToInt32(await Database.InsertAsync(nodeDto));
+        nodeDto.Path = nodeDto.Path + "," + nodeDto.NodeId;
+        await Database.SaveAsync(nodeDto);
+
+        // refresh the entity
+        item.Id = id;
+        item.Path = nodeDto.Path;
+        item.Level = nodeDto.Level;
+        item.SortOrder = 0;
+        item.CreateDate = nodeDto.CreateDate;
+        item.ResetDirtyProperties();
     }
 
     // beware! does NOT manage descendants in case of a new parent
@@ -329,6 +500,86 @@ internal class EntityContainerRepository : EntityRepositoryBase<int, EntityConta
         entity.Level = nodeDto.Level;
         entity.SortOrder = 0;
         entity.ResetDirtyProperties();
+    }
+
+    protected override async Task PersistUpdatedItemAsync(EntityContainer item, CancellationToken? cancellationToken = null)
+    {
+        if (item == null)
+        {
+            throw new ArgumentNullException(nameof(item));
+        }
+
+        EnsureContainerType(item);
+
+        if (item.Name == null)
+        {
+            throw new InvalidOperationException("Entity name can't be null.");
+        }
+
+        if (string.IsNullOrWhiteSpace(item.Name))
+        {
+            throw new InvalidOperationException(
+                "Entity name can't be empty or consist only of white-space characters.");
+        }
+
+        item.Name = item.Name.Trim();
+
+        // find container to update
+        NodeDto nodeDto = await Database.FirstOrDefaultAsync<NodeDto>(Sql().SelectAll()
+            .From<NodeDto>()
+            .Where<NodeDto>(dto => dto.NodeId == item.Id && dto.NodeObjectType == item.ContainerObjectType));
+        if (nodeDto == null)
+        {
+            throw new InvalidOperationException("Could not find container with id " + item.Id);
+        }
+
+        // guard against duplicates
+        NodeDto dupNodeDto = await Database.FirstOrDefaultAsync<NodeDto>(Sql().SelectAll()
+            .From<NodeDto>()
+            .Where<NodeDto>(dto =>
+                dto.ParentId == item.ParentId && dto.Text == item.Name &&
+                dto.NodeObjectType == item.ContainerObjectType));
+        if (dupNodeDto != null && dupNodeDto.NodeId != nodeDto.NodeId)
+        {
+            throw new InvalidOperationException("A container with the same name already exists.");
+        }
+
+        // update
+        nodeDto.Text = item.Name;
+        if (nodeDto.ParentId != item.ParentId)
+        {
+            nodeDto.Level = 0;
+            nodeDto.Path = "-1";
+            if (item.ParentId > -1)
+            {
+                NodeDto parent = await Database.FirstOrDefaultAsync<NodeDto>(Sql().SelectAll()
+                    .From<NodeDto>()
+                    .Where<NodeDto>(dto =>
+                        dto.NodeId == item.ParentId && dto.NodeObjectType == item.ContainerObjectType));
+
+                if (parent == null)
+                {
+                    throw new InvalidOperationException(
+                        "Could not find parent container with id " + item.ParentId);
+                }
+
+                nodeDto.Level = Convert.ToInt16(parent.Level + 1);
+                nodeDto.Path = parent.Path + "," + nodeDto.NodeId;
+            }
+
+            nodeDto.ParentId = item.ParentId;
+        }
+
+        // note: sortOrder is NOT managed and always zero for containers
+
+        // update
+        await Database.UpdateAsync(nodeDto);
+
+        // refresh the entity
+        item.Path = nodeDto.Path;
+        item.Level = nodeDto.Level;
+        item.SortOrder = 0;
+        item.ResetDirtyProperties();
     }
 
     private void EnsureContainerType(EntityContainer entity)
