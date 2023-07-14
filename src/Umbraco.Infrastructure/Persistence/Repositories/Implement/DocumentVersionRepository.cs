@@ -50,6 +50,40 @@ internal class DocumentVersionRepository : IDocumentVersionRepository
         return _scopeAccessor.AmbientScope?.Database.Fetch<ContentVersionMeta>(query);
     }
 
+    public async Task<IReadOnlyCollection<ContentVersionMeta>?> GetDocumentVersionsEligibleForCleanupAsync(CancellationToken? cancellationToken = null)
+    {
+        if(_scopeAccessor.AmbientScope == null)
+        {
+            return null;
+        }
+
+        Sql<ISqlContext>? query = _scopeAccessor.AmbientScope.SqlContext.Sql();
+
+        query?.Select(@"umbracoDocument.nodeId as contentId,
+                           umbracoContent.contentTypeId as contentTypeId,
+                           umbracoContentVersion.id as versionId,
+                           umbracoContentVersion.userId as userId,
+                           umbracoContentVersion.versionDate as versionDate,
+                           umbracoDocumentVersion.published as currentPublishedVersion,
+                           umbracoContentVersion.[current] as currentDraftVersion,
+                           umbracoContentVersion.preventCleanup as preventCleanup,
+                           umbracoUser.userName as username")
+            .From<DocumentDto>()
+            .InnerJoin<ContentDto>()
+            .On<DocumentDto, ContentDto>(left => left.NodeId, right => right.NodeId)
+            .InnerJoin<ContentVersionDto>()
+            .On<ContentDto, ContentVersionDto>(left => left.NodeId, right => right.NodeId)
+            .InnerJoin<DocumentVersionDto>()
+            .On<ContentVersionDto, DocumentVersionDto>(left => left.Id, right => right.Id)
+            .LeftJoin<UserDto>()
+            .On<UserDto, ContentVersionDto>(left => left.Id, right => right.UserId)
+            .Where<ContentVersionDto>(x => !x.Current) // Never delete current draft version
+            .Where<ContentVersionDto>(x => !x.PreventCleanup) // Never delete "pinned" versions
+            .Where<DocumentVersionDto>(x => !x.Published); // Never delete published version
+
+        return await _scopeAccessor.AmbientScope.Database.FetchAsync<ContentVersionMeta>(query);
+    }
+
     /// <inheritdoc />
     public IReadOnlyCollection<ContentVersionCleanupPolicySettings>? GetCleanupPolicies()
     {
@@ -59,6 +93,21 @@ internal class DocumentVersionRepository : IDocumentVersionRepository
             .From<ContentVersionCleanupPolicyDto>();
 
         return _scopeAccessor.AmbientScope?.Database.Fetch<ContentVersionCleanupPolicySettings>(query);
+    }
+
+    public async Task<IReadOnlyCollection<ContentVersionCleanupPolicySettings>?> GetCleanupPoliciesAsync(CancellationToken? cancellationToken = null)
+    {
+        if(_scopeAccessor.AmbientScope == null)
+        {
+            return null;
+        }
+
+        Sql<ISqlContext>? query = _scopeAccessor.AmbientScope.SqlContext.Sql();
+
+        query?.Select<ContentVersionCleanupPolicyDto>()
+            .From<ContentVersionCleanupPolicyDto>();
+
+        return await _scopeAccessor.AmbientScope.Database.FetchAsync<ContentVersionCleanupPolicySettings>(query);
     }
 
     /// <inheritdoc />
@@ -103,6 +152,47 @@ internal class DocumentVersionRepository : IDocumentVersionRepository
         return page?.Items;
     }
 
+    public Task<(IEnumerable<ContentVersionMeta>? Results, long TotalRecords)> GetPagedItemsByContentIdAsync(int contentId, long pageIndex, int pageSize, int? languageId = null, CancellationToken? cancellationToken = null)
+    {
+        Sql<ISqlContext>? query = _scopeAccessor.AmbientScope?.SqlContext.Sql();
+
+        query?.Select(@"umbracoDocument.nodeId as contentId,
+                           umbracoContent.contentTypeId as contentTypeId,
+                           umbracoContentVersion.id as versionId,
+                           umbracoContentVersion.userId as userId,
+                           umbracoContentVersion.versionDate as versionDate,
+                           umbracoDocumentVersion.published as currentPublishedVersion,
+                           umbracoContentVersion.[current] as currentDraftVersion,
+                           umbracoContentVersion.preventCleanup as preventCleanup,
+                           umbracoUser.userName as username")
+            .From<DocumentDto>()
+            .InnerJoin<ContentDto>()
+            .On<DocumentDto, ContentDto>(left => left.NodeId, right => right.NodeId)
+            .InnerJoin<ContentVersionDto>()
+            .On<ContentDto, ContentVersionDto>(left => left.NodeId, right => right.NodeId)
+            .InnerJoin<DocumentVersionDto>()
+            .On<ContentVersionDto, DocumentVersionDto>(left => left.Id, right => right.Id)
+            .LeftJoin<UserDto>()
+            .On<UserDto, ContentVersionDto>(left => left.Id, right => right.UserId)
+            .LeftJoin<ContentVersionCultureVariationDto>()
+            .On<ContentVersionCultureVariationDto, ContentVersionDto>(left => left.VersionId, right => right.Id)
+            .Where<ContentVersionDto>(x => x.NodeId == contentId);
+
+        // TODO: If there's not a better way to write this then we need a better way to write this.
+        query = languageId.HasValue
+            ? query?.Where<ContentVersionCultureVariationDto>(x => x.LanguageId == languageId.Value)
+            : query?.Where("umbracoContentVersionCultureVariation.languageId is null");
+
+        query = query?.OrderByDescending<ContentVersionDto>(x => x.Id);
+
+        Page<ContentVersionMeta>? page =
+            _scopeAccessor.AmbientScope?.Database.Page<ContentVersionMeta>(pageIndex + 1, pageSize, query);
+
+        var totalRecords = page?.TotalItems ?? 0;
+
+        return Task.FromResult<(IEnumerable<ContentVersionMeta>? Results, long TotalRecords)>(new(page?.Items, totalRecords));
+    }
+
     /// <inheritdoc />
     /// <remarks>
     ///     Deletes in batches of <see cref="Constants.Sql.MaxParameterCount" />
@@ -140,6 +230,44 @@ internal class DocumentVersionRepository : IDocumentVersionRepository
         }
     }
 
+    public async Task DeleteVersionsAsync(IEnumerable<int> versionIds, CancellationToken? cancellationToken = null)
+    {
+        if(_scopeAccessor.AmbientScope == null)
+        {
+            return;
+        }
+
+        foreach (IEnumerable<int> group in versionIds.InGroupsOf(Constants.Sql.MaxParameterCount))
+        {
+            var groupedVersionIds = group.ToList();
+
+            /* Note: We had discussed doing this in a single SQL Command.
+            *  If you can work out how to make that work with SQL CE, let me know!
+            *  Can use test PerformContentVersionCleanup_WithNoKeepPeriods_DeletesEverythingExceptActive to try things out.
+            */
+
+            Sql<ISqlContext>? query = _scopeAccessor.AmbientScope.SqlContext.Sql()
+                .Delete<PropertyDataDto>()
+                .WhereIn<PropertyDataDto>(x => x.VersionId, groupedVersionIds);
+            await _scopeAccessor.AmbientScope.Database.ExecuteAsync(query);
+
+            query = _scopeAccessor.AmbientScope.SqlContext.Sql()
+                .Delete<ContentVersionCultureVariationDto>()
+                .WhereIn<ContentVersionCultureVariationDto>(x => x.VersionId, groupedVersionIds);
+            await _scopeAccessor.AmbientScope.Database.ExecuteAsync(query);
+
+            query = _scopeAccessor.AmbientScope.SqlContext.Sql()
+                .Delete<DocumentVersionDto>()
+                .WhereIn<DocumentVersionDto>(x => x.Id, groupedVersionIds);
+            await _scopeAccessor.AmbientScope.Database.ExecuteAsync(query);
+
+            query = _scopeAccessor.AmbientScope.SqlContext.Sql()
+                .Delete<ContentVersionDto>()
+                .WhereIn<ContentVersionDto>(x => x.Id, groupedVersionIds);
+            await _scopeAccessor.AmbientScope.Database.ExecuteAsync(query);
+        }
+    }
+
     /// <inheritdoc />
     public void SetPreventCleanup(int versionId, bool preventCleanup)
     {
@@ -148,6 +276,20 @@ internal class DocumentVersionRepository : IDocumentVersionRepository
             .Where<ContentVersionDto>(x => x.Id == versionId);
 
         _scopeAccessor.AmbientScope?.Database.Execute(query);
+    }
+
+    public async Task SetPreventCleanupAsync(int versionId, bool preventCleanup, CancellationToken? cancellationToken = null)
+    {
+        if(_scopeAccessor.AmbientScope == null)
+        {
+            return;
+        }
+
+        Sql<ISqlContext>? query = _scopeAccessor.AmbientScope.SqlContext.Sql()
+            .Update<ContentVersionDto>(x => x.Set(y => y.PreventCleanup, preventCleanup))
+            .Where<ContentVersionDto>(x => x.Id == versionId);
+
+        await _scopeAccessor.AmbientScope.Database.ExecuteAsync(query);
     }
 
     /// <inheritdoc />
@@ -176,5 +318,37 @@ internal class DocumentVersionRepository : IDocumentVersionRepository
             .Where<ContentVersionDto>(x => x.Id == versionId);
 
         return _scopeAccessor.AmbientScope?.Database.Single<ContentVersionMeta>(query);
+    }
+
+    public async Task<ContentVersionMeta?> GetAsync(int versionId, CancellationToken? cancellationToken = null)
+    {
+        if(_scopeAccessor.AmbientScope == null)
+        {
+            return null;
+        }
+
+        Sql<ISqlContext>? query = _scopeAccessor.AmbientScope.SqlContext.Sql();
+
+        query?.Select(@"umbracoDocument.nodeId as contentId,
+                           umbracoContent.contentTypeId as contentTypeId,
+                           umbracoContentVersion.id as versionId,
+                           umbracoContentVersion.userId as userId,
+                           umbracoContentVersion.versionDate as versionDate,
+                           umbracoDocumentVersion.published as currentPublishedVersion,
+                           umbracoContentVersion.[current] as currentDraftVersion,
+                           umbracoContentVersion.preventCleanup as preventCleanup,
+                           umbracoUser.userName as username")
+            .From<DocumentDto>()
+            .InnerJoin<ContentDto>()
+            .On<DocumentDto, ContentDto>(left => left.NodeId, right => right.NodeId)
+            .InnerJoin<ContentVersionDto>()
+            .On<ContentDto, ContentVersionDto>(left => left.NodeId, right => right.NodeId)
+            .InnerJoin<DocumentVersionDto>()
+            .On<ContentVersionDto, DocumentVersionDto>(left => left.Id, right => right.Id)
+            .LeftJoin<UserDto>()
+            .On<UserDto, ContentVersionDto>(left => left.Id, right => right.UserId)
+            .Where<ContentVersionDto>(x => x.Id == versionId);
+
+        return await _scopeAccessor.AmbientScope.Database.SingleAsync<ContentVersionMeta>(query);
     }
 }
