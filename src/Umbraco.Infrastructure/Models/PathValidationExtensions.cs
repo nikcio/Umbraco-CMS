@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Umbraco.Cms.Core.Models.Entities;
 using Umbraco.Cms.Infrastructure.Persistence.Dtos;
+using Umbraco.Cms.Infrastructure.Persistence.Models;
 using Umbraco.Extensions;
 
 namespace Umbraco.Cms.Core.Models;
@@ -42,6 +43,37 @@ internal static class PathValidationExtensions
             // the 2nd last id in the path must be it's parent id
             throw new InvalidDataException(
                 $"The content item {entity.NodeId} has an invalid path: {entity.Path} with parentID: {entity.ParentId}");
+        }
+    }
+
+    /// <summary>
+    /// Does a quick check on the entity's set path to ensure that it's valid and consistent
+    /// </summary>
+    /// <param name="umbracoNode"></param>
+    /// <returns></returns>
+    public static void ValidatePathWithException(this UmbracoNode umbracoNode)
+    {
+        if (umbracoNode.Id == default && umbracoNode.Path.IsNullOrWhiteSpace())
+        {
+            return;
+        }
+
+        if (umbracoNode.Path.IsNullOrWhiteSpace())
+        {
+            throw new InvalidDataException($"The content item {umbracoNode.Id} has an empty path: {umbracoNode.Path} with parentID: {umbracoNode.ParentId}");
+        }
+
+        var pathParts = umbracoNode.Path.Split(Constants.CharArrays.Comma, StringSplitOptions.RemoveEmptyEntries);
+        if (pathParts.Length < 2)
+        {
+            // A path cannot be less than 2 parts, at a minimum it must be root (-1) and it's own id
+            throw new InvalidDataException($"The content item {umbracoNode.Id} has an invalid path: {umbracoNode.Path} with parentID: {umbracoNode.ParentId}");
+        }
+
+        if (umbracoNode.ParentId != default && pathParts[^2] != umbracoNode.ParentId.ToInvariantString())
+        {
+            // the 2nd last id in the path must be it's parent id
+            throw new InvalidDataException($"The content item {umbracoNode.Id} has an invalid path: {umbracoNode.Path} with parentID: {umbracoNode.ParentId}");
         }
     }
 

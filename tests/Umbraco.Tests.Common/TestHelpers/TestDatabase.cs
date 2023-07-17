@@ -584,6 +584,14 @@ public class TestDatabase : IUmbracoDatabase
     public IQueryable<UmbracoUser> UmbracoUsers => throw new NotImplementedException();
 
     public IQueryable<UmbracoUserStartNode> UmbracoUserStartNodes => throw new NotImplementedException();
+
+    public int SaveChanges() => throw new NotImplementedException();
+
+    public int SaveChanges(bool acceptAllChangesOnSuccess) => throw new NotImplementedException();
+
+    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) => throw new NotImplementedException();
+
+    public Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default) => throw new NotImplementedException();
     #endregion
 
     /// <summary>

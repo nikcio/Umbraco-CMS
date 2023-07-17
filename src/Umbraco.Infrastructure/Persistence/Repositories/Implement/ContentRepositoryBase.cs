@@ -16,6 +16,7 @@ using Umbraco.Cms.Core.Serialization;
 using Umbraco.Cms.Core.Services;
 using Umbraco.Cms.Infrastructure.Persistence.Dtos;
 using Umbraco.Cms.Infrastructure.Persistence.Factories;
+using Umbraco.Cms.Infrastructure.Persistence.Models;
 using Umbraco.Cms.Infrastructure.Persistence.Querying;
 using Umbraco.Cms.Infrastructure.Scoping;
 using Umbraco.Extensions;
@@ -1000,43 +1001,45 @@ namespace Umbraco.Cms.Infrastructure.Persistence.Repositories.Implement
 
         #region Utilities
 
+        /// <inheritdoc/>
         protected virtual string? EnsureUniqueNodeName(int parentId, string? nodeName, int id = 0)
         {
-            SqlTemplate? template = SqlContext.Templates.Get(Constants.SqlTemplates.VersionableRepository.EnsureUniqueNodeName, tsql => tsql
-                .Select<NodeDto>(x => Alias(x.NodeId, "id"), x => Alias(x.Text!, "name"))
-                .From<NodeDto>()
-                .Where<NodeDto>(x => x.NodeObjectType == SqlTemplate.Arg<Guid>("nodeObjectType") && x.ParentId == SqlTemplate.Arg<int>("parentId")));
-
-            Sql<ISqlContext> sql = template.Sql(NodeObjectTypeId, parentId);
-            List<SimilarNodeName>? names = Database.Fetch<SimilarNodeName>(sql);
+            var names = Database.UmbracoNodes
+                .Select(node => new { node.Id, node.Text, node.NodeObjectType, node.ParentId })
+                .Where(node => node.NodeObjectType == NodeObjectTypeId && node.ParentId == parentId)
+                .AsEnumerable() // Here the database action is done
+                .Select(node => new SimilarNodeName() { Id = node.Id, Name = node.Text })
+                .ToList();
 
             return SimilarNodeName.GetUniqueName(names, id, nodeName);
         }
 
         protected virtual bool SortorderExists(int parentId, int sortOrder)
         {
-            SqlTemplate? template = SqlContext.Templates.Get(Constants.SqlTemplates.VersionableRepository.SortOrderExists, tsql => tsql
-                .Select("sortOrder")
-                .From<NodeDto>()
-                .Where<NodeDto>(x => x.NodeObjectType == SqlTemplate.Arg<Guid>("nodeObjectType") &&
-                x.ParentId == SqlTemplate.Arg<int>("parentId") &&
-                x.SortOrder == SqlTemplate.Arg<int>("sortOrder")));
-
-            Sql<ISqlContext> sql = template.Sql(NodeObjectTypeId, parentId, sortOrder);
-            var result = Database.ExecuteScalar<int?>(sql);
+            int? result = Database.UmbracoNodes
+                .Select(umbracoNode => new { umbracoNode.SortOrder, umbracoNode.NodeObjectType, umbracoNode.ParentId })
+                .Where(umbracoNode => umbracoNode.NodeObjectType == NodeObjectTypeId &&
+                                      umbracoNode.ParentId == parentId &&
+                                      umbracoNode.SortOrder == sortOrder)
+                .AsEnumerable() // Here the database action is done
+                .Select(umbracoNode => umbracoNode.SortOrder)
+                .FirstOrDefault();
 
             return result != null;
         }
 
         protected virtual int GetNewChildSortOrder(int parentId, int first)
         {
-            SqlTemplate? template = SqlContext.Templates.Get(Constants.SqlTemplates.VersionableRepository.GetSortOrder, tsql => tsql
-                .Select("MAX(sortOrder)")
-                .From<NodeDto>()
-                .Where<NodeDto>(x => x.NodeObjectType == SqlTemplate.Arg<Guid>("nodeObjectType") && x.ParentId == SqlTemplate.Arg<int>("parentId")));
-
-            Sql<ISqlContext> sql = template.Sql(NodeObjectTypeId, parentId);
-            var sortOrder = Database.ExecuteScalar<int?>(sql);
+            int? sortOrder = Database.UmbracoNodes
+                .Select(umbracoNode => new
+                {
+                    umbracoNode.NodeObjectType,
+                    umbracoNode.ParentId,
+                    umbracoNode.SortOrder,
+                })
+                .Where(umbracoNode => umbracoNode.NodeObjectType == NodeObjectTypeId && umbracoNode.ParentId == parentId)
+                .Select(umbracoNode => umbracoNode.SortOrder)
+                .Max(nodeSortOrder => (int?)nodeSortOrder);
 
             return sortOrder + 1 ?? first;
         }
@@ -1054,15 +1057,23 @@ namespace Umbraco.Cms.Infrastructure.Persistence.Repositories.Implement
             return nodeDto;
         }
 
+        protected virtual UmbracoNode? GetParentUmbracoNode(int parentId)
+        {
+            return Database.UmbracoNodes.FirstOrDefault(x => x.Id == parentId);
+        }
+
         protected virtual int GetReservedId(Guid uniqueId)
         {
-            SqlTemplate template = SqlContext.Templates.Get(Constants.SqlTemplates.VersionableRepository.GetReservedId, tsql => tsql
-                .Select<NodeDto>(x => x.NodeId)
-                .From<NodeDto>()
-                .Where<NodeDto>(x => x.UniqueId == SqlTemplate.Arg<Guid>("uniqueId") && x.NodeObjectType == Constants.ObjectTypes.IdReservation));
-
-            Sql<ISqlContext> sql = template.Sql(new { uniqueId });
-            var id = Database.ExecuteScalar<int?>(sql);
+            int? id = Database.UmbracoNodes
+                .Select(umbracoNode => new
+                {
+                    umbracoNode.Id,
+                    umbracoNode.UniqueId,
+                    umbracoNode.NodeObjectType,
+                })
+                .Where(umbracoNode => umbracoNode.UniqueId == uniqueId && umbracoNode.NodeObjectType == Constants.ObjectTypes.IdReservation)
+                .Select(umbracoNode => umbracoNode.Id)
+                .FirstOrDefault();
 
             return id ?? 0;
         }

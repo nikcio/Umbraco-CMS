@@ -19,19 +19,25 @@ internal static class ListExtensions
 
 internal class SimilarNodeName
 {
+    public SimilarNodeName()
+    {
+    }
+
+    public SimilarNodeName(int id, string? name)
+    {
+        Id = id;
+        Name = name;
+    }
+
     public int Id { get; set; }
 
     public string? Name { get; set; }
 
     public static string? GetUniqueName(IEnumerable<SimilarNodeName> names, int nodeId, string? nodeName)
     {
-        IEnumerable<string?> items = names
-            .Where(x => x.Id != nodeId) // ignore same node
-            .Select(x => x.Name);
+        IEnumerable<string?> items = names.Where(x => x.Id != nodeId).Select(x => x.Name);
 
-        var uniqueName = GetUniqueName(items, nodeName);
-
-        return uniqueName;
+        return GetUniqueName(items, nodeName);
     }
 
     public static string? GetUniqueName(IEnumerable<string?> names, string? name)

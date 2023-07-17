@@ -13,8 +13,10 @@ using Umbraco.Cms.Core.Persistence.Repositories;
 using Umbraco.Cms.Core.PropertyEditors;
 using Umbraco.Cms.Core.Serialization;
 using Umbraco.Cms.Core.Services;
+using Umbraco.Cms.Infrastructure.Extensions;
 using Umbraco.Cms.Infrastructure.Persistence.Dtos;
 using Umbraco.Cms.Infrastructure.Persistence.Factories;
+using Umbraco.Cms.Infrastructure.Persistence.Models;
 using Umbraco.Cms.Infrastructure.Persistence.Querying;
 using Umbraco.Cms.Infrastructure.Persistence.SqlSyntax;
 using Umbraco.Cms.Infrastructure.Scoping;
@@ -880,93 +882,71 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
 
         var publishing = entity.PublishedState == PublishedState.Publishing;
 
-        // ensure that the default template is assigned
-        if (entity.TemplateId.HasValue == false)
+        if (!entity.TemplateId.HasValue)
         {
             entity.TemplateId = entity.ContentType.DefaultTemplate?.Id;
         }
 
-        // sanitize names
         SanitizeNames(entity, publishing);
 
-        // ensure that strings don't contain characters that are invalid in xml
         // TODO: do we really want to keep doing this here?
         entity.SanitizeEntityPropertiesForXmlStorage();
 
-        // create the dto
-        DocumentDto dto = ContentBaseFactory.BuildDto(entity, NodeObjectTypeId);
+        UmbracoDocument umbracoDocument = ContentBaseFactory.BuildUmbracoDocument(entity, NodeObjectTypeId);
 
-        // derive path and level from parent
-        NodeDto parent = GetParentNodeDto(entity.ParentId);
-        var level = parent.Level + 1;
+        UmbracoNode parent = GetParentUmbracoNode(entity.ParentId) ?? throw new InvalidOperationException($"Could not save new UmbracoNode. Could not find parent node with id {entity.ParentId}");
 
         var sortOrderExists = SortorderExists(entity.ParentId, entity.SortOrder);
-        // if the sortorder of the entity already exists get a new one, else use the sortOrder of the entity
+
         var sortOrder = sortOrderExists ? GetNewChildSortOrder(entity.ParentId, 0) : entity.SortOrder;
 
-        // persist the node dto
-        NodeDto nodeDto = dto.ContentDto.NodeDto;
-        nodeDto.Path = parent.Path;
-        nodeDto.Level = Convert.ToInt16(level);
-        nodeDto.SortOrder = sortOrder;
+        umbracoDocument.Node.Node.Path = parent.Path;
+        umbracoDocument.Node.Node.Level = Convert.ToInt16(parent.Level + 1);
+        umbracoDocument.Node.Node.SortOrder = sortOrder;
 
-        // see if there's a reserved identifier for this unique id
-        // and then either update or insert the node dto
-        var id = GetReservedId(nodeDto.UniqueId);
+        var id = GetReservedId(umbracoDocument.Node.Node.UniqueId);
         if (id > 0)
         {
-            nodeDto.NodeId = id;
+            umbracoDocument.Node.Node.Id = id;
         }
         else
         {
-            Database.Insert(nodeDto);
+            Database.UmbracoNodes.Append(umbracoDocument.Node.Node);
+            Database.SaveChanges();
         }
 
-        nodeDto.Path = string.Concat(parent.Path, ",", nodeDto.NodeId);
-        nodeDto.ValidatePathWithException();
-        Database.Update(nodeDto);
+        umbracoDocument.Node.Node.Path = string.Concat(parent.Path, ",", umbracoDocument.Node.Node.Id);
+        umbracoDocument.Node.Node.ValidatePathWithException();
 
-        // update entity
-        entity.Id = nodeDto.NodeId;
-        entity.Path = nodeDto.Path;
+        entity.Id = umbracoDocument.Node.Node.Id;
+        entity.Path = umbracoDocument.Node.Node.Path;
         entity.SortOrder = sortOrder;
-        entity.Level = level;
+        entity.Level = umbracoDocument.Node.Node.Level;
 
-        // persist the content dto
-        ContentDto contentDto = dto.ContentDto;
-        contentDto.NodeId = nodeDto.NodeId;
-        Database.Insert(contentDto);
+        umbracoDocument.Node.UmbracoContentVersions.First().Current = !publishing;
+        Database.UmbracoContentVersions.Append(umbracoDocument.Node.UmbracoContentVersions.First());
+        Database.SaveChanges();
 
-        // persist the content version dto
-        ContentVersionDto contentVersionDto = dto.DocumentVersionDto.ContentVersionDto;
-        contentVersionDto.NodeId = nodeDto.NodeId;
-        contentVersionDto.Current = !publishing;
-        Database.Insert(contentVersionDto);
-        entity.VersionId = contentVersionDto.Id;
+        umbracoDocument.NodeId = umbracoDocument.Node.UmbracoContentVersions.First().NodeId;
 
-        // persist the document version dto
-        DocumentVersionDto documentVersionDto = dto.DocumentVersionDto;
-        documentVersionDto.Id = entity.VersionId;
         if (publishing)
         {
-            documentVersionDto.Published = true;
+            umbracoDocument.Published = true;
         }
 
-        Database.Insert(documentVersionDto);
+        Database.UmbracoDocuments.Append(umbracoDocument);
 
-        // and again in case we're publishing immediately
         if (publishing)
         {
             entity.PublishedVersionId = entity.VersionId;
-            contentVersionDto.Id = 0;
-            contentVersionDto.Current = true;
-            contentVersionDto.Text = entity.Name;
-            Database.Insert(contentVersionDto);
-            entity.VersionId = contentVersionDto.Id;
+            umbracoDocument.Node.UmbracoContentVersions.Add(new UmbracoContentVersion
+            {
+                Current = true,
+                Text = entity.Name,
+            });
 
-            documentVersionDto.Id = entity.VersionId;
-            documentVersionDto.Published = false;
-            Database.Insert(documentVersionDto);
+            umbracoDocument.Node.UmbracoContentVersions.First().Id = entity.VersionId;
+            umbracoDocument.Node.UmbracoContentVersions.First().UmbracoDocumentVersion!.Published = false;
         }
 
         // persist the property data
@@ -1664,21 +1644,10 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
 
     private void SanitizeNames(IContent content, bool publishing)
     {
-        // a content item *must* have an invariant name, and invariant published name
-        // else we just cannot write the invariant rows (node, content version...) to the database
-
-        // ensure that we have an invariant name
-        // invariant content = must be there already, else throw
-        // variant content = update with default culture or anything really
         EnsureInvariantNameExists(content);
 
-        // ensure that invariant name is unique
         EnsureInvariantNameIsUnique(content);
 
-        // and finally,
-        // ensure that each culture has a unique node name
-        // no published name = not published
-        // else, it needs to be unique
         EnsureVariantNamesAreUnique(content, publishing);
     }
 
@@ -1686,50 +1655,48 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
     {
         if (content.ContentType.VariesByCulture())
         {
-            // content varies by culture
-            // then it must have at least a variant name, else it makes no sense
-            if (content.CultureInfos?.Count == 0)
+            if (content.CultureInfos == null || content.CultureInfos.Count == 0)
             {
-                throw new InvalidOperationException("Cannot save content with an empty name.");
+                ThrowContentNameIsEmpty();
             }
 
-            // and then, we need to set the invariant name implicitly,
-            // using the default culture if it has a name, otherwise anything we can
             var defaultCulture = LanguageRepository.GetDefaultIsoCode();
-            content.Name = defaultCulture != null &&
-                           (content.CultureInfos?.TryGetValue(defaultCulture, out ContentCultureInfos cultureName) ??
-                            false)
-                ? cultureName.Name!
-                : content.CultureInfos![0].Name!;
+            content.Name = GetContentName(content, defaultCulture);
+        }
+        else if (string.IsNullOrWhiteSpace(content.Name))
+        {
+            ThrowContentNameIsEmpty();
+        }
+
+        static string GetContentName(IContent content, string defaultCulture)
+        {
+            if (defaultCulture != null && (content.CultureInfos?.TryGetValue(defaultCulture, out ContentCultureInfos cultureName) ?? false))
+            {
+                return cultureName.Name ?? ThrowContentNameIsEmpty();
+            }
+            else
+            {
+                return content.CultureInfos![0].Name ?? ThrowContentNameIsEmpty();
+            }
+        }
+
+        static string ThrowContentNameIsEmpty() => throw new InvalidOperationException("Cannot save content with an empty name.");
+    }
+
+    private void EnsureInvariantNameIsUnique(IContent content) => content.Name = EnsureUniqueNodeName(content.ParentId, content.Name, content.Id);
+
+    /// <inheritdoc/>
+    protected override string? EnsureUniqueNodeName(int parentId, string? nodeName, int id = 0)
+    {
+        if (!EnsureUniqueNaming)
+        {
+            return nodeName;
         }
         else
         {
-            // content is invariant, and invariant content must have an explicit invariant name
-            if (string.IsNullOrWhiteSpace(content.Name))
-            {
-                throw new InvalidOperationException("Cannot save content with an empty name.");
-            }
+            return base.EnsureUniqueNodeName(parentId, nodeName, id);
         }
     }
-
-    private void EnsureInvariantNameIsUnique(IContent content) =>
-        content.Name = EnsureUniqueNodeName(content.ParentId, content.Name, content.Id);
-
-    protected override string? EnsureUniqueNodeName(int parentId, string? nodeName, int id = 0) =>
-        EnsureUniqueNaming == false ? nodeName : base.EnsureUniqueNodeName(parentId, nodeName, id);
-
-    private SqlTemplate SqlEnsureVariantNamesAreUnique => SqlContext.Templates.Get(
-        "Umbraco.Core.DomainRepository.EnsureVariantNamesAreUnique", tsql => tsql
-            .Select<ContentVersionCultureVariationDto>(x => x.Id, x => x.Name, x => x.LanguageId)
-            .From<ContentVersionCultureVariationDto>()
-            .InnerJoin<ContentVersionDto>()
-            .On<ContentVersionDto, ContentVersionCultureVariationDto>(x => x.Id, x => x.VersionId)
-            .InnerJoin<NodeDto>().On<NodeDto, ContentVersionDto>(x => x.NodeId, x => x.NodeId)
-            .Where<ContentVersionDto>(x => x.Current == SqlTemplate.Arg<bool>("current"))
-            .Where<NodeDto>(x => x.NodeObjectType == SqlTemplate.Arg<Guid>("nodeObjectType") &&
-                                 x.ParentId == SqlTemplate.Arg<int>("parentId") &&
-                                 x.NodeId != SqlTemplate.Arg<int>("id"))
-            .OrderBy<ContentVersionCultureVariationDto>(x => x.LanguageId));
 
     private void EnsureVariantNamesAreUnique(IContent content, bool publishing)
     {
@@ -1738,9 +1705,39 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
             return;
         }
 
-        // get names per culture, at same level (ie all siblings)
-        Sql<ISqlContext> sql = SqlEnsureVariantNamesAreUnique.Sql(true, NodeObjectTypeId, content.ParentId, content.Id);
-        var names = Database.Fetch<CultureNodeName>(sql)
+        // Using values like this is more performant than using the values directly in the where clause
+        var currentValue = true;
+        var parrentId = content.ParentId;
+        var nodeId = content.Id;
+        var names = Database.UmbracoContentVersionCultureVariations
+            .Include(x => x.Version)
+            .ThenInclude(x => x.Node)
+            .ThenInclude(x => x.Node)
+            .Select(x => new
+            {
+                x.Id,
+                x.Name,
+                x.LanguageId,
+                Version = new
+                {
+                    x.Version.Current,
+                    Node = new
+                    {
+                        Node = new
+                        {
+                            x.Version.Node.Node.NodeObjectType,
+                            x.Version.Node.Node.ParentId,
+                            x.Version.Node.Node.Id,
+                        },
+                    },
+                },
+            })
+            .Where(x => x.Version.Current == currentValue &&
+                        x.Version.Node.Node.NodeObjectType == NodeObjectTypeId &&
+                        x.Version.Node.Node.ParentId == parrentId &&
+                        x.Version.Node.Node.Id == nodeId)
+            .AsEnumerable() // This is where the query is executed
+            .Select(x => new CultureNodeName(x.Id, x.Name, x.LanguageId))
             .GroupBy(x => x.LanguageId)
             .ToDictionary(x => x.Key, x => x);
 
@@ -1749,10 +1746,6 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
             return;
         }
 
-        // note: the code below means we are going to unique-ify every culture names, regardless
-        // of whether the name has changed (ie the culture has been updated) - some saving culture
-        // fr-FR could cause culture en-UK name to change - not sure that is clean
-
         if (content.CultureInfos is null)
         {
             return;
@@ -1760,20 +1753,18 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
 
         foreach (ContentCultureInfos cultureInfo in content.CultureInfos)
         {
-            var langId = LanguageRepository.GetIdByIsoCode(cultureInfo.Culture);
-            if (!langId.HasValue)
+            var languageId = LanguageRepository.GetIdByIsoCode(cultureInfo.Culture);
+            if (!languageId.HasValue)
             {
                 continue;
             }
 
-            if (!names.TryGetValue(langId.Value, out IGrouping<int, CultureNodeName>? cultureNames))
+            if (!names.TryGetValue(languageId.Value, out IGrouping<int, CultureNodeName>? cultureNames))
             {
                 continue;
             }
 
-            // get a unique name
-            IEnumerable<SimilarNodeName> otherNames =
-                cultureNames.Select(x => new SimilarNodeName {Id = x.Id, Name = x.Name});
+            IEnumerable<SimilarNodeName> otherNames = cultureNames.Select(x => new SimilarNodeName(x.Id, x.Name));
             var uniqueName = SimilarNodeName.GetUniqueName(otherNames, 0, cultureInfo.Name);
 
             if (uniqueName == content.GetCultureName(cultureInfo.Culture))
@@ -1781,23 +1772,15 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
                 continue;
             }
 
-            // update the name, and the publish name if published
             content.SetCultureName(uniqueName, cultureInfo.Culture);
             if (publishing && (content.PublishCultureInfos?.ContainsKey(cultureInfo.Culture) ?? false))
             {
-                content.SetPublishInfo(cultureInfo.Culture, uniqueName,
-                    DateTime.Now); //TODO: This is weird, this call will have already been made in the SetCultureName
+                content.SetPublishInfo(cultureInfo.Culture, uniqueName, DateTime.Now); //TODO: This is weird, this call will have already been made in the SetCultureName
             }
         }
     }
 
-    // ReSharper disable once ClassNeverInstantiated.Local
-    private class CultureNodeName
-    {
-        public int Id { get; set; }
-        public string? Name { get; set; }
-        public int LanguageId { get; set; }
-    }
+    private sealed record CultureNodeName(int Id, string? Name, int LanguageId);
 
     #endregion
 }

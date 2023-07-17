@@ -193,6 +193,18 @@ namespace Umbraco.Cms.Persistence.EFCore.Databases
         public IQueryable<UmbracoUserStartNode> UmbracoUserStartNodes => _umbracoDbContext.UmbracoUserStartNodes;
 
         /// <inheritdoc/>
+        public int SaveChanges() => _umbracoDbContext.SaveChanges();
+
+        /// <inheritdoc/>
+        public int SaveChanges(bool acceptAllChangesOnSuccess) => _umbracoDbContext.SaveChanges(acceptAllChangesOnSuccess);
+
+        /// <inheritdoc/>
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) => _umbracoDbContext.SaveChangesAsync(cancellationToken);
+
+        /// <inheritdoc/>
+        public Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default) => _umbracoDbContext.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+
+        /// <inheritdoc/>
         public bool IsUmbracoInstalled() => ValidateSchema().DetermineHasInstalledVersion();
 
         /// <inheritdoc/>

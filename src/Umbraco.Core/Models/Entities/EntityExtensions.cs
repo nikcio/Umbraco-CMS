@@ -35,7 +35,6 @@ public static class EntityExtensions
         DateTime now = DateTime.Now;
         var canBeDirty = entity as ICanBeDirty;
 
-        // set the create and update dates, if not already set
         if (entity.CreateDate == default || canBeDirty?.IsPropertyDirty("CreateDate") == false)
         {
             entity.CreateDate = now;

@@ -3,6 +3,7 @@ using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Persistence.Repositories;
 using Umbraco.Cms.Core.PropertyEditors;
 using Umbraco.Cms.Infrastructure.Persistence.Dtos;
+using Umbraco.Cms.Infrastructure.Persistence.Models;
 
 namespace Umbraco.Cms.Infrastructure.Persistence.Factories;
 
@@ -174,6 +175,13 @@ internal class ContentBaseFactory
         return dto;
     }
 
+    public static UmbracoDocument BuildUmbracoDocument(IContent entity, Guid objectType) => new()
+    {
+        NodeId = entity.Id,
+        Published = entity.Published,
+        Node = BuildUmbracoContent(entity, objectType),
+    };
+
     public static IEnumerable<(ContentSchedule Model, ContentScheduleDto Dto)> BuildScheduleDto(
         IContent entity,
         ContentScheduleCollection contentSchedule,
@@ -244,6 +252,17 @@ internal class ContentBaseFactory
         return dto;
     }
 
+    private static UmbracoContent BuildUmbracoContent(IContent entity, Guid objectType) => new()
+    {
+        NodeId = entity.Id,
+        ContentTypeId = entity.ContentTypeId,
+        Node = BuildUmbracoNode(entity, objectType),
+        UmbracoContentVersions = new List<UmbracoContentVersion>
+        {
+            BuildUmbracoContentVersion(entity),
+        },
+    };
+
     private static NodeDto BuildNodeDto(IContentBase entity, Guid objectType)
     {
         var dto = new NodeDto
@@ -264,6 +283,21 @@ internal class ContentBaseFactory
         return dto;
     }
 
+    private static UmbracoNode BuildUmbracoNode(IContentBase entity, Guid objectType) => new()
+    {
+        Id = entity.Id,
+        UniqueId = entity.Key,
+        ParentId = entity.ParentId,
+        Level = Convert.ToInt16(entity.Level),
+        Path = entity.Path,
+        SortOrder = entity.SortOrder,
+        Trashed = entity.Trashed,
+        NodeUser = entity.CreatorId,
+        Text = entity.Name,
+        NodeObjectType = objectType,
+        CreateDate = entity.CreateDate,
+    };
+
     // always build the current / VersionPk dto
     // we're never going to build / save old versions (which are immutable)
     private static ContentVersionDto BuildContentVersionDto(IContentBase entity, ContentDto contentDto)
@@ -282,6 +316,17 @@ internal class ContentBaseFactory
         return dto;
     }
 
+    private static UmbracoContentVersion BuildUmbracoContentVersion(IContent entity) => new()
+    {
+        Id = entity.VersionId,
+        NodeId = entity.Id,
+        VersionDate = entity.UpdateDate,
+        UserId = entity.WriterId,
+        Current = true,
+        Text = entity.Name,
+        UmbracoDocumentVersion = BuildUmbracoDocumentVersion(entity),
+    };
+
     // always build the current / VersionPk dto
     // we're never going to build / save old versions (which are immutable)
     private static DocumentVersionDto BuildDocumentVersionDto(IContent entity, ContentDto contentDto)
@@ -297,6 +342,13 @@ internal class ContentBaseFactory
 
         return dto;
     }
+
+    private static UmbracoDocumentVersion BuildUmbracoDocumentVersion(IContent entity) => new()
+    {
+        Id = entity.VersionId,
+        TemplateId = entity.TemplateId,
+        Published = false,
+    };
 
     private static MediaVersionDto BuildMediaVersionDto(MediaUrlGeneratorCollection mediaUrlGenerators, IMedia entity, ContentDto contentDto)
     {
