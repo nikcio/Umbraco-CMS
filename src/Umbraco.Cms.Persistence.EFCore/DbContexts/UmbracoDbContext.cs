@@ -1,7 +1,12 @@
 using System.Reflection;
 using Microsoft.EntityFrameworkCore;
-using Umbraco.Cms.Infrastructure.Persistence;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Umbraco.Cms.Core.Configuration.Models;
+using Umbraco.Cms.Core.DependencyInjection;
 using Umbraco.Cms.Infrastructure.Persistence.Models;
+using Umbraco.Cms.Persistence.EFCore.Migrations;
 using Umbraco.Cms.Persistence.EFCore.Models;
 
 namespace Umbraco.Cms.Persistence.EFCore.DbContexts;
@@ -25,8 +30,40 @@ namespace Umbraco.Cms.Persistence.EFCore.DbContexts;
 /// </remarks>
 public class UmbracoDbContext : UmbracoDbContextBase
 {
-    public UmbracoDbContext(DbContextOptions<UmbracoDbContext> options) : base(options)
+    public UmbracoDbContext(DbContextOptions<UmbracoDbContext> options)
+        : base(ConfigureOptions(options, out IOptionsMonitor<ConnectionStrings>? connectionStringsOptionsMonitor))
     {
+        connectionStringsOptionsMonitor.OnChange(_ =>
+        {
+            ILogger<UmbracoDbContext> logger = StaticServiceProvider.Instance.GetRequiredService<ILogger<UmbracoDbContext>>();
+            logger.LogWarning("Connection string changed, disposing context");
+            Dispose();
+        });
+    }
+
+    private static DbContextOptions<UmbracoDbContext> ConfigureOptions(DbContextOptions<UmbracoDbContext> options, out IOptionsMonitor<ConnectionStrings> connectionStringsOptionsMonitor)
+    {
+        connectionStringsOptionsMonitor = StaticServiceProvider.Instance.GetRequiredService<IOptionsMonitor<ConnectionStrings>>();
+
+        ConnectionStrings connectionStrings = connectionStringsOptionsMonitor.CurrentValue;
+
+        if (string.IsNullOrWhiteSpace(connectionStrings.ConnectionString))
+        {
+            ILogger<UmbracoDbContext> logger = StaticServiceProvider.Instance.GetRequiredService<ILogger<UmbracoDbContext>>();
+            logger.LogCritical("No connection string was found, cannot setup Umbraco EF Core context");
+        }
+
+        IEnumerable<IMigrationProviderSetup> migrationProviders = StaticServiceProvider.Instance.GetServices<IMigrationProviderSetup>();
+        IMigrationProviderSetup? migrationProvider = migrationProviders.FirstOrDefault(x => x.ProviderName == connectionStrings.ProviderName);
+
+        if (migrationProvider == null && connectionStrings.ProviderName != null)
+        {
+            throw new InvalidOperationException($"No migration provider found for provider name {connectionStrings.ProviderName}");
+        }
+
+        var optionsBuilder = new DbContextOptionsBuilder<UmbracoDbContext>(options);
+        migrationProvider?.Setup(optionsBuilder, connectionStrings.ConnectionString);
+        return optionsBuilder.Options;
     }
 
     /// <inheritdoc/>

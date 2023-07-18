@@ -2,6 +2,8 @@ using System.Collections;
 using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using Umbraco.Cms.Infrastructure.Extensions;
+using Umbraco.Cms.Infrastructure.QueryBuilders;
+using Umbraco.Cms.Infrastructure.QueryBuilders.IQueryableInterfaces;
 
 namespace Umbraco.Cms.Persistence.EFCore.QueryBuilders
 {

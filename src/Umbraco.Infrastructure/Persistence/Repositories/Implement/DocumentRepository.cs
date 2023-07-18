@@ -540,6 +540,46 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
         }
     }
 
+    private IEnumerable<UmbracoContentVersionCultureVariation> BuildUmbracoContentVersionCultureVariations(IContent content, bool publishing)
+    {
+        if (content.CultureInfos is not null)
+        {
+            // Create models for the 'current' (non-published) version, all cultures
+            foreach (ContentCultureInfos cultureInfo in content.CultureInfos)
+            {
+                yield return new UmbracoContentVersionCultureVariation
+                {
+                    VersionId = content.VersionId,
+                    LanguageId = LanguageRepository.GetIdByIsoCode(cultureInfo.Culture) ?? throw new InvalidOperationException("Not a valid culture."),
+                    Name = cultureInfo.Name ?? throw new InvalidOperationException($"Missing culture info name for culture: {cultureInfo.Culture}"),
+                    Date = content.GetUpdateDate(cultureInfo.Culture) ?? DateTime.Now,
+                };
+            }
+        }
+
+        // if not publishing, we're just updating the 'current' (non-published) version,
+        // so there are no models to create for the 'published' version which remains unchanged
+        if (!publishing)
+        {
+            yield break;
+        }
+
+        if (content.PublishCultureInfos is not null)
+        {
+            // create models for the 'published' version, for published cultures (those having a name)
+            foreach (ContentCultureInfos cultureInfo in content.PublishCultureInfos)
+            {
+                yield return new UmbracoContentVersionCultureVariation
+                {
+                    VersionId = content.PublishedVersionId,
+                    LanguageId = LanguageRepository.GetIdByIsoCode(cultureInfo.Culture) ?? throw new InvalidOperationException("Not a valid culture."),
+                    Name = cultureInfo.Name ?? throw new InvalidOperationException($"Missing culture info name for culture: {cultureInfo.Culture}"),
+                    Date = content.GetUpdateDate(cultureInfo.Culture) ?? DateTime.Now,
+                };
+            }
+        }
+    }
+
     private IEnumerable<DocumentCultureVariationDto> GetDocumentVariationDtos(IContent content,
         HashSet<string> editedCultures)
     {
@@ -564,6 +604,24 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
             };
 
             yield return dto;
+        }
+    }
+
+    private IEnumerable<UmbracoDocumentCultureVariation> BuildUmbracoDocumentCultureVariations(IContent content, HashSet<string> editedCultures)
+    {
+        IEnumerable<string> allCultures = content.AvailableCultures.Union(content.PublishedCultures); // union = distinct
+        foreach (var culture in allCultures)
+        {
+            yield return new UmbracoDocumentCultureVariation
+            {
+                NodeId = content.Id,
+                LanguageId = LanguageRepository.GetIdByIsoCode(culture) ?? throw new InvalidOperationException("Not a valid culture."),
+                Name = content.GetCultureName(culture) ?? content.GetPublishName(culture),
+                Available = content.IsCultureAvailable(culture),
+                Published = content.IsCulturePublished(culture),
+                // note: can't use IsCultureEdited at that point - hasn't been updated yet - see PersistUpdatedItem
+                Edited = content.IsCultureAvailable(culture) && (!content.IsCulturePublished(culture) || (editedCultures != null && editedCultures.Contains(culture))),
+            };
         }
     }
 
@@ -920,7 +978,6 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
 
         entity.Id = umbracoDocument.Node.Node.Id;
         entity.Path = umbracoDocument.Node.Node.Path;
-        entity.SortOrder = sortOrder;
         entity.Level = umbracoDocument.Node.Node.Level;
 
         umbracoDocument.Node.UmbracoContentVersions.First().Current = !publishing;
@@ -949,13 +1006,18 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
             umbracoDocument.Node.UmbracoContentVersions.First().UmbracoDocumentVersion!.Published = false;
         }
 
-        // persist the property data
-        IEnumerable<PropertyDataDto> propertyDataDtos = PropertyFactory.BuildDtos(entity.ContentType.Variations,
-            entity.VersionId, entity.PublishedVersionId, entity.Properties, LanguageRepository, out var edited,
+        IEnumerable<UmbracoPropertyDatum> umbracoPropertyDatums = PropertyFactory.BuildUmbracoPropertyDatum(
+            entity.ContentType.Variations,
+            entity.VersionId,
+            entity.PublishedVersionId,
+            entity.Properties,
+            LanguageRepository,
+            out var edited,
             out HashSet<string>? editedCultures);
-        foreach (PropertyDataDto propertyDataDto in propertyDataDtos)
+
+        foreach (UmbracoPropertyDatum umbracoPropertyDatum in umbracoPropertyDatums)
         {
-            Database.Insert(propertyDataDto);
+            Database.UmbracoPropertyData.Append(umbracoPropertyDatum);
         }
 
         // if !publishing, we may have a new name != current publish name,
@@ -965,28 +1027,18 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
             edited = true;
         }
 
-        // persist the document dto
-        // at that point, when publishing, the entity still has its old Published value
-        // so we need to explicitly update the dto to persist the correct value
-        if (entity.PublishedState == PublishedState.Publishing)
-        {
-            dto.Published = true;
-        }
+        entity.Edited = umbracoDocument.Edited = !umbracoDocument.Published || edited; // if not published, always edited
 
-        dto.NodeId = nodeDto.NodeId;
-        entity.Edited = dto.Edited = !dto.Published || edited; // if not published, always edited
-        Database.Insert(dto);
-
-        // persist the variations
         if (entity.ContentType.VariesByCulture())
         {
             // names also impact 'edited'
-            // ReSharper disable once UseDeconstruction
             foreach (ContentCultureInfos cultureInfo in entity.CultureInfos!)
             {
                 if (cultureInfo.Name != entity.GetPublishName(cultureInfo.Culture))
                 {
-                    (editedCultures ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase)).Add(cultureInfo.Culture);
+                    editedCultures ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                    editedCultures.Add(cultureInfo.Culture);
                 }
             }
 
@@ -994,13 +1046,21 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
             entity.SetCultureEdited(editedCultures!);
 
             // bump dates to align cultures to version
-            entity.AdjustDates(contentVersionDto.VersionDate, publishing);
+            entity.AdjustDates(umbracoDocument.Node.UmbracoContentVersions.Last().VersionDate, publishing);
 
-            // insert content variations
-            Database.BulkInsertRecords(GetContentVariationDtos(entity, publishing));
+            IEnumerable<UmbracoContentVersionCultureVariation> umbracoContentVersionCultureVariations = BuildUmbracoContentVersionCultureVariations(entity, publishing);
 
-            // insert document variations
-            Database.BulkInsertRecords(GetDocumentVariationDtos(entity, editedCultures!));
+            foreach (UmbracoContentVersionCultureVariation umbracoContentVersionCultureVariation in umbracoContentVersionCultureVariations)
+            {
+                Database.UmbracoContentVersionCultureVariations.Append(umbracoContentVersionCultureVariation);
+            }
+
+            IEnumerable<UmbracoDocumentCultureVariation> umbracoDocumentCultureVariations = BuildUmbracoDocumentCultureVariations(entity, editedCultures!);
+
+            foreach (UmbracoDocumentCultureVariation umbracoDocumentCultureVariation in umbracoDocumentCultureVariations)
+            {
+                Database.UmbracoDocumentCultureVariations.Append(umbracoDocumentCultureVariation);
+            }
         }
 
         // trigger here, before we reset Published etc
@@ -1030,21 +1090,11 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
             ClearEntityTags(entity, _tagRepository);
         }
 
+        Database.SaveChanges();
+
         PersistRelations(entity);
 
         entity.ResetDirtyProperties();
-
-        // troubleshooting
-        //if (Database.ExecuteScalar<int>($"SELECT COUNT(*) FROM {Constants.DatabaseSchema.Tables.DocumentVersion} JOIN {Constants.DatabaseSchema.Tables.ContentVersion} ON {Constants.DatabaseSchema.Tables.DocumentVersion}.id={Constants.DatabaseSchema.Tables.ContentVersion}.id WHERE published=1 AND nodeId=" + content.Id) > 1)
-        //{
-        //    Debugger.Break();
-        //    throw new Exception("oops");
-        //}
-        //if (Database.ExecuteScalar<int>($"SELECT COUNT(*) FROM {Constants.DatabaseSchema.Tables.DocumentVersion} JOIN {Constants.DatabaseSchema.Tables.ContentVersion} ON {Constants.DatabaseSchema.Tables.DocumentVersion}.id={Constants.DatabaseSchema.Tables.ContentVersion}.id WHERE [current]=1 AND nodeId=" + content.Id) > 1)
-        //{
-        //    Debugger.Break();
-        //    throw new Exception("oops");
-        //}
     }
 
     protected override void PersistUpdatedItem(IContent entity)

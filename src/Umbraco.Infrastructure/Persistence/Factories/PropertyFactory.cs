@@ -3,6 +3,7 @@ using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Persistence.Repositories;
 using Umbraco.Cms.Infrastructure.Persistence.Dtos;
+using Umbraco.Cms.Infrastructure.Persistence.Models;
 using Umbraco.Extensions;
 
 namespace Umbraco.Cms.Infrastructure.Persistence.Factories;
@@ -165,6 +166,118 @@ internal static class PropertyFactory
         return propertyDataDtos;
     }
 
+    /// <summary>
+    ///     Creates a collection of <see cref="UmbracoPropertyDatum" /> from a collection of <see cref="Property" />
+    /// </summary>
+    /// <param name="contentVariation">
+    ///     The <see cref="ContentVariation" /> of the entity containing the collection of <see cref="Property" />
+    /// </param>
+    /// <param name="currentVersionId"></param>
+    /// <param name="publishedVersionId"></param>
+    /// <param name="properties">The properties to map</param>
+    /// <param name="languageRepository"></param>
+    /// <param name="edited">out parameter indicating that one or more properties have been edited</param>
+    /// <param name="editedCultures">
+    ///     Out parameter containing a collection of edited cultures when the contentVariation varies by culture.
+    ///     The value of this will be used to populate the edited cultures in the umbracoDocumentCultureVariation table.
+    /// </param>
+    /// <returns></returns>
+    public static IEnumerable<UmbracoPropertyDatum> BuildUmbracoPropertyDatum(
+        ContentVariation contentVariation,
+        int currentVersionId,
+        int publishedVersionId,
+        IEnumerable<IProperty> properties,
+        ILanguageRepository languageRepository,
+        out bool edited,
+        out HashSet<string>? editedCultures)
+    {
+        var umbracoPropertyDatums = new List<UmbracoPropertyDatum>();
+        edited = false;
+        editedCultures = null; // don't allocate unless necessary
+        string? defaultCulture = null; // don't allocate unless necessary
+
+        var entityVariesByCulture = contentVariation.VariesByCulture();
+
+        // create dtos for each property values, but only for values that do actually exist
+        // ie have a non-null value, everything else is just ignored and won't have a db row
+        foreach (IProperty property in properties)
+        {
+            if (property.PropertyType.SupportsPublishing)
+            {
+                if (entityVariesByCulture && editedCultures == null)
+                {
+                    editedCultures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                }
+
+                foreach (IPropertyValue propertyValue in property.Values)
+                {
+                    var isInvariantValue = propertyValue.Culture == null && propertyValue.Segment == null;
+                    var isCultureValue = propertyValue.Culture != null;
+                    var isSegmentValue = propertyValue.Segment != null;
+
+                    if ((propertyValue.PublishedValue != null || isSegmentValue) && publishedVersionId > 0)
+                    {
+                        umbracoPropertyDatums.Add(BuildUmbracoPropertyDatum(publishedVersionId, property, languageRepository.GetIdByIsoCode(propertyValue.Culture), propertyValue.Segment, propertyValue.PublishedValue));
+                    }
+
+                    if (propertyValue.EditedValue != null || isSegmentValue)
+                    {
+                        umbracoPropertyDatums.Add(BuildUmbracoPropertyDatum(currentVersionId, property, languageRepository.GetIdByIsoCode(propertyValue.Culture), propertyValue.Segment, propertyValue.EditedValue));
+                    }
+
+                    // property.Values will contain ALL of it's values, both variant and invariant which will be populated if the
+                    // administrator has previously changed the property type to be variant vs invariant.
+                    // We need to check for this scenario here because otherwise the editedCultures and edited flags
+                    // will end up incorrectly set in the umbracoDocumentCultureVariation table so here we need to
+                    // only process edited cultures based on the current value type and how the property varies.
+                    // The above logic will still persist the currently saved property value for each culture in case the admin
+                    // decides to swap the property's variance again, in which case the edited flag will be recalculated.
+                    if ((property.PropertyType.VariesByCulture() && isInvariantValue) || (!property.PropertyType.VariesByCulture() && isCultureValue))
+                    {
+                        continue;
+                    }
+
+                    // use explicit equals here, else object comparison fails at comparing eg strings
+                    var sameValues = propertyValue?.PublishedValue == null
+                        ? propertyValue?.EditedValue == null
+                        : propertyValue.PublishedValue.Equals(propertyValue.EditedValue);
+
+                    edited |= !sameValues;
+
+                    if (entityVariesByCulture && !sameValues)
+                    {
+                        if (isCultureValue && propertyValue?.Culture is not null)
+                        {
+                            editedCultures?.Add(propertyValue.Culture); // report culture as edited
+                        }
+                        else if (isInvariantValue)
+                        {
+                            // flag culture as edited if it contains an edited invariant property
+                            defaultCulture ??= languageRepository.GetDefaultIsoCode();
+
+                            editedCultures?.Add(defaultCulture);
+                        }
+                    }
+                }
+            }
+            else
+            {
+                foreach (IPropertyValue propertyValue in property.Values)
+                {
+                    // not publishing = only deal with edit values
+                    if (propertyValue.EditedValue != null)
+                    {
+                        umbracoPropertyDatums.Add(BuildUmbracoPropertyDatum(currentVersionId, property, languageRepository.GetIdByIsoCode(propertyValue.Culture), propertyValue.Segment, propertyValue.EditedValue));
+                    }
+                }
+
+                edited = true;
+            }
+        }
+
+        return umbracoPropertyDatums;
+    }
+
     private static PropertyDataDto BuildDto(int versionId, IProperty property, int? languageId, string? segment, object? value)
     {
         var dto = new PropertyDataDto { VersionId = versionId, PropertyTypeId = property.PropertyTypeId };
@@ -216,5 +329,66 @@ internal static class PropertyFactory
         }
 
         return dto;
+    }
+
+    private static UmbracoPropertyDatum BuildUmbracoPropertyDatum(int versionId, IProperty property, int? languageId, string? segment, object? value)
+    {
+        var umbracoPropertyDatum = new UmbracoPropertyDatum
+        {
+            VersionId = versionId,
+            PropertyTypeId = property.PropertyTypeId,
+        };
+
+        if (languageId.HasValue)
+        {
+            umbracoPropertyDatum.LanguageId = languageId;
+        }
+
+        if (segment != null)
+        {
+            umbracoPropertyDatum.Segment = segment;
+        }
+
+        if (value == null)
+        {
+            return umbracoPropertyDatum;
+        }
+
+        if (property.ValueStorageType == ValueStorageType.Integer)
+        {
+            if (value is bool || property.PropertyType.PropertyEditorAlias == Constants.PropertyEditors.Aliases.Boolean)
+            {
+                if (string.IsNullOrEmpty(value.ToString()))
+                {
+                    umbracoPropertyDatum.IntValue = 0;
+                }
+                else
+                {
+                    umbracoPropertyDatum.IntValue = Convert.ToInt32(value);
+                }
+            }
+            else if (!string.IsNullOrWhiteSpace(value.ToString()) && int.TryParse(value.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var val))
+            {
+                umbracoPropertyDatum.IntValue = val;
+            }
+        }
+        else if (property.ValueStorageType == ValueStorageType.Decimal && decimal.TryParse(value.ToString(), out var val))
+        {
+            umbracoPropertyDatum.DecimalValue = val; // property value should be normalized already
+        }
+        else if (property.ValueStorageType == ValueStorageType.Date && !string.IsNullOrWhiteSpace(value.ToString()) && DateTime.TryParse(value.ToString(), out DateTime date))
+        {
+            umbracoPropertyDatum.DateValue = date;
+        }
+        else if (property.ValueStorageType == ValueStorageType.Ntext)
+        {
+            umbracoPropertyDatum.TextValue = value.ToString();
+        }
+        else if (property.ValueStorageType == ValueStorageType.Nvarchar)
+        {
+            umbracoPropertyDatum.VarcharValue = value.ToString();
+        }
+
+        return umbracoPropertyDatum;
     }
 }

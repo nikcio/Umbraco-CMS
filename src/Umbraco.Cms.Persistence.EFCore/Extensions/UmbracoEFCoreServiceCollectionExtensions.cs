@@ -19,11 +19,11 @@ public static class UmbracoEFCoreServiceCollectionExtensions
     public static IServiceCollection AddUmbracoEFCoreContext<T>(this IServiceCollection services, DefaultEFCoreOptionsAction? defaultEFCoreOptionsAction = null)
         where T : DbContext
     {
-        defaultEFCoreOptionsAction ??= DefaultOptionsAction;
+        //defaultEFCoreOptionsAction ??= DefaultOptionsAction;
 
         services.AddPooledDbContextFactory<T>((serviceProvider, options) =>
         {
-            SetupDbContext(defaultEFCoreOptionsAction, serviceProvider, options);
+            //SetupDbContext(defaultEFCoreOptionsAction, serviceProvider, options);
         });
 
         services.AddUnique<IAmbientEFCoreScopeStack<T>, AmbientEFCoreScopeStack<T>>();
