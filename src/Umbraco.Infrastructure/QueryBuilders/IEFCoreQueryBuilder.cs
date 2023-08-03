@@ -1,21 +1,13 @@
 using System.Linq.Expressions;
-using Umbraco.Cms.Core.DependencyInjection;
-using Umbraco.Cms.Infrastructure.QueryBuilders;
 using Umbraco.Cms.Infrastructure.QueryBuilders.IQueryableInterfaces;
 
-namespace Umbraco.Cms.Infrastructure.Extensions
+namespace Umbraco.Cms.Infrastructure.QueryBuilders
 {
     /// <summary>
-    /// Extension methods for <see cref="IQueryable{T}"/>.
+    /// A query builder to bridge the infrastructure project to the EFCore project
     /// </summary>
-    /// <remarks>
-    /// Used to decopule Umbraco from EF Core.
-    /// Includes the extension methods from: https://github.com/dotnet/efcore/blob/main/src/EFCore/Extensions/EntityFrameworkQueryableExtensions.cs
-    /// </remarks>
-    internal static class IQueryableExtensions
+    public interface IEFCoreQueryBuilder
     {
-        private static readonly IEFCoreQueryBuilder _queryBuilder = (IEFCoreQueryBuilder)StaticServiceProvider.Instance.GetService(typeof(IEFCoreQueryBuilder))!;
-
         /// <summary>
         ///     Generates a string representation of the query used. This string may not be suitable for direct execution and is intended only
         ///     for use in debugging.
@@ -31,7 +23,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <param name="source">The query source.</param>
         /// <returns>The query string for debugging.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
-        public static string ToQueryString(this IQueryable source) => _queryBuilder.ToQueryString(source);
+        string ToQueryString(IQueryable source);
 
         /// <summary>
         ///     Asynchronously determines whether a sequence contains any elements.
@@ -55,7 +47,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// </returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<bool> AnyAsync<TSource>(this IQueryable<TSource> source, CancellationToken cancellationToken = default) => _queryBuilder.AnyAsync(source, cancellationToken);
+        Task<bool> AnyAsync<TSource>(IQueryable<TSource> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously determines whether any element of a sequence satisfies a condition.
@@ -83,7 +75,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     <paramref name="source" /> or <paramref name="predicate" /> is <see langword="null" />.
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<bool> AnyAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, bool>> predicate, CancellationToken cancellationToken = default) => _queryBuilder.AnyAsync(source, predicate, cancellationToken);
+        Task<bool> AnyAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, bool>> predicate, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously determines whether all the elements of a sequence satisfy a condition.
@@ -111,7 +103,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     <paramref name="source" /> or <paramref name="predicate" /> is <see langword="null" />.
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<bool> AllAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, bool>> predicate, CancellationToken cancellationToken = default) => _queryBuilder.AllAsync(source, predicate, cancellationToken);
+        Task<bool> AllAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, bool>> predicate, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously returns the number of elements in a sequence.
@@ -135,7 +127,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// </returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<int> CountAsync<TSource>(this IQueryable<TSource> source, CancellationToken cancellationToken = default) => _queryBuilder.CountAsync(source, cancellationToken);
+        Task<int> CountAsync<TSource>(IQueryable<TSource> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously returns the number of elements in a sequence that satisfy a condition.
@@ -163,7 +155,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     <paramref name="source" /> or <paramref name="predicate" /> is <see langword="null" />.
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<int> CountAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, bool>> predicate, CancellationToken cancellationToken = default) => _queryBuilder.CountAsync(source, predicate, cancellationToken);
+        Task<int> CountAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, bool>> predicate, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously returns a <see cref="long" /> that represents the total number of elements in a sequence.
@@ -187,7 +179,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// </returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<long> LongCountAsync<TSource>(this IQueryable<TSource> source, CancellationToken cancellationToken = default) => _queryBuilder.LongCountAsync(source, cancellationToken);
+        Task<long> LongCountAsync<TSource>(IQueryable<TSource> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously returns a <see cref="long" /> that represents the number of elements in a sequence
@@ -216,7 +208,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     <paramref name="source" /> or <paramref name="predicate" /> is <see langword="null" />.
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<long> LongCountAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, bool>> predicate, CancellationToken cancellationToken = default) => _queryBuilder.LongCountAsync(source, predicate, cancellationToken);
+        Task<long> LongCountAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, bool>> predicate, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously returns the element at a specified index in a sequence.
@@ -248,7 +240,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     </para>
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<TSource> ElementAtAsync<TSource>(this IQueryable<TSource> source, int index, CancellationToken cancellationToken = default) => _queryBuilder.ElementAtAsync(source, index, cancellationToken);
+        Task<TSource> ElementAtAsync<TSource>(IQueryable<TSource> source, int index, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously returns the element at a specified index in a sequence, or a default value if the index is out of range.
@@ -275,7 +267,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     <paramref name="source" /> is <see langword="null" />.
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<TSource> ElementAtOrDefaultAsync<TSource>(this IQueryable<TSource> source, int index, CancellationToken cancellationToken = default) => _queryBuilder.ElementAtOrDefaultAsync(source, index, cancellationToken);
+        Task<TSource> ElementAtOrDefaultAsync<TSource>(IQueryable<TSource> source, int index, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously returns the first element of a sequence.
@@ -300,7 +292,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="InvalidOperationException"><paramref name="source" /> contains no elements.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<TSource> FirstAsync<TSource>(this IQueryable<TSource> source, CancellationToken cancellationToken = default) => _queryBuilder.FirstAsync(source, cancellationToken);
+        Task<TSource> FirstAsync<TSource>(IQueryable<TSource> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously returns the first element of a sequence that satisfies a specified condition.
@@ -339,7 +331,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     </para>
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<TSource> FirstAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, bool>> predicate, CancellationToken cancellationToken = default) => _queryBuilder.FirstAsync(source, predicate, cancellationToken);
+        Task<TSource> FirstAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, bool>> predicate, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously returns the first element of a sequence, or a default value if the sequence contains no elements.
@@ -364,7 +356,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// </returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<TSource?> FirstOrDefaultAsync<TSource>(this IQueryable<TSource> source, CancellationToken cancellationToken = default) => _queryBuilder.FirstOrDefaultAsync(source, cancellationToken);
+        Task<TSource?> FirstOrDefaultAsync<TSource>(IQueryable<TSource> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously returns the first element of a sequence that satisfies a specified condition
@@ -394,7 +386,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     <paramref name="source" /> or <paramref name="predicate" /> is <see langword="null" />.
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<TSource?> FirstOrDefaultAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, bool>> predicate, CancellationToken cancellationToken = default) => _queryBuilder.FirstOrDefaultAsync(source, predicate, cancellationToken);
+        Task<TSource?> FirstOrDefaultAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, bool>> predicate, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously returns the last element of a sequence.
@@ -419,7 +411,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="InvalidOperationException"><paramref name="source" /> contains no elements.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<TSource> LastAsync<TSource>(this IQueryable<TSource> source, CancellationToken cancellationToken = default) => _queryBuilder.LastAsync(source, cancellationToken);
+        Task<TSource> LastAsync<TSource>(IQueryable<TSource> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously returns the last element of a sequence that satisfies a specified condition.
@@ -458,7 +450,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     </para>
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<TSource> LastAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, bool>> predicate, CancellationToken cancellationToken = default) => _queryBuilder.LastAsync(source, predicate, cancellationToken);
+        Task<TSource> LastAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, bool>> predicate, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously returns the last element of a sequence, or a default value if the sequence contains no elements.
@@ -483,7 +475,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// </returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<TSource?> LastOrDefaultAsync<TSource>(this IQueryable<TSource> source, CancellationToken cancellationToken = default) => _queryBuilder.LastOrDefaultAsync(source, cancellationToken);
+        Task<TSource?> LastOrDefaultAsync<TSource>(IQueryable<TSource> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously returns the last element of a sequence that satisfies a specified condition
@@ -513,7 +505,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     <paramref name="source" /> or <paramref name="predicate" /> is <see langword="null" />.
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<TSource?> LastOrDefaultAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, bool>> predicate, CancellationToken cancellationToken = default) => _queryBuilder.LastOrDefaultAsync(source, predicate, cancellationToken);
+        Task<TSource?> LastOrDefaultAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, bool>> predicate, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously returns the only element of a sequence, and throws an exception
@@ -549,7 +541,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     </para>
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<TSource> SingleAsync<TSource>(this IQueryable<TSource> source, CancellationToken cancellationToken = default) => _queryBuilder.SingleAsync(source, cancellationToken);
+        Task<TSource> SingleAsync<TSource>(IQueryable<TSource> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously returns the only element of a sequence that satisfies a specified condition,
@@ -595,7 +587,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     </para>
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<TSource> SingleAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, bool>> predicate, CancellationToken cancellationToken = default) => _queryBuilder.SingleAsync(source, predicate, cancellationToken);
+        Task<TSource> SingleAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, bool>> predicate, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously returns the only element of a sequence, or a default value if the sequence is empty;
@@ -623,7 +615,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="InvalidOperationException"><paramref name="source" /> contains more than one element.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<TSource?> SingleOrDefaultAsync<TSource>(this IQueryable<TSource> source, CancellationToken cancellationToken = default) => _queryBuilder.SingleOrDefaultAsync(source, cancellationToken);
+        Task<TSource?> SingleOrDefaultAsync<TSource>(IQueryable<TSource> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously returns the only element of a sequence that satisfies a specified condition or
@@ -656,7 +648,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     More than one element satisfies the condition in <paramref name="predicate" />.
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<TSource?> SingleOrDefaultAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, bool>> predicate, CancellationToken cancellationToken = default) => _queryBuilder.SingleOrDefaultAsync(source, predicate, cancellationToken);
+        Task<TSource?> SingleOrDefaultAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, bool>> predicate, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously returns the minimum value of a sequence.
@@ -681,7 +673,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="InvalidOperationException"><paramref name="source" /> contains no elements.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<TSource> MinAsync<TSource>(this IQueryable<TSource> source, CancellationToken cancellationToken = default) => _queryBuilder.MinAsync(source, cancellationToken);
+        Task<TSource> MinAsync<TSource>(IQueryable<TSource> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously invokes a projection function on each element of a sequence and returns the minimum resulting value.
@@ -712,7 +704,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// </exception>
         /// <exception cref="InvalidOperationException"><paramref name="source" /> contains no elements.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<TResult> MinAsync<TSource, TResult>(this IQueryable<TSource> source, Expression<Func<TSource, TResult>> selector, CancellationToken cancellationToken = default) => _queryBuilder.MinAsync(source, selector, cancellationToken);
+        Task<TResult> MinAsync<TSource, TResult>(IQueryable<TSource> source, Expression<Func<TSource, TResult>> selector, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously returns the maximum value of a sequence.
@@ -737,7 +729,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="InvalidOperationException"><paramref name="source" /> contains no elements.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<TSource> MaxAsync<TSource>(this IQueryable<TSource> source, CancellationToken cancellationToken = default) => _queryBuilder.MaxAsync(source, cancellationToken);
+        Task<TSource> MaxAsync<TSource>(IQueryable<TSource> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously invokes a projection function on each element of a sequence and returns the maximum resulting value.
@@ -768,7 +760,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// </exception>
         /// <exception cref="InvalidOperationException"><paramref name="source" /> contains no elements.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<TResult> MaxAsync<TSource, TResult>(this IQueryable<TSource> source, Expression<Func<TSource, TResult>> selector, CancellationToken cancellationToken = default) => _queryBuilder.MaxAsync(source, selector, cancellationToken);
+        Task<TResult> MaxAsync<TSource, TResult>(IQueryable<TSource> source, Expression<Func<TSource, TResult>> selector, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the sum of a sequence of values.
@@ -791,7 +783,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// </returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<decimal> SumAsync(this IQueryable<decimal> source, CancellationToken cancellationToken = default) => _queryBuilder.SumAsync(source, cancellationToken);
+        Task<decimal> SumAsync(IQueryable<decimal> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the sum of a sequence of values.
@@ -814,7 +806,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// </returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<decimal?> SumAsync(this IQueryable<decimal?> source, CancellationToken cancellationToken = default) => _queryBuilder.SumAsync(source, cancellationToken);
+        Task<decimal?> SumAsync(IQueryable<decimal?> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the sum of the sequence of values that is obtained by invoking a projection function on
@@ -841,7 +833,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     <paramref name="source" /> or <paramref name="selector" /> is <see langword="null" />.
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<decimal> SumAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, decimal>> selector, CancellationToken cancellationToken = default) => _queryBuilder.SumAsync(source, selector, cancellationToken);
+        Task<decimal> SumAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, decimal>> selector, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the sum of the sequence of values that is obtained by invoking a projection function on
@@ -868,7 +860,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     <paramref name="source" /> or <paramref name="selector" /> is <see langword="null" />.
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<decimal?> SumAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, decimal?>> selector, CancellationToken cancellationToken = default) => _queryBuilder.SumAsync(source, selector, cancellationToken);
+        Task<decimal?> SumAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, decimal?>> selector, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the sum of a sequence of values.
@@ -891,7 +883,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// </returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<int> SumAsync(this IQueryable<int> source, CancellationToken cancellationToken = default) => _queryBuilder.SumAsync(source, cancellationToken);
+        Task<int> SumAsync(IQueryable<int> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the sum of a sequence of values.
@@ -914,7 +906,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// </returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<int?> SumAsync(this IQueryable<int?> source, CancellationToken cancellationToken = default) => _queryBuilder.SumAsync(source, cancellationToken);
+        Task<int?> SumAsync(IQueryable<int?> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the sum of the sequence of values that is obtained by invoking a projection function on
@@ -941,7 +933,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     <paramref name="source" /> or <paramref name="selector" /> is <see langword="null" />.
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<int> SumAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, int>> selector, CancellationToken cancellationToken = default) => _queryBuilder.SumAsync(source, selector, cancellationToken);
+        Task<int> SumAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, int>> selector, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the sum of the sequence of values that is obtained by invoking a projection function on
@@ -968,7 +960,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     <paramref name="source" /> or <paramref name="selector" /> is <see langword="null" />.
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<int?> SumAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, int?>> selector, CancellationToken cancellationToken = default) => _queryBuilder.SumAsync(source, selector, cancellationToken);
+        Task<int?> SumAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, int?>> selector, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the sum of a sequence of values.
@@ -991,7 +983,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// </returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<long> SumAsync(this IQueryable<long> source, CancellationToken cancellationToken = default) => _queryBuilder.SumAsync(source, cancellationToken);
+        Task<long> SumAsync(IQueryable<long> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the sum of a sequence of values.
@@ -1014,7 +1006,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// </returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<long?> SumAsync(this IQueryable<long?> source, CancellationToken cancellationToken = default) => _queryBuilder.SumAsync(source, cancellationToken);
+        Task<long?> SumAsync(IQueryable<long?> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the sum of the sequence of values that is obtained by invoking a projection function on
@@ -1041,7 +1033,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     <paramref name="source" /> or <paramref name="selector" /> is <see langword="null" />.
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<long> SumAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, long>> selector, CancellationToken cancellationToken = default) => _queryBuilder.SumAsync(source, selector, cancellationToken);
+        Task<long> SumAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, long>> selector, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the sum of the sequence of values that is obtained by invoking a projection function on
@@ -1068,7 +1060,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     <paramref name="source" /> or <paramref name="selector" /> is <see langword="null" />.
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<long?> SumAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, long?>> selector, CancellationToken cancellationToken = default) => _queryBuilder.SumAsync(source, selector, cancellationToken);
+        Task<long?> SumAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, long?>> selector, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the sum of a sequence of values.
@@ -1091,7 +1083,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// </returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<double> SumAsync(this IQueryable<double> source, CancellationToken cancellationToken = default) => _queryBuilder.SumAsync(source, cancellationToken);
+        Task<double> SumAsync(IQueryable<double> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the sum of a sequence of values.
@@ -1114,7 +1106,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// </returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<double?> SumAsync(this IQueryable<double?> source, CancellationToken cancellationToken = default) => _queryBuilder.SumAsync(source, cancellationToken);
+        Task<double?> SumAsync(IQueryable<double?> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the sum of the sequence of values that is obtained by invoking a projection function on
@@ -1141,7 +1133,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     <paramref name="source" /> or <paramref name="selector" /> is <see langword="null" />.
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<double> SumAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, double>> selector, CancellationToken cancellationToken = default) => _queryBuilder.SumAsync(source, selector, cancellationToken);
+        Task<double> SumAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, double>> selector, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the sum of the sequence of values that is obtained by invoking a projection function on
@@ -1168,7 +1160,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     <paramref name="source" /> or <paramref name="selector" /> is <see langword="null" />.
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<double?> SumAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, double?>> selector, CancellationToken cancellationToken = default) => _queryBuilder.SumAsync(source, selector, cancellationToken);
+        Task<double?> SumAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, double?>> selector, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the sum of a sequence of values.
@@ -1191,7 +1183,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// </returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<float> SumAsync(this IQueryable<float> source, CancellationToken cancellationToken = default) => _queryBuilder.SumAsync(source, cancellationToken);
+        Task<float> SumAsync(IQueryable<float> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the sum of a sequence of values.
@@ -1214,7 +1206,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// </returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<float?> SumAsync(this IQueryable<float?> source, CancellationToken cancellationToken = default) => _queryBuilder.SumAsync(source, cancellationToken);
+        Task<float?> SumAsync(IQueryable<float?> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the sum of the sequence of values that is obtained by invoking a projection function on
@@ -1241,7 +1233,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     <paramref name="source" /> or <paramref name="selector" /> is <see langword="null" />.
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<float> SumAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, float>> selector, CancellationToken cancellationToken = default) => _queryBuilder.SumAsync(source, selector, cancellationToken);
+        Task<float> SumAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, float>> selector, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the sum of the sequence of values that is obtained by invoking a projection function on
@@ -1268,7 +1260,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     <paramref name="source" /> or <paramref name="selector" /> is <see langword="null" />.
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<float?> SumAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, float?>> selector, CancellationToken cancellationToken = default) => _queryBuilder.SumAsync(source, selector, cancellationToken);
+        Task<float?> SumAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, float?>> selector, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the average of a sequence of values.
@@ -1292,7 +1284,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="InvalidOperationException"><paramref name="source" /> contains no elements.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<decimal> AverageAsync(this IQueryable<decimal> source, CancellationToken cancellationToken = default) => _queryBuilder.AverageAsync(source, cancellationToken);
+        Task<decimal> AverageAsync(IQueryable<decimal> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the average of a sequence of values.
@@ -1315,7 +1307,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// </returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<decimal?> AverageAsync(this IQueryable<decimal?> source, CancellationToken cancellationToken = default) => _queryBuilder.AverageAsync(source, cancellationToken);
+        Task<decimal?> AverageAsync(IQueryable<decimal?> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the average of a sequence of values that is obtained
@@ -1344,7 +1336,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// </exception>
         /// <exception cref="InvalidOperationException"><paramref name="source" /> contains no elements.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<decimal> AverageAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, decimal>> selector, CancellationToken cancellationToken = default) => _queryBuilder.AverageAsync(source, selector, cancellationToken);
+        Task<decimal> AverageAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, decimal>> selector, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the average of a sequence of values that is obtained
@@ -1372,7 +1364,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     <paramref name="source" /> or <paramref name="selector" /> is <see langword="null" />.
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<decimal?> AverageAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, decimal?>> selector, CancellationToken cancellationToken = default) => _queryBuilder.AverageAsync(source, selector, cancellationToken);
+        Task<decimal?> AverageAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, decimal?>> selector, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the average of a sequence of values.
@@ -1396,7 +1388,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="InvalidOperationException"><paramref name="source" /> contains no elements.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<double> AverageAsync(this IQueryable<int> source, CancellationToken cancellationToken = default) => _queryBuilder.AverageAsync(source, cancellationToken);
+        Task<double> AverageAsync(IQueryable<int> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the average of a sequence of values.
@@ -1419,111 +1411,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// </returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<double?> AverageAsync(this IQueryable<int?> source, CancellationToken cancellationToken = default) => _queryBuilder.AverageAsync(source, cancellationToken);
-
-        /// <summary>
-        ///     Asynchronously computes the average of a sequence of values that is obtained
-        ///     by invoking a projection function on each element of the input sequence.
-        /// </summary>
-        /// <remarks>
-        ///     <para>
-        ///         Multiple active operations on the same context instance are not supported. Use <see langword="await" /> to ensure
-        ///         that any asynchronous operations have completed before calling another method on this context.
-        ///         See <see href="https://aka.ms/efcore-docs-threading">Avoiding DbContext threading issues</see> for more information and examples.
-        ///     </para>
-        ///     <para>
-        ///         See <see href="https://aka.ms/efcore-docs-async-linq">Querying data with EF Core</see> for more information and examples.
-        ///     </para>
-        /// </remarks>
-        /// <typeparam name="TSource">The type of the elements of <paramref name="source" />.</typeparam>
-        /// <param name="source">A sequence of values of type <typeparamref name="TSource" />.</param>
-        /// <param name="selector">A projection function to apply to each element.</param>
-        /// <param name="cancellationToken">A <see cref="CancellationToken" /> to observe while waiting for the task to complete.</param>
-        /// <returns>
-        ///     A task that represents the asynchronous operation.
-        ///     The task result contains the average of the projected values.
-        /// </returns>
-        /// <exception cref="ArgumentNullException">
-        ///     <paramref name="source" /> or <paramref name="selector" /> is <see langword="null" />.
-        /// </exception>
-        /// <exception cref="InvalidOperationException"><paramref name="source" /> contains no elements.</exception>
-        /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<double> AverageAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, int>> selector, CancellationToken cancellationToken = default) => _queryBuilder.AverageAsync(source, selector, cancellationToken);
-
-        /// <summary>
-        ///     Asynchronously computes the average of a sequence of values that is obtained
-        ///     by invoking a projection function on each element of the input sequence.
-        /// </summary>
-        /// <remarks>
-        ///     <para>
-        ///         Multiple active operations on the same context instance are not supported. Use <see langword="await" /> to ensure
-        ///         that any asynchronous operations have completed before calling another method on this context.
-        ///         See <see href="https://aka.ms/efcore-docs-threading">Avoiding DbContext threading issues</see> for more information and examples.
-        ///     </para>
-        ///     <para>
-        ///         See <see href="https://aka.ms/efcore-docs-async-linq">Querying data with EF Core</see> for more information and examples.
-        ///     </para>
-        /// </remarks>
-        /// <typeparam name="TSource">The type of the elements of <paramref name="source" />.</typeparam>
-        /// <param name="source">A sequence of values of type <typeparamref name="TSource" />.</param>
-        /// <param name="selector">A projection function to apply to each element.</param>
-        /// <param name="cancellationToken">A <see cref="CancellationToken" /> to observe while waiting for the task to complete.</param>
-        /// <returns>
-        ///     A task that represents the asynchronous operation.
-        ///     The task result contains the average of the projected values.
-        /// </returns>
-        /// <exception cref="ArgumentNullException">
-        ///     <paramref name="source" /> or <paramref name="selector" /> is <see langword="null" />.
-        /// </exception>
-        /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<double?> AverageAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, int?>> selector, CancellationToken cancellationToken = default) => _queryBuilder.AverageAsync(source, selector, cancellationToken);
-
-        /// <summary>
-        ///     Asynchronously computes the average of a sequence of values.
-        /// </summary>
-        /// <remarks>
-        ///     <para>
-        ///         Multiple active operations on the same context instance are not supported. Use <see langword="await" /> to ensure
-        ///         that any asynchronous operations have completed before calling another method on this context.
-        ///         See <see href="https://aka.ms/efcore-docs-threading">Avoiding DbContext threading issues</see> for more information and examples.
-        ///     </para>
-        ///     <para>
-        ///         See <see href="https://aka.ms/efcore-docs-async-linq">Querying data with EF Core</see> for more information and examples.
-        ///     </para>
-        /// </remarks>
-        /// <param name="source">A sequence of values to calculate the average of.</param>
-        /// <param name="cancellationToken">A <see cref="CancellationToken" /> to observe while waiting for the task to complete.</param>
-        /// <returns>
-        ///     A task that represents the asynchronous operation.
-        ///     The task result contains the average of the sequence of values.
-        /// </returns>
-        /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
-        /// <exception cref="InvalidOperationException"><paramref name="source" /> contains no elements.</exception>
-        /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<double> AverageAsync(this IQueryable<long> source, CancellationToken cancellationToken = default) => _queryBuilder.AverageAsync(source, cancellationToken);
-
-        /// <summary>
-        ///     Asynchronously computes the average of a sequence of values.
-        /// </summary>
-        /// <remarks>
-        ///     <para>
-        ///         Multiple active operations on the same context instance are not supported. Use <see langword="await" /> to ensure
-        ///         that any asynchronous operations have completed before calling another method on this context.
-        ///         See <see href="https://aka.ms/efcore-docs-threading">Avoiding DbContext threading issues</see> for more information and examples.
-        ///     </para>
-        ///     <para>
-        ///         See <see href="https://aka.ms/efcore-docs-async-linq">Querying data with EF Core</see> for more information and examples.
-        ///     </para>
-        /// </remarks>
-        /// <param name="source">A sequence of values to calculate the average of.</param>
-        /// <param name="cancellationToken">A <see cref="CancellationToken" /> to observe while waiting for the task to complete.</param>
-        /// <returns>
-        ///     A task that represents the asynchronous operation.
-        ///     The task result contains the average of the sequence of values.
-        /// </returns>
-        /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
-        /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<double?> AverageAsync(this IQueryable<long?> source, CancellationToken cancellationToken = default) => _queryBuilder.AverageAsync(source, cancellationToken);
+        Task<double?> AverageAsync(IQueryable<int?> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the average of a sequence of values that is obtained
@@ -1552,7 +1440,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// </exception>
         /// <exception cref="InvalidOperationException"><paramref name="source" /> contains no elements.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<double> AverageAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, long>> selector, CancellationToken cancellationToken = default) => _queryBuilder.AverageAsync(source, selector, cancellationToken);
+        Task<double> AverageAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, int>> selector, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the average of a sequence of values that is obtained
@@ -1580,7 +1468,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     <paramref name="source" /> or <paramref name="selector" /> is <see langword="null" />.
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<double?> AverageAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, long?>> selector, CancellationToken cancellationToken = default) => _queryBuilder.AverageAsync(source, selector, cancellationToken);
+        Task<double?> AverageAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, int?>> selector, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the average of a sequence of values.
@@ -1604,7 +1492,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="InvalidOperationException"><paramref name="source" /> contains no elements.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<double> AverageAsync(this IQueryable<double> source, CancellationToken cancellationToken = default) => _queryBuilder.AverageAsync(source, cancellationToken);
+        Task<double> AverageAsync(IQueryable<long> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the average of a sequence of values.
@@ -1627,111 +1515,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// </returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<double?> AverageAsync(this IQueryable<double?> source, CancellationToken cancellationToken = default) => _queryBuilder.AverageAsync(source, cancellationToken);
-
-        /// <summary>
-        ///     Asynchronously computes the average of a sequence of values that is obtained
-        ///     by invoking a projection function on each element of the input sequence.
-        /// </summary>
-        /// <remarks>
-        ///     <para>
-        ///         Multiple active operations on the same context instance are not supported. Use <see langword="await" /> to ensure
-        ///         that any asynchronous operations have completed before calling another method on this context.
-        ///         See <see href="https://aka.ms/efcore-docs-threading">Avoiding DbContext threading issues</see> for more information and examples.
-        ///     </para>
-        ///     <para>
-        ///         See <see href="https://aka.ms/efcore-docs-async-linq">Querying data with EF Core</see> for more information and examples.
-        ///     </para>
-        /// </remarks>
-        /// <typeparam name="TSource">The type of the elements of <paramref name="source" />.</typeparam>
-        /// <param name="source">A sequence of values of type <typeparamref name="TSource" />.</param>
-        /// <param name="selector">A projection function to apply to each element.</param>
-        /// <param name="cancellationToken">A <see cref="CancellationToken" /> to observe while waiting for the task to complete.</param>
-        /// <returns>
-        ///     A task that represents the asynchronous operation.
-        ///     The task result contains the average of the projected values.
-        /// </returns>
-        /// <exception cref="ArgumentNullException">
-        ///     <paramref name="source" /> or <paramref name="selector" /> is <see langword="null" />.
-        /// </exception>
-        /// <exception cref="InvalidOperationException"><paramref name="source" /> contains no elements.</exception>
-        /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<double> AverageAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, double>> selector, CancellationToken cancellationToken = default) => _queryBuilder.AverageAsync(source, selector, cancellationToken);
-
-        /// <summary>
-        ///     Asynchronously computes the average of a sequence of values that is obtained
-        ///     by invoking a projection function on each element of the input sequence.
-        /// </summary>
-        /// <remarks>
-        ///     <para>
-        ///         Multiple active operations on the same context instance are not supported. Use <see langword="await" /> to ensure
-        ///         that any asynchronous operations have completed before calling another method on this context.
-        ///         See <see href="https://aka.ms/efcore-docs-threading">Avoiding DbContext threading issues</see> for more information and examples.
-        ///     </para>
-        ///     <para>
-        ///         See <see href="https://aka.ms/efcore-docs-async-linq">Querying data with EF Core</see> for more information and examples.
-        ///     </para>
-        /// </remarks>
-        /// <typeparam name="TSource">The type of the elements of <paramref name="source" />.</typeparam>
-        /// <param name="source">A sequence of values of type <typeparamref name="TSource" />.</param>
-        /// <param name="selector">A projection function to apply to each element.</param>
-        /// <param name="cancellationToken">A <see cref="CancellationToken" /> to observe while waiting for the task to complete.</param>
-        /// <returns>
-        ///     A task that represents the asynchronous operation.
-        ///     The task result contains the average of the projected values.
-        /// </returns>
-        /// <exception cref="ArgumentNullException">
-        ///     <paramref name="source" /> or <paramref name="selector" /> is <see langword="null" />.
-        /// </exception>
-        /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<double?> AverageAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, double?>> selector, CancellationToken cancellationToken = default) => _queryBuilder.AverageAsync(source, selector, cancellationToken);
-
-        /// <summary>
-        ///     Asynchronously computes the average of a sequence of values.
-        /// </summary>
-        /// <remarks>
-        ///     <para>
-        ///         Multiple active operations on the same context instance are not supported. Use <see langword="await" /> to ensure
-        ///         that any asynchronous operations have completed before calling another method on this context.
-        ///         See <see href="https://aka.ms/efcore-docs-threading">Avoiding DbContext threading issues</see> for more information and examples.
-        ///     </para>
-        ///     <para>
-        ///         See <see href="https://aka.ms/efcore-docs-async-linq">Querying data with EF Core</see> for more information and examples.
-        ///     </para>
-        /// </remarks>
-        /// <param name="source">A sequence of values to calculate the average of.</param>
-        /// <param name="cancellationToken">A <see cref="CancellationToken" /> to observe while waiting for the task to complete.</param>
-        /// <returns>
-        ///     A task that represents the asynchronous operation.
-        ///     The task result contains the average of the sequence of values.
-        /// </returns>
-        /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
-        /// <exception cref="InvalidOperationException"><paramref name="source" /> contains no elements.</exception>
-        /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<float> AverageAsync(this IQueryable<float> source, CancellationToken cancellationToken = default) => _queryBuilder.AverageAsync(source, cancellationToken);
-
-        /// <summary>
-        ///     Asynchronously computes the average of a sequence of values.
-        /// </summary>
-        /// <remarks>
-        ///     <para>
-        ///         Multiple active operations on the same context instance are not supported. Use <see langword="await" /> to ensure
-        ///         that any asynchronous operations have completed before calling another method on this context.
-        ///         See <see href="https://aka.ms/efcore-docs-threading">Avoiding DbContext threading issues</see> for more information and examples.
-        ///     </para>
-        ///     <para>
-        ///         See <see href="https://aka.ms/efcore-docs-async-linq">Querying data with EF Core</see> for more information and examples.
-        ///     </para>
-        /// </remarks>
-        /// <param name="source">A sequence of values to calculate the average of.</param>
-        /// <param name="cancellationToken">A <see cref="CancellationToken" /> to observe while waiting for the task to complete.</param>
-        /// <returns>
-        ///     A task that represents the asynchronous operation.
-        ///     The task result contains the average of the sequence of values.
-        /// </returns>
-        /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
-        /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<float?> AverageAsync(this IQueryable<float?> source, CancellationToken cancellationToken = default) => _queryBuilder.AverageAsync(source, cancellationToken);
+        Task<double?> AverageAsync(IQueryable<long?> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the average of a sequence of values that is obtained
@@ -1760,7 +1544,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// </exception>
         /// <exception cref="InvalidOperationException"><paramref name="source" /> contains no elements.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<float> AverageAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, float>> selector, CancellationToken cancellationToken = default) => _queryBuilder.AverageAsync(source, selector, cancellationToken);
+        Task<double> AverageAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, long>> selector, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously computes the average of a sequence of values that is obtained
@@ -1788,7 +1572,215 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     <paramref name="source" /> or <paramref name="selector" /> is <see langword="null" />.
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<float?> AverageAsync<TSource>(this IQueryable<TSource> source, Expression<Func<TSource, float?>> selector, CancellationToken cancellationToken = default) => _queryBuilder.AverageAsync(source, selector, cancellationToken);
+        Task<double?> AverageAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, long?>> selector, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        ///     Asynchronously computes the average of a sequence of values.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         Multiple active operations on the same context instance are not supported. Use <see langword="await" /> to ensure
+        ///         that any asynchronous operations have completed before calling another method on this context.
+        ///         See <see href="https://aka.ms/efcore-docs-threading">Avoiding DbContext threading issues</see> for more information and examples.
+        ///     </para>
+        ///     <para>
+        ///         See <see href="https://aka.ms/efcore-docs-async-linq">Querying data with EF Core</see> for more information and examples.
+        ///     </para>
+        /// </remarks>
+        /// <param name="source">A sequence of values to calculate the average of.</param>
+        /// <param name="cancellationToken">A <see cref="CancellationToken" /> to observe while waiting for the task to complete.</param>
+        /// <returns>
+        ///     A task that represents the asynchronous operation.
+        ///     The task result contains the average of the sequence of values.
+        /// </returns>
+        /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
+        /// <exception cref="InvalidOperationException"><paramref name="source" /> contains no elements.</exception>
+        /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
+        Task<double> AverageAsync(IQueryable<double> source, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        ///     Asynchronously computes the average of a sequence of values.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         Multiple active operations on the same context instance are not supported. Use <see langword="await" /> to ensure
+        ///         that any asynchronous operations have completed before calling another method on this context.
+        ///         See <see href="https://aka.ms/efcore-docs-threading">Avoiding DbContext threading issues</see> for more information and examples.
+        ///     </para>
+        ///     <para>
+        ///         See <see href="https://aka.ms/efcore-docs-async-linq">Querying data with EF Core</see> for more information and examples.
+        ///     </para>
+        /// </remarks>
+        /// <param name="source">A sequence of values to calculate the average of.</param>
+        /// <param name="cancellationToken">A <see cref="CancellationToken" /> to observe while waiting for the task to complete.</param>
+        /// <returns>
+        ///     A task that represents the asynchronous operation.
+        ///     The task result contains the average of the sequence of values.
+        /// </returns>
+        /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
+        /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
+        Task<double?> AverageAsync(IQueryable<double?> source, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        ///     Asynchronously computes the average of a sequence of values that is obtained
+        ///     by invoking a projection function on each element of the input sequence.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         Multiple active operations on the same context instance are not supported. Use <see langword="await" /> to ensure
+        ///         that any asynchronous operations have completed before calling another method on this context.
+        ///         See <see href="https://aka.ms/efcore-docs-threading">Avoiding DbContext threading issues</see> for more information and examples.
+        ///     </para>
+        ///     <para>
+        ///         See <see href="https://aka.ms/efcore-docs-async-linq">Querying data with EF Core</see> for more information and examples.
+        ///     </para>
+        /// </remarks>
+        /// <typeparam name="TSource">The type of the elements of <paramref name="source" />.</typeparam>
+        /// <param name="source">A sequence of values of type <typeparamref name="TSource" />.</param>
+        /// <param name="selector">A projection function to apply to each element.</param>
+        /// <param name="cancellationToken">A <see cref="CancellationToken" /> to observe while waiting for the task to complete.</param>
+        /// <returns>
+        ///     A task that represents the asynchronous operation.
+        ///     The task result contains the average of the projected values.
+        /// </returns>
+        /// <exception cref="ArgumentNullException">
+        ///     <paramref name="source" /> or <paramref name="selector" /> is <see langword="null" />.
+        /// </exception>
+        /// <exception cref="InvalidOperationException"><paramref name="source" /> contains no elements.</exception>
+        /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
+        Task<double> AverageAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, double>> selector, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        ///     Asynchronously computes the average of a sequence of values that is obtained
+        ///     by invoking a projection function on each element of the input sequence.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         Multiple active operations on the same context instance are not supported. Use <see langword="await" /> to ensure
+        ///         that any asynchronous operations have completed before calling another method on this context.
+        ///         See <see href="https://aka.ms/efcore-docs-threading">Avoiding DbContext threading issues</see> for more information and examples.
+        ///     </para>
+        ///     <para>
+        ///         See <see href="https://aka.ms/efcore-docs-async-linq">Querying data with EF Core</see> for more information and examples.
+        ///     </para>
+        /// </remarks>
+        /// <typeparam name="TSource">The type of the elements of <paramref name="source" />.</typeparam>
+        /// <param name="source">A sequence of values of type <typeparamref name="TSource" />.</param>
+        /// <param name="selector">A projection function to apply to each element.</param>
+        /// <param name="cancellationToken">A <see cref="CancellationToken" /> to observe while waiting for the task to complete.</param>
+        /// <returns>
+        ///     A task that represents the asynchronous operation.
+        ///     The task result contains the average of the projected values.
+        /// </returns>
+        /// <exception cref="ArgumentNullException">
+        ///     <paramref name="source" /> or <paramref name="selector" /> is <see langword="null" />.
+        /// </exception>
+        /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
+        Task<double?> AverageAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, double?>> selector, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        ///     Asynchronously computes the average of a sequence of values.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         Multiple active operations on the same context instance are not supported. Use <see langword="await" /> to ensure
+        ///         that any asynchronous operations have completed before calling another method on this context.
+        ///         See <see href="https://aka.ms/efcore-docs-threading">Avoiding DbContext threading issues</see> for more information and examples.
+        ///     </para>
+        ///     <para>
+        ///         See <see href="https://aka.ms/efcore-docs-async-linq">Querying data with EF Core</see> for more information and examples.
+        ///     </para>
+        /// </remarks>
+        /// <param name="source">A sequence of values to calculate the average of.</param>
+        /// <param name="cancellationToken">A <see cref="CancellationToken" /> to observe while waiting for the task to complete.</param>
+        /// <returns>
+        ///     A task that represents the asynchronous operation.
+        ///     The task result contains the average of the sequence of values.
+        /// </returns>
+        /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
+        /// <exception cref="InvalidOperationException"><paramref name="source" /> contains no elements.</exception>
+        /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
+        Task<float> AverageAsync(IQueryable<float> source, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        ///     Asynchronously computes the average of a sequence of values.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         Multiple active operations on the same context instance are not supported. Use <see langword="await" /> to ensure
+        ///         that any asynchronous operations have completed before calling another method on this context.
+        ///         See <see href="https://aka.ms/efcore-docs-threading">Avoiding DbContext threading issues</see> for more information and examples.
+        ///     </para>
+        ///     <para>
+        ///         See <see href="https://aka.ms/efcore-docs-async-linq">Querying data with EF Core</see> for more information and examples.
+        ///     </para>
+        /// </remarks>
+        /// <param name="source">A sequence of values to calculate the average of.</param>
+        /// <param name="cancellationToken">A <see cref="CancellationToken" /> to observe while waiting for the task to complete.</param>
+        /// <returns>
+        ///     A task that represents the asynchronous operation.
+        ///     The task result contains the average of the sequence of values.
+        /// </returns>
+        /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
+        /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
+        Task<float?> AverageAsync(IQueryable<float?> source, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        ///     Asynchronously computes the average of a sequence of values that is obtained
+        ///     by invoking a projection function on each element of the input sequence.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         Multiple active operations on the same context instance are not supported. Use <see langword="await" /> to ensure
+        ///         that any asynchronous operations have completed before calling another method on this context.
+        ///         See <see href="https://aka.ms/efcore-docs-threading">Avoiding DbContext threading issues</see> for more information and examples.
+        ///     </para>
+        ///     <para>
+        ///         See <see href="https://aka.ms/efcore-docs-async-linq">Querying data with EF Core</see> for more information and examples.
+        ///     </para>
+        /// </remarks>
+        /// <typeparam name="TSource">The type of the elements of <paramref name="source" />.</typeparam>
+        /// <param name="source">A sequence of values of type <typeparamref name="TSource" />.</param>
+        /// <param name="selector">A projection function to apply to each element.</param>
+        /// <param name="cancellationToken">A <see cref="CancellationToken" /> to observe while waiting for the task to complete.</param>
+        /// <returns>
+        ///     A task that represents the asynchronous operation.
+        ///     The task result contains the average of the projected values.
+        /// </returns>
+        /// <exception cref="ArgumentNullException">
+        ///     <paramref name="source" /> or <paramref name="selector" /> is <see langword="null" />.
+        /// </exception>
+        /// <exception cref="InvalidOperationException"><paramref name="source" /> contains no elements.</exception>
+        /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
+        Task<float> AverageAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, float>> selector, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        ///     Asynchronously computes the average of a sequence of values that is obtained
+        ///     by invoking a projection function on each element of the input sequence.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         Multiple active operations on the same context instance are not supported. Use <see langword="await" /> to ensure
+        ///         that any asynchronous operations have completed before calling another method on this context.
+        ///         See <see href="https://aka.ms/efcore-docs-threading">Avoiding DbContext threading issues</see> for more information and examples.
+        ///     </para>
+        ///     <para>
+        ///         See <see href="https://aka.ms/efcore-docs-async-linq">Querying data with EF Core</see> for more information and examples.
+        ///     </para>
+        /// </remarks>
+        /// <typeparam name="TSource">The type of the elements of <paramref name="source" />.</typeparam>
+        /// <param name="source">A sequence of values of type <typeparamref name="TSource" />.</param>
+        /// <param name="selector">A projection function to apply to each element.</param>
+        /// <param name="cancellationToken">A <see cref="CancellationToken" /> to observe while waiting for the task to complete.</param>
+        /// <returns>
+        ///     A task that represents the asynchronous operation.
+        ///     The task result contains the average of the projected values.
+        /// </returns>
+        /// <exception cref="ArgumentNullException">
+        ///     <paramref name="source" /> or <paramref name="selector" /> is <see langword="null" />.
+        /// </exception>
+        /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
+        Task<float?> AverageAsync<TSource>(IQueryable<TSource> source, Expression<Func<TSource, float?>> selector, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously determines whether a sequence contains a specified element by using the default equality comparer.
@@ -1814,7 +1806,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// </returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<bool> ContainsAsync<TSource>(this IQueryable<TSource> source, TSource item, CancellationToken cancellationToken = default) => _queryBuilder.ContainsAsync(source, item, cancellationToken);
+        Task<bool> ContainsAsync<TSource>(IQueryable<TSource> source, TSource item, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously creates a <see cref="List{T}" /> from an <see cref="IQueryable{T}" /> by enumerating it
@@ -1839,7 +1831,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// </returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<List<TSource>> ToListAsync<TSource>(this IQueryable<TSource> source, CancellationToken cancellationToken = default) => _queryBuilder.ToListAsync(source, cancellationToken);
+        Task<List<TSource>> ToListAsync<TSource>(IQueryable<TSource> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Asynchronously creates an array from an <see cref="IQueryable{T}" /> by enumerating it asynchronously.
@@ -1863,7 +1855,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// </returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<TSource[]> ToArrayAsync<TSource>(this IQueryable<TSource> source, CancellationToken cancellationToken = default) => _queryBuilder.ToArrayAsync(source, cancellationToken);
+        Task<TSource[]> ToArrayAsync<TSource>(IQueryable<TSource> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Specifies related entities to include in the query results. The navigation property to be included is specified starting with the
@@ -1887,8 +1879,8 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <exception cref="ArgumentNullException">
         ///     <paramref name="source" /> or <paramref name="navigationPropertyPath" /> is <see langword="null" />.
         /// </exception>
-        public static IIncludableQueryable<TEntity, TProperty> Include<TEntity, TProperty>(this IQueryable<TEntity> source, Expression<Func<TEntity, TProperty>> navigationPropertyPath)
-            where TEntity : class => _queryBuilder.Include(source, navigationPropertyPath);
+        IIncludableQueryable<TEntity, TProperty> Include<TEntity, TProperty>(IQueryable<TEntity> source, Expression<Func<TEntity, TProperty>> navigationPropertyPath)
+            where TEntity : class;
 
         /// <summary>
         ///     Specifies related entities to include in the query results. The navigation property to be included is
@@ -1907,8 +1899,8 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     <paramref name="source" /> or <paramref name="navigationPropertyPath" /> is <see langword="null" />.
         /// </exception>
         /// <exception cref="ArgumentException"><paramref name="navigationPropertyPath" /> is empty or whitespace.</exception>
-        public static IQueryable<TEntity> Include<TEntity>(this IQueryable<TEntity> source, string navigationPropertyPath)
-            where TEntity : class => _queryBuilder.Include(source, navigationPropertyPath);
+        IQueryable<TEntity> Include<TEntity>(IQueryable<TEntity> source, string navigationPropertyPath)
+            where TEntity : class;
 
         /// <summary>
         ///     Specifies additional related data to be further included based on a related type that was just included.
@@ -1925,8 +1917,8 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     A lambda expression representing the navigation property to be included (<c>t => t.Property1</c>).
         /// </param>
         /// <returns>A new query with the related data included.</returns>
-        public static IIncludableQueryable<TEntity, TProperty> ThenInclude<TEntity, TPreviousProperty, TProperty>(this IIncludableQueryable<TEntity, IEnumerable<TPreviousProperty>> source, Expression<Func<TPreviousProperty, TProperty>> navigationPropertyPath)
-            where TEntity : class => _queryBuilder.ThenInclude(source, navigationPropertyPath);
+        IIncludableQueryable<TEntity, TProperty> ThenInclude<TEntity, TPreviousProperty, TProperty>(IIncludableQueryable<TEntity, IEnumerable<TPreviousProperty>> source, Expression<Func<TPreviousProperty, TProperty>> navigationPropertyPath)
+            where TEntity : class;
 
         /// <summary>
         ///     Specifies additional related data to be further included based on a related type that was just included.
@@ -1943,8 +1935,8 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     A lambda expression representing the navigation property to be included (<c>t => t.Property1</c>).
         /// </param>
         /// <returns>A new query with the related data included.</returns>
-        public static IIncludableQueryable<TEntity, TProperty> ThenInclude<TEntity, TPreviousProperty, TProperty>(this IIncludableQueryable<TEntity, TPreviousProperty> source, Expression<Func<TPreviousProperty, TProperty>> navigationPropertyPath)
-            where TEntity : class => _queryBuilder.ThenInclude(source, navigationPropertyPath);
+        IIncludableQueryable<TEntity, TProperty> ThenInclude<TEntity, TPreviousProperty, TProperty>(IIncludableQueryable<TEntity, TPreviousProperty> source, Expression<Func<TPreviousProperty, TProperty>> navigationPropertyPath)
+            where TEntity : class;
 
         /// <summary>
         ///     Specifies that the current Entity Framework LINQ query should not have any model-level eager loaded navigations applied.
@@ -1955,8 +1947,8 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <typeparam name="TEntity">The type of entity being queried.</typeparam>
         /// <param name="source">The source query.</param>
         /// <returns>A new query that will not apply any model-level eager loaded navigations.</returns>
-        public static IQueryable<TEntity> IgnoreAutoIncludes<TEntity>(this IQueryable<TEntity> source)
-            where TEntity : class => _queryBuilder.IgnoreAutoIncludes(source);
+        IQueryable<TEntity> IgnoreAutoIncludes<TEntity>(IQueryable<TEntity> source)
+            where TEntity : class;
 
         /// <summary>
         ///     Specifies that the current Entity Framework LINQ query should not have any model-level entity query filters applied.
@@ -1968,8 +1960,8 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <param name="source">The source query.</param>
         /// <returns>A new query that will not apply any model-level entity query filters.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
-        public static IQueryable<TEntity> IgnoreQueryFilters<TEntity>(this IQueryable<TEntity> source)
-            where TEntity : class => _queryBuilder.IgnoreQueryFilters(source);
+        IQueryable<TEntity> IgnoreQueryFilters<TEntity>(IQueryable<TEntity> source)
+            where TEntity : class;
 
         /// <summary>
         ///     The change tracker will not track any of the entities that are returned from a LINQ query. If the
@@ -1998,8 +1990,8 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <param name="source">The source query.</param>
         /// <returns>A new query where the result set will not be tracked by the context.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
-        public static IQueryable<TEntity> AsNoTracking<TEntity>(this IQueryable<TEntity> source)
-            where TEntity : class => _queryBuilder.AsNoTracking(source);
+        IQueryable<TEntity> AsNoTracking<TEntity>(IQueryable<TEntity> source)
+            where TEntity : class;
 
         /// <summary>
         ///     The change tracker will not track any of the entities that are returned from a LINQ query. If the
@@ -2028,8 +2020,8 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <param name="source">The source query.</param>
         /// <returns>A new query where the result set will not be tracked by the context.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
-        public static IQueryable<TEntity> AsNoTrackingWithIdentityResolution<TEntity>(this IQueryable<TEntity> source)
-            where TEntity : class => _queryBuilder.AsNoTrackingWithIdentityResolution(source);
+        IQueryable<TEntity> AsNoTrackingWithIdentityResolution<TEntity>(IQueryable<TEntity> source)
+            where TEntity : class;
 
         /// <summary>
         ///     Returns a new query where the change tracker will keep track of changes for all entities that are returned.
@@ -2048,8 +2040,8 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <param name="source">The source query.</param>
         /// <returns>A new query where the result set will be tracked by the context.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
-        public static IQueryable<TEntity> AsTracking<TEntity>(this IQueryable<TEntity> source)
-            where TEntity : class => _queryBuilder.AsTracking(source);
+        IQueryable<TEntity> AsTracking<TEntity>(IQueryable<TEntity> source)
+            where TEntity : class;
 
         /// <summary>
         ///     Returns a new query where the change tracker will either keep track of changes or not for all entities
@@ -2078,8 +2070,8 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <param name="track">Indicates whether the query will track results or not.</param>
         /// <returns>A new query where the result set will be tracked by the context.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
-        public static IQueryable<TEntity> AsTracking<TEntity>(this IQueryable<TEntity> source, QueryTrackingBehavior track)
-            where TEntity : class => _queryBuilder.AsTracking(source, track);
+        IQueryable<TEntity> AsTracking<TEntity>(IQueryable<TEntity> source, QueryTrackingBehavior track)
+            where TEntity : class;
 
         /// <summary>
         ///     Enumerates the query. When using Entity Framework, this causes the results of the query to
@@ -2091,7 +2083,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// </remarks>
         /// <param name="source">The source query.</param>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
-        public static void Load<TSource>(this IQueryable<TSource> source) => _queryBuilder.Load(source);
+        void Load<TSource>(IQueryable<TSource> source);
 
         /// <summary>
         ///     Asynchronously enumerates the query. When using Entity Framework, this causes the results of the query to
@@ -2113,7 +2105,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <returns>A task that represents the asynchronous operation.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task LoadAsync<TSource>(this IQueryable<TSource> source, CancellationToken cancellationToken = default) => _queryBuilder.LoadAsync(source, cancellationToken);
+        Task LoadAsync<TSource>(IQueryable<TSource> source, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Creates a <see cref="Dictionary{TKey, TValue}" /> from an <see cref="IQueryable{T}" /> by enumerating it
@@ -2143,8 +2135,8 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     <paramref name="source" /> or <paramref name="keySelector" /> is <see langword="null" />.
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<Dictionary<TKey, TSource>> ToDictionaryAsync<TSource, TKey>(this IQueryable<TSource> source, Func<TSource, TKey> keySelector, CancellationToken cancellationToken = default)
-            where TKey : notnull => _queryBuilder.ToDictionaryAsync(source, keySelector, cancellationToken);
+        Task<Dictionary<TKey, TSource>> ToDictionaryAsync<TSource, TKey>(IQueryable<TSource> source, Func<TSource, TKey> keySelector, CancellationToken cancellationToken = default)
+            where TKey : notnull;
 
         /// <summary>
         ///     Creates a <see cref="Dictionary{TKey, TValue}" /> from an <see cref="IQueryable{T}" /> by enumerating it
@@ -2175,8 +2167,8 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     <paramref name="source" /> or <paramref name="keySelector" /> is <see langword="null" />.
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<Dictionary<TKey, TSource>> ToDictionaryAsync<TSource, TKey>(this IQueryable<TSource> source, Func<TSource, TKey> keySelector, IEqualityComparer<TKey> comparer, CancellationToken cancellationToken = default)
-            where TKey : notnull => _queryBuilder.ToDictionaryAsync(source, keySelector, comparer, cancellationToken);
+        Task<Dictionary<TKey, TSource>> ToDictionaryAsync<TSource, TKey>(IQueryable<TSource> source, Func<TSource, TKey> keySelector, IEqualityComparer<TKey> comparer, CancellationToken cancellationToken = default)
+            where TKey : notnull;
 
         /// <summary>
         ///     Creates a <see cref="Dictionary{TKey, TValue}" /> from an <see cref="IQueryable{T}" /> by enumerating it
@@ -2209,8 +2201,8 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     <paramref name="source" /> or <paramref name="keySelector" /> or <paramref name="elementSelector" /> is <see langword="null" />.
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<Dictionary<TKey, TElement>> ToDictionaryAsync<TSource, TKey, TElement>(this IQueryable<TSource> source, Func<TSource, TKey> keySelector, Func<TSource, TElement> elementSelector, CancellationToken cancellationToken = default)
-            where TKey : notnull => _queryBuilder.ToDictionaryAsync(source, keySelector, elementSelector, cancellationToken);
+        Task<Dictionary<TKey, TElement>> ToDictionaryAsync<TSource, TKey, TElement>(IQueryable<TSource> source, Func<TSource, TKey> keySelector, Func<TSource, TElement> elementSelector, CancellationToken cancellationToken = default)
+            where TKey : notnull;
 
         /// <summary>
         ///     Creates a <see cref="Dictionary{TKey, TValue}" /> from an <see cref="IQueryable{T}" /> by enumerating it
@@ -2244,8 +2236,8 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     <paramref name="source" /> or <paramref name="keySelector" /> or <paramref name="elementSelector" /> is <see langword="null" />.
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task<Dictionary<TKey, TElement>> ToDictionaryAsync<TSource, TKey, TElement>(this IQueryable<TSource> source, Func<TSource, TKey> keySelector, Func<TSource, TElement> elementSelector, IEqualityComparer<TKey>? comparer, CancellationToken cancellationToken = default)
-            where TKey : notnull => _queryBuilder.ToDictionaryAsync(source, keySelector, elementSelector, comparer, cancellationToken);
+        Task<Dictionary<TKey, TElement>> ToDictionaryAsync<TSource, TKey, TElement>(IQueryable<TSource> source, Func<TSource, TKey> keySelector, Func<TSource, TElement> elementSelector, IEqualityComparer<TKey>? comparer, CancellationToken cancellationToken = default)
+            where TKey : notnull;
 
         /// <summary>
         ///     Asynchronously enumerates the query results and performs the specified action on each element.
@@ -2269,7 +2261,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     <paramref name="source" /> or <paramref name="action" /> is <see langword="null" />.
         /// </exception>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public static Task ForEachAsync<T>(this IQueryable<T> source, Action<T> action, CancellationToken cancellationToken = default) => _queryBuilder.ForEachAsync(source, action, cancellationToken);
+        Task ForEachAsync<T>(IQueryable<T> source, Action<T> action, CancellationToken cancellationToken = default);
 
         /// <summary>
         ///     Returns an <see cref="IAsyncEnumerable{T}" /> which can be enumerated asynchronously.
@@ -2289,6 +2281,6 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <returns>The query results.</returns>
         /// <exception cref="InvalidOperationException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is not a <see cref="IAsyncEnumerable{T}" />.</exception>
-        public static IAsyncEnumerable<TSource> AsAsyncEnumerable<TSource>(this IQueryable<TSource> source)=> _queryBuilder.AsAsyncEnumerable(source);
+        IAsyncEnumerable<TSource> AsAsyncEnumerable<TSource>(IQueryable<TSource> source);
     }
 }
