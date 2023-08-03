@@ -2284,5 +2284,20 @@ namespace Umbraco.Cms.Infrastructure.QueryBuilders
         /// <exception cref="InvalidOperationException"><paramref name="source" /> is <see langword="null" />.</exception>
         /// <exception cref="ArgumentNullException"><paramref name="source" /> is not a <see cref="IAsyncEnumerable{T}" />.</exception>
         IAsyncEnumerable<TSource> AsAsyncEnumerable<TSource>(IQueryable<TSource> source);
+
+        /// <summary>
+        ///     Finds an entity with the given primary key values. If an entity with the given primary key values
+        ///     is being tracked by the context, then it is returned immediately without making a request to the
+        ///     database. Otherwise, a query is made to the database for an entity with the given primary key values
+        ///     and this entity, if found, is attached to the context and returned. If no entity is found, then
+        ///     null is returned.
+        /// </summary>
+        /// <remarks>
+        ///     See <see href="https://aka.ms/efcore-docs-find">Using Find and FindAsync</see> for more information and examples.
+        /// </remarks>
+        /// <typeparam name="TEntity">The type of the elements of <paramref name="source" />.</typeparam>
+        /// <param name="keyValues">The values of the primary key for the entity to be found.</param>
+        /// <returns>The entity found, or <see langword="null" />.</returns>
+        TEntity? Find<TEntity>(IQueryable<TEntity> source, params object?[]? keyValues);
     }
 }
