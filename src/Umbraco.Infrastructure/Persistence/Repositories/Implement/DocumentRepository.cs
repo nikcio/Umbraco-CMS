@@ -981,6 +981,8 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
         entity.Level = umbracoDocument.Node.Node.Level;
 
         umbracoDocument.Node.UmbracoContentVersions.First().Current = !publishing;
+        umbracoDocument.Node.UmbracoContentVersions.First().Node = umbracoDocument.Node;
+        umbracoDocument.Node.UmbracoContentVersions.First().UserId = -1;
         Database.UmbracoContentVersions.Add(umbracoDocument.Node.UmbracoContentVersions.First());
         Database.SaveChanges();
 
@@ -1002,7 +1004,7 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
                 Text = entity.Name,
             });
 
-            umbracoDocument.Node.UmbracoContentVersions.First().Id = entity.VersionId;
+            //umbracoDocument.Node.UmbracoContentVersions.First().Id = entity.VersionId;
             umbracoDocument.Node.UmbracoContentVersions.First().UmbracoDocumentVersion!.Published = false;
         }
 
