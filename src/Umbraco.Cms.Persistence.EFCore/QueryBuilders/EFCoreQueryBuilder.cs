@@ -89,7 +89,7 @@ namespace Umbraco.Cms.Persistence.EFCore.QueryBuilders
 
         /// <inheritdoc/>
         public IIncludableQueryable<TEntity, TProperty> ThenInclude<TEntity, TPreviousProperty, TProperty>(IIncludableQueryable<TEntity, TPreviousProperty> source, Expression<Func<TPreviousProperty, TProperty>> navigationPropertyPath)
-            where TEntity : class => new IncludableQueryable<TEntity, TProperty>(new EFCoreIncludableQueryable<TEntity, IEnumerable<TPreviousProperty>>(source).ThenInclude(navigationPropertyPath));
+            where TEntity : class => new IncludableQueryable<TEntity, TProperty>(new EFCoreIncludableQueryable<TEntity, TPreviousProperty>(source).ThenInclude(navigationPropertyPath));
 
         /// <inheritdoc/>
         public string ToQueryString(IQueryable source) => source.ToQueryString();
