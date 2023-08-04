@@ -950,80 +950,30 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
         // TODO: do we really want to keep doing this here?
         entity.SanitizeEntityPropertiesForXmlStorage();
 
-        UmbracoDocument umbracoDocument = ContentBaseFactory.BuildUmbracoDocument(entity, NodeObjectTypeId);
+        _ = Database.UmbracoUsers.Find(entity.WriterId) ?? throw new ArgumentException($"The provided UserId doesn't reference an existing user: User Id {entity.WriterId}");
 
         UmbracoNode parent = GetParentUmbracoNode(entity.ParentId) ?? throw new InvalidOperationException($"Could not save new UmbracoNode. Could not find parent node with id {entity.ParentId}");
 
-        var sortOrderExists = SortorderExists(entity.ParentId, entity.SortOrder);
+        entity.SortOrder = SortorderExists(entity.ParentId, entity.SortOrder) ? GetNewChildSortOrder(entity.ParentId, 0) : entity.SortOrder;
 
-        var sortOrder = sortOrderExists ? GetNewChildSortOrder(entity.ParentId, 0) : entity.SortOrder;
-
-        umbracoDocument.Node.Node.Path = parent.Path;
-        umbracoDocument.Node.Node.Level = Convert.ToInt16(parent.Level + 1);
-        umbracoDocument.Node.Node.SortOrder = sortOrder;
+        UmbracoDocument umbracoDocument = ContentBaseFactory.BuildUmbracoDocument(entity, NodeObjectTypeId);
 
         var id = GetReservedId(umbracoDocument.Node.Node.UniqueId);
         if (id > 0)
         {
             umbracoDocument.Node.Node.Id = id;
         }
-        else
-        {
-            Database.UmbracoNodes.Add(umbracoDocument.Node.Node);
-            Database.SaveChanges();
-        }
 
-        umbracoDocument.Node.Node.Path = string.Concat(parent.Path, ",", umbracoDocument.Node.Node.Id);
-        umbracoDocument.Node.Node.ValidatePathWithException();
-
-        entity.Id = umbracoDocument.Node.Node.Id;
-        entity.Path = umbracoDocument.Node.Node.Path;
-        entity.Level = umbracoDocument.Node.Node.Level;
-
-        umbracoDocument.Node.UmbracoContentVersions.First().Current = !publishing;
-        umbracoDocument.Node.UmbracoContentVersions.First().Node = umbracoDocument.Node;
-        umbracoDocument.Node.UmbracoContentVersions.First().UserId = -1;
-        Database.UmbracoContentVersions.Add(umbracoDocument.Node.UmbracoContentVersions.First());
-        Database.SaveChanges();
-
-        umbracoDocument.NodeId = umbracoDocument.Node.UmbracoContentVersions.First().NodeId;
-
-        if (publishing)
-        {
-            umbracoDocument.Published = true;
-        }
-
-        Database.UmbracoDocuments.Add(umbracoDocument);
-
-        if (publishing)
-        {
-            entity.PublishedVersionId = entity.VersionId;
-            umbracoDocument.Node.UmbracoContentVersions.Add(new UmbracoContentVersion
-            {
-                Current = true,
-                Text = entity.Name,
-            });
-
-            Database.SaveChanges();
-
-            entity.PublishedVersionId = umbracoDocument.Node.UmbracoContentVersions.Last().Id;
-            umbracoDocument.Node.UmbracoContentVersions.First().UmbracoDocumentVersion!.Published = false;
-        }
-
-        entity.VersionId = umbracoDocument.Node.UmbracoContentVersions.First().Id;
         IEnumerable<UmbracoPropertyDatum> umbracoPropertyDatums = PropertyFactory.BuildUmbracoPropertyDatum(
             entity.ContentType.Variations,
-            entity.VersionId,
-            entity.PublishedVersionId,
+            umbracoDocument.Node.UmbracoContentVersions.First(),
+            umbracoDocument.Node.UmbracoContentVersions.First(),
             entity.Properties,
             LanguageRepository,
             out var edited,
             out HashSet<string>? editedCultures);
 
-        foreach (UmbracoPropertyDatum umbracoPropertyDatum in umbracoPropertyDatums)
-        {
-            Database.UmbracoPropertyData.Add(umbracoPropertyDatum);
-        }
+        Database.UmbracoPropertyData.AddRange(umbracoPropertyDatums);
 
         // if !publishing, we may have a new name != current publish name,
         // also impacts 'edited'
@@ -1036,37 +986,36 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
 
         if (entity.ContentType.VariesByCulture())
         {
+            editedCultures ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
             // names also impact 'edited'
             foreach (ContentCultureInfos cultureInfo in entity.CultureInfos!)
             {
                 if (cultureInfo.Name != entity.GetPublishName(cultureInfo.Culture))
                 {
-                    editedCultures ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
                     editedCultures.Add(cultureInfo.Culture);
                 }
             }
 
             // refresh content
-            entity.SetCultureEdited(editedCultures!);
+            entity.SetCultureEdited(editedCultures);
 
             // bump dates to align cultures to version
             entity.AdjustDates(umbracoDocument.Node.UmbracoContentVersions.Last().VersionDate, publishing);
 
-            IEnumerable<UmbracoContentVersionCultureVariation> umbracoContentVersionCultureVariations = BuildUmbracoContentVersionCultureVariations(entity, publishing);
+            Database.UmbracoContentVersionCultureVariations.AddRange(BuildUmbracoContentVersionCultureVariations(entity, publishing));
 
-            foreach (UmbracoContentVersionCultureVariation umbracoContentVersionCultureVariation in umbracoContentVersionCultureVariations)
-            {
-                Database.UmbracoContentVersionCultureVariations.Add(umbracoContentVersionCultureVariation);
-            }
-
-            IEnumerable<UmbracoDocumentCultureVariation> umbracoDocumentCultureVariations = BuildUmbracoDocumentCultureVariations(entity, editedCultures!);
-
-            foreach (UmbracoDocumentCultureVariation umbracoDocumentCultureVariation in umbracoDocumentCultureVariations)
-            {
-                Database.UmbracoDocumentCultureVariations.Add(umbracoDocumentCultureVariation);
-            }
+            Database.UmbracoDocumentCultureVariations.AddRange(BuildUmbracoDocumentCultureVariations(entity, editedCultures));
         }
+
+        Database.SaveChanges();
+
+        umbracoDocument.Node.Node.Path = string.Concat(parent.Path, ",", umbracoDocument.Node.Node.Id);
+        umbracoDocument.Node.Node.ValidatePathWithException();
+        entity.Id = umbracoDocument.Node.Node.Id;
+        entity.Path = umbracoDocument.Node.Node.Path;
+        entity.Level = umbracoDocument.Node.Node.Level;
+        entity.VersionId = umbracoDocument.Node.UmbracoContentVersions.First().Id;
 
         // trigger here, before we reset Published etc
         OnUowRefreshedEntity(new ContentRefreshNotification(entity, new EventMessages()));

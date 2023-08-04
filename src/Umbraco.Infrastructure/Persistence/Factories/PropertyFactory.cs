@@ -172,8 +172,8 @@ internal static class PropertyFactory
     /// <param name="contentVariation">
     ///     The <see cref="ContentVariation" /> of the entity containing the collection of <see cref="Property" />
     /// </param>
-    /// <param name="currentVersionId"></param>
-    /// <param name="publishedVersionId"></param>
+    /// <param name="currentVersion"></param>
+    /// <param name="publishedVersion"></param>
     /// <param name="properties">The properties to map</param>
     /// <param name="languageRepository"></param>
     /// <param name="edited">out parameter indicating that one or more properties have been edited</param>
@@ -184,8 +184,8 @@ internal static class PropertyFactory
     /// <returns></returns>
     public static IEnumerable<UmbracoPropertyDatum> BuildUmbracoPropertyDatum(
         ContentVariation contentVariation,
-        int currentVersionId,
-        int publishedVersionId,
+        UmbracoContentVersion currentVersion,
+        UmbracoContentVersion publishedVersion,
         IEnumerable<IProperty> properties,
         ILanguageRepository languageRepository,
         out bool edited,
@@ -215,14 +215,14 @@ internal static class PropertyFactory
                     var isCultureValue = propertyValue.Culture != null;
                     var isSegmentValue = propertyValue.Segment != null;
 
-                    if ((propertyValue.PublishedValue != null || isSegmentValue) && publishedVersionId > 0)
+                    if ((propertyValue.PublishedValue != null || isSegmentValue) && publishedVersion.Id > 0)
                     {
-                        umbracoPropertyDatums.Add(BuildUmbracoPropertyDatum(publishedVersionId, property, languageRepository.GetIdByIsoCode(propertyValue.Culture), propertyValue.Segment, propertyValue.PublishedValue));
+                        umbracoPropertyDatums.Add(BuildUmbracoPropertyDatum(publishedVersion, property, languageRepository.GetIdByIsoCode(propertyValue.Culture), propertyValue.Segment, propertyValue.PublishedValue));
                     }
 
                     if (propertyValue.EditedValue != null || isSegmentValue)
                     {
-                        umbracoPropertyDatums.Add(BuildUmbracoPropertyDatum(currentVersionId, property, languageRepository.GetIdByIsoCode(propertyValue.Culture), propertyValue.Segment, propertyValue.EditedValue));
+                        umbracoPropertyDatums.Add(BuildUmbracoPropertyDatum(currentVersion, property, languageRepository.GetIdByIsoCode(propertyValue.Culture), propertyValue.Segment, propertyValue.EditedValue));
                     }
 
                     // property.Values will contain ALL of it's values, both variant and invariant which will be populated if the
@@ -267,7 +267,7 @@ internal static class PropertyFactory
                     // not publishing = only deal with edit values
                     if (propertyValue.EditedValue != null)
                     {
-                        umbracoPropertyDatums.Add(BuildUmbracoPropertyDatum(currentVersionId, property, languageRepository.GetIdByIsoCode(propertyValue.Culture), propertyValue.Segment, propertyValue.EditedValue));
+                        umbracoPropertyDatums.Add(BuildUmbracoPropertyDatum(currentVersion, property, languageRepository.GetIdByIsoCode(propertyValue.Culture), propertyValue.Segment, propertyValue.EditedValue));
                     }
                 }
 
@@ -331,11 +331,11 @@ internal static class PropertyFactory
         return dto;
     }
 
-    private static UmbracoPropertyDatum BuildUmbracoPropertyDatum(int versionId, IProperty property, int? languageId, string? segment, object? value)
+    private static UmbracoPropertyDatum BuildUmbracoPropertyDatum(UmbracoContentVersion version, IProperty property, int? languageId, string? segment, object? value)
     {
         var umbracoPropertyDatum = new UmbracoPropertyDatum
         {
-            VersionId = versionId,
+            Version = version,
             PropertyTypeId = property.PropertyTypeId,
         };
 

@@ -223,7 +223,7 @@ public class ContentBuilder
         var createDate = _createDate ?? DateTime.Now;
         var updateDate = _updateDate ?? DateTime.Now;
         var name = _name ?? Guid.NewGuid().ToString();
-        var creatorId = _creatorId ?? 0;
+        var creatorId = _creatorId ?? -1;
         var level = _level ?? 1;
         var path = _path ?? $"-1,{id}";
         var sortOrder = _sortOrder ?? 0;

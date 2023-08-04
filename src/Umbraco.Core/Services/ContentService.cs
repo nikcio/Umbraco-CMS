@@ -1007,6 +1007,11 @@ public class ContentService : RepositoryService, IContentService
             scope.WriteLock(Constants.Locks.ContentTree);
             userId ??= Constants.Security.SuperUserId;
 
+            if (userId.Value == 0)
+            {
+                throw new ArgumentException("UserId 0 doesn't reference any user.", nameof(userId));
+            }
+
             if (content.HasIdentity == false)
             {
                 content.CreatorId = userId.Value;

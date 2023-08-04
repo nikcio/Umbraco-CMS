@@ -178,7 +178,7 @@ internal class ContentBaseFactory
     public static UmbracoDocument BuildUmbracoDocument(IContent entity, Guid objectType) => new()
     {
         NodeId = entity.Id,
-        Published = entity.Published,
+        Published = entity.PublishedState == PublishedState.Publishing,
         Node = BuildUmbracoContent(entity, objectType),
     };
 
@@ -252,16 +252,26 @@ internal class ContentBaseFactory
         return dto;
     }
 
-    private static UmbracoContent BuildUmbracoContent(IContent entity, Guid objectType) => new()
+    private static UmbracoContent BuildUmbracoContent(IContent entity, Guid objectType)
     {
-        NodeId = entity.Id,
-        ContentTypeId = entity.ContentTypeId,
-        Node = BuildUmbracoNode(entity, objectType),
-        UmbracoContentVersions = new List<UmbracoContentVersion>
+        var umbracoContent = new UmbracoContent()
         {
-            BuildUmbracoContentVersion(entity),
-        },
-    };
+            NodeId = entity.Id,
+            ContentTypeId = entity.ContentTypeId,
+            Node = BuildUmbracoNode(entity, objectType),
+            UmbracoContentVersions = new List<UmbracoContentVersion>
+            {
+                BuildUmbracoContentVersion(entity),
+            },
+        };
+
+        foreach (UmbracoContentVersion umbracoContentVersion in umbracoContent.UmbracoContentVersions)
+        {
+            umbracoContentVersion.Node = umbracoContent;
+        };
+
+        return umbracoContent;
+    }
 
     private static NodeDto BuildNodeDto(IContentBase entity, Guid objectType)
     {
@@ -319,10 +329,9 @@ internal class ContentBaseFactory
     private static UmbracoContentVersion BuildUmbracoContentVersion(IContent entity) => new()
     {
         Id = entity.VersionId,
-        NodeId = entity.Id,
         VersionDate = entity.UpdateDate,
         UserId = entity.WriterId,
-        Current = true,
+        Current = entity.PublishedState == PublishedState.Publishing,
         Text = entity.Name,
         UmbracoDocumentVersion = BuildUmbracoDocumentVersion(entity),
     };
