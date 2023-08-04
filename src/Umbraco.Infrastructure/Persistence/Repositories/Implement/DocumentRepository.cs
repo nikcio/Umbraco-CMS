@@ -1004,10 +1004,13 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
                 Text = entity.Name,
             });
 
-            //umbracoDocument.Node.UmbracoContentVersions.First().Id = entity.VersionId;
+            Database.SaveChanges();
+
+            entity.PublishedVersionId = umbracoDocument.Node.UmbracoContentVersions.Last().Id;
             umbracoDocument.Node.UmbracoContentVersions.First().UmbracoDocumentVersion!.Published = false;
         }
 
+        entity.VersionId = umbracoDocument.Node.UmbracoContentVersions.First().Id;
         IEnumerable<UmbracoPropertyDatum> umbracoPropertyDatums = PropertyFactory.BuildUmbracoPropertyDatum(
             entity.ContentType.Variations,
             entity.VersionId,
@@ -1092,6 +1095,7 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
             ClearEntityTags(entity, _tagRepository);
         }
 
+        Database.CompleteTransaction(); // Hack to avoid having to convert all calls to the database from the leagcy database to the new one
         Database.SaveChanges();
 
         PersistRelations(entity);
