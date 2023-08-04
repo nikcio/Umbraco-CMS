@@ -351,5 +351,81 @@ namespace Umbraco.Cms.Persistence.EFCore.QueryBuilders
 
         /// <inheritdoc/>
         public IAsyncEnumerable<TSource> AsAsyncEnumerable<TSource>(IQueryable<TSource> source) => source.AsAsyncEnumerable();
+
+        /// <inheritdoc/>
+        public TEntity? Find<TEntity>(IQueryable<TEntity> source, params object?[]? keyValues)
+            where TEntity : class => ((DbSet<TEntity>)source).Find(keyValues);
+
+        /// <inheritdoc/>
+        public ValueTask<TEntity?> FindAsync<TEntity>(IQueryable<TEntity> source, params object?[]? keyValues)
+            where TEntity : class => ((DbSet<TEntity>)source).FindAsync(keyValues);
+
+        /// <inheritdoc/>
+        public ValueTask<TEntity?> FindAsync<TEntity>(IQueryable<TEntity> source, object?[]? keyValues, CancellationToken cancellationToken)
+            where TEntity : class => ((DbSet<TEntity>)source).FindAsync(keyValues, cancellationToken);
+
+        /// <inheritdoc/>
+        public TEntity Add<TEntity>(IQueryable<TEntity> source, TEntity entity)
+            where TEntity : class => ((DbSet<TEntity>)source).Add(entity).Entity;
+
+        /// <inheritdoc/>
+        public async ValueTask<TEntity> AddAsync<TEntity>(IQueryable<TEntity> source, TEntity entity, CancellationToken cancellationToken = default)
+            where TEntity : class => (await ((DbSet<TEntity>)source).AddAsync(entity, cancellationToken)).Entity;
+
+        /// <inheritdoc/>
+        public TEntity Attach<TEntity>(IQueryable<TEntity> source, TEntity entity)
+            where TEntity : class => ((DbSet<TEntity>)source).Attach(entity).Entity;
+
+        /// <inheritdoc/>
+        public TEntity Remove<TEntity>(IQueryable<TEntity> source, TEntity entity)
+            where TEntity : class => ((DbSet<TEntity>)source).Remove(entity).Entity;
+
+        /// <inheritdoc/>
+        public TEntity Update<TEntity>(IQueryable<TEntity> source, TEntity entity)
+            where TEntity : class => ((DbSet<TEntity>)source).Update(entity).Entity;
+
+        /// <inheritdoc/>
+        public void AddRange<TEntity>(IQueryable<TEntity> source, params TEntity[] entities)
+            where TEntity : class => ((DbSet<TEntity>)source).AddRange(entities);
+
+        /// <inheritdoc/>
+        public Task AddRangeAsync<TEntity>(IQueryable<TEntity> source, params TEntity[] entities)
+            where TEntity : class => ((DbSet<TEntity>)source).AddRangeAsync(entities);
+
+        /// <inheritdoc/>
+        public void AttachRange<TEntity>(IQueryable<TEntity> source, params TEntity[] entities)
+            where TEntity : class => ((DbSet<TEntity>)source).AttachRange(entities);
+
+        /// <inheritdoc/>
+        public void RemoveRange<TEntity>(IQueryable<TEntity> source, params TEntity[] entities)
+            where TEntity : class => ((DbSet<TEntity>)source).RemoveRange(entities);
+
+        /// <inheritdoc/>
+        public void UpdateRange<TEntity>(IQueryable<TEntity> source, params TEntity[] entities)
+            where TEntity : class => ((DbSet<TEntity>)source).UpdateRange(entities);
+
+        /// <inheritdoc/>
+        public void AddRange<TEntity>(IQueryable<TEntity> source, IEnumerable<TEntity> entities)
+            where TEntity : class => ((DbSet<TEntity>)source).AddRange(entities);
+
+        /// <inheritdoc/>
+        public Task AddRangeAsync<TEntity>(IQueryable<TEntity> source, IEnumerable<TEntity> entities, CancellationToken cancellationToken = default)
+            where TEntity : class => ((DbSet<TEntity>)source).AddRangeAsync(entities, cancellationToken);
+
+        /// <inheritdoc/>
+        public void AttachRange<TEntity>(IQueryable<TEntity> source, IEnumerable<TEntity> entities)
+            where TEntity : class => ((DbSet<TEntity>)source).AttachRange(entities);
+
+        /// <inheritdoc/>
+        public void RemoveRange<TEntity>(IQueryable<TEntity> source, IEnumerable<TEntity> entities)
+            where TEntity : class => ((DbSet<TEntity>)source).RemoveRange(entities);
+
+        /// <inheritdoc/>
+        public void UpdateRange<TEntity>(IQueryable<TEntity> source, IEnumerable<TEntity> entities)
+            where TEntity : class => ((DbSet<TEntity>)source).UpdateRange(entities);
+
+        /// <inheritdoc/>
+        public IAsyncEnumerator<TEntity> GetAsyncEnumerator<TEntity>(IQueryable<TEntity> source, CancellationToken cancellationToken = default)
+            where TEntity : class => ((DbSet<TEntity>)source).GetAsyncEnumerator(cancellationToken);
     }
 }

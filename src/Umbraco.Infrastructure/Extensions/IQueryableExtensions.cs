@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using Umbraco.Cms.Core.DependencyInjection;
+using Umbraco.Cms.Core.Models.Entities;
 using Umbraco.Cms.Infrastructure.QueryBuilders;
 using Umbraco.Cms.Infrastructure.QueryBuilders.IQueryableInterfaces;
 
@@ -10,7 +11,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
     /// </summary>
     /// <remarks>
     /// Used to decopule Umbraco from EF Core.
-    /// Includes the extension methods from: https://github.com/dotnet/efcore/blob/main/src/EFCore/Extensions/EntityFrameworkQueryableExtensions.cs
+    /// Includes the extension methods from: https://github.com/dotnet/efcore/blob/main/src/EFCore/Extensions/EntityFrameworkQueryableExtensions.cs and the methods on DbSet https://github.com/dotnet/efcore/blob/main/src/EFCore/DbSet.cs
     /// </remarks>
     internal static class IQueryableExtensions
     {
@@ -2307,7 +2308,8 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <param name="source">An <see cref="IQueryable{T}" /> to enumerate.</param>
         /// <param name="keyValues">The values of the primary key for the entity to be found.</param>
         /// <returns>The entity found, or <see langword="null" />.</returns>
-        public static TEntity? Find<TEntity>(this IQueryable<TEntity> source, params object?[]? keyValues) => _queryBuilder.Find(source, keyValues);
+        public static TEntity? Find<TEntity>(this IQueryable<TEntity> source, params object?[]? keyValues)
+            where TEntity : class => _queryBuilder.Find(source, keyValues);
 
         /// <summary>
         ///     Finds an entity with the given primary key values. If an entity with the given primary key values
@@ -2323,8 +2325,8 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <param name="source">An <see cref="IQueryable{T}" /> to enumerate.</param>
         /// <param name="keyValues">The values of the primary key for the entity to be found.</param>
         /// <returns>The entity found, or <see langword="null" />.</returns>
-        public virtual ValueTask<TEntity?> FindAsync(params object?[]? keyValues)
-            => throw new NotSupportedException();
+        public static ValueTask<TEntity?> FindAsync<TEntity>(this IQueryable<TEntity> source, params object?[]? keyValues)
+            where TEntity : class => _queryBuilder.FindAsync(source, keyValues);
 
         /// <summary>
         ///     Finds an entity with the given primary key values. If an entity with the given primary key values
@@ -2342,10 +2344,11 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <param name="cancellationToken">A <see cref="CancellationToken" /> to observe while waiting for the task to complete.</param>
         /// <returns>The entity found, or <see langword="null" />.</returns>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public virtual ValueTask<TEntity?> FindAsync(object?[]? keyValues, CancellationToken cancellationToken)
-            => throw new NotSupportedException();
+        public static ValueTask<TEntity?> FindAsync<TEntity>(this IQueryable<TEntity> source, object?[]? keyValues, CancellationToken cancellationToken)
+            where TEntity : class => _queryBuilder.FindAsync(source, keyValues, cancellationToken);
 
         /// <summary>
+        ///     [EntityEntry has been removed from this API to avoid leaking too much of EF Core]
         ///     Begins tracking the given entity, and any other reachable entities that are
         ///     not already being tracked, in the <see cref="EntityState.Added" /> state such that they will
         ///     be inserted into the database when <see cref="DbContext.SaveChanges()" /> is called.
@@ -2365,10 +2368,11 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     The <see cref="EntityEntry{TEntity}" /> for the entity. The entry provides
         ///     access to change tracking information and operations for the entity.
         /// </returns>
-        public virtual EntityEntry<TEntity> Add(TEntity entity)
-            => throw new NotSupportedException();
+        public static TEntity Add<TEntity>(this IQueryable<TEntity> source, TEntity entity)
+            where TEntity : class => _queryBuilder.Add(source, entity);
 
         /// <summary>
+        ///     [EntityEntry has been removed from this API to avoid leaking too much of EF Core]
         ///     Begins tracking the given entity, and any other reachable entities that are
         ///     not already being tracked, in the <see cref="EntityState.Added" /> state such that they will
         ///     be inserted into the database when <see cref="DbContext.SaveChanges()" /> is called.
@@ -2396,12 +2400,11 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     information and operations for the entity.
         /// </returns>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public virtual ValueTask<EntityEntry<TEntity>> AddAsync(
-            TEntity entity,
-            CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
+        public static ValueTask<TEntity> AddAsync<TEntity>(this IQueryable<TEntity> source, TEntity entity, CancellationToken cancellationToken = default)
+            where TEntity : class => _queryBuilder.AddAsync(source, entity, cancellationToken);
 
         /// <summary>
+        ///     [EntityEntry has been removed from this API to avoid leaking too much of EF Core]
         ///     Begins tracking the given entity and entries reachable from the given entity using
         ///     the <see cref="EntityState.Unchanged" /> state by default, but see below for cases
         ///     when a different state will be used.
@@ -2440,10 +2443,11 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     The <see cref="EntityEntry" /> for the entity. The entry provides
         ///     access to change tracking information and operations for the entity.
         /// </returns>
-        public virtual EntityEntry<TEntity> Attach(TEntity entity)
-            => throw new NotSupportedException();
+        public static TEntity Attach<TEntity>(this IQueryable<TEntity> source, TEntity entity)
+            where TEntity : class => _queryBuilder.Attach(source, entity);
 
         /// <summary>
+        ///     [EntityEntry has been removed from this API to avoid leaking too much of EF Core]
         ///     Begins tracking the given entity in the <see cref="EntityState.Deleted" /> state such that it will
         ///     be removed from the database when <see cref="DbContext.SaveChanges()" /> is called.
         /// </summary>
@@ -2472,10 +2476,11 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     The <see cref="EntityEntry{TEntity}" /> for the entity. The entry provides
         ///     access to change tracking information and operations for the entity.
         /// </returns>
-        public virtual EntityEntry<TEntity> Remove(TEntity entity)
-            => throw new NotSupportedException();
+        public static TEntity Remove<TEntity>(this IQueryable<TEntity> source, TEntity entity)
+            where TEntity : class => _queryBuilder.Remove(source, entity);
 
         /// <summary>
+        ///     [EntityEntry has been removed from this API to avoid leaking too much of EF Core]
         ///     Begins tracking the given entity and entries reachable from the given entity using
         ///     the <see cref="EntityState.Modified" /> state by default, but see below for cases
         ///     when a different state will be used.
@@ -2514,8 +2519,8 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     The <see cref="EntityEntry" /> for the entity. The entry provides
         ///     access to change tracking information and operations for the entity.
         /// </returns>
-        public virtual EntityEntry<TEntity> Update(TEntity entity)
-            => throw new NotSupportedException();
+        public static TEntity Update<TEntity>(this IQueryable<TEntity> source, TEntity entity)
+            where TEntity : class => _queryBuilder.Update(source, entity);
 
         /// <summary>
         ///     Begins tracking the given entities, and any other reachable entities that are
@@ -2530,8 +2535,8 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <typeparam name="TEntity">The type of the elements of <paramref name="source" />.</typeparam>
         /// <param name="source">An <see cref="IQueryable{T}" /> to enumerate.</param>
         /// <param name="entities">The entities to add.</param>
-        public virtual void AddRange(params TEntity[] entities)
-            => throw new NotSupportedException();
+        public static void AddRange<TEntity>(this IQueryable<TEntity> source, params TEntity[] entities)
+            where TEntity : class => _queryBuilder.AddRange(source, entities);
 
         /// <summary>
         ///     Begins tracking the given entities, and any other reachable entities that are
@@ -2554,8 +2559,8 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <param name="source">An <see cref="IQueryable{T}" /> to enumerate.</param>
         /// <param name="entities">The entities to add.</param>
         /// <returns>A task that represents the asynchronous operation.</returns>
-        public virtual Task AddRangeAsync(params TEntity[] entities)
-            => throw new NotSupportedException();
+        public static Task AddRangeAsync<TEntity>(this IQueryable<TEntity> source, params TEntity[] entities)
+            where TEntity : class => _queryBuilder.AddRangeAsync(source, entities);
 
         /// <summary>
         ///     Begins tracking the given entities and entries reachable from the given entities using
@@ -2594,8 +2599,8 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <typeparam name="TEntity">The type of the elements of <paramref name="source" />.</typeparam>
         /// <param name="source">An <see cref="IQueryable{T}" /> to enumerate.</param>
         /// <param name="entities">The entities to attach.</param>
-        public virtual void AttachRange(params TEntity[] entities)
-            => throw new NotSupportedException();
+        public static void AttachRange<TEntity>(this IQueryable<TEntity> source, params TEntity[] entities)
+            where TEntity : class => _queryBuilder.AttachRange(source, entities);
 
         /// <summary>
         ///     Begins tracking the given entities in the <see cref="EntityState.Deleted" /> state such that they will
@@ -2621,8 +2626,8 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <typeparam name="TEntity">The type of the elements of <paramref name="source" />.</typeparam>
         /// <param name="source">An <see cref="IQueryable{T}" /> to enumerate.</param>
         /// <param name="entities">The entities to remove.</param>
-        public virtual void RemoveRange(params TEntity[] entities)
-            => throw new NotSupportedException();
+        public static void RemoveRange<TEntity>(this IQueryable<TEntity> source, params TEntity[] entities)
+            where TEntity : class => _queryBuilder.RemoveRange(source, entities);
 
         /// <summary>
         ///     Begins tracking the given entities and entries reachable from the given entities using
@@ -2661,8 +2666,8 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <typeparam name="TEntity">The type of the elements of <paramref name="source" />.</typeparam>
         /// <param name="source">An <see cref="IQueryable{T}" /> to enumerate.</param>
         /// <param name="entities">The entities to update.</param>
-        public virtual void UpdateRange(params TEntity[] entities)
-            => throw new NotSupportedException();
+        public static void UpdateRange<TEntity>(this IQueryable<TEntity> source, params TEntity[] entities)
+            where TEntity : class => _queryBuilder.UpdateRange(source, entities);
 
         /// <summary>
         ///     Begins tracking the given entities, and any other reachable entities that are
@@ -2677,8 +2682,8 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <typeparam name="TEntity">The type of the elements of <paramref name="source" />.</typeparam>
         /// <param name="source">An <see cref="IQueryable{T}" /> to enumerate.</param>
         /// <param name="entities">The entities to add.</param>
-        public virtual void AddRange(IEnumerable<TEntity> entities)
-            => throw new NotSupportedException();
+        public static void AddRange<TEntity>(this IQueryable<TEntity> source, IEnumerable<TEntity> entities)
+            where TEntity : class => _queryBuilder.AddRange(source, entities);
 
         /// <summary>
         ///     Begins tracking the given entities, and any other reachable entities that are
@@ -2703,10 +2708,8 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <param name="cancellationToken">A <see cref="CancellationToken" /> to observe while waiting for the task to complete.</param>
         /// <returns>A task that represents the asynchronous operation.</returns>
         /// <exception cref="OperationCanceledException">If the <see cref="CancellationToken" /> is canceled.</exception>
-        public virtual Task AddRangeAsync(
-            IEnumerable<TEntity> entities,
-            CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
+        public static Task AddRangeAsync<TEntity>(this IQueryable<TEntity> source, IEnumerable<TEntity> entities, CancellationToken cancellationToken = default)
+            where TEntity : class => _queryBuilder.AddRangeAsync(source, entities, cancellationToken);
 
         /// <summary>
         ///     Begins tracking the given entities and entries reachable from the given entities using
@@ -2745,8 +2748,8 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <typeparam name="TEntity">The type of the elements of <paramref name="source" />.</typeparam>
         /// <param name="source">An <see cref="IQueryable{T}" /> to enumerate.</param>
         /// <param name="entities">The entities to attach.</param>
-        public virtual void AttachRange(IEnumerable<TEntity> entities)
-            => throw new NotSupportedException();
+        public static void AttachRange<TEntity>(this IQueryable<TEntity> source, IEnumerable<TEntity> entities)
+            where TEntity : class => _queryBuilder.AttachRange(source, entities);
 
         /// <summary>
         ///     Begins tracking the given entities in the <see cref="EntityState.Deleted" /> state such that they will
@@ -2772,8 +2775,8 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <typeparam name="TEntity">The type of the elements of <paramref name="source" />.</typeparam>
         /// <param name="source">An <see cref="IQueryable{T}" /> to enumerate.</param>
         /// <param name="entities">The entities to remove.</param>
-        public virtual void RemoveRange(IEnumerable<TEntity> entities)
-            => throw new NotSupportedException();
+        public static void RemoveRange<TEntity>(this IQueryable<TEntity> source, IEnumerable<TEntity> entities)
+            where TEntity : class => _queryBuilder.RemoveRange(source, entities);
 
         /// <summary>
         ///     Begins tracking the given entities and entries reachable from the given entities using
@@ -2812,49 +2815,8 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         /// <typeparam name="TEntity">The type of the elements of <paramref name="source" />.</typeparam>
         /// <param name="source">An <see cref="IQueryable{T}" /> to enumerate.</param>
         /// <param name="entities">The entities to update.</param>
-        public virtual void UpdateRange(IEnumerable<TEntity> entities)
-            => throw new NotSupportedException();
-
-        /// <summary>
-        ///     Gets an <see cref="EntityEntry{TEntity}" /> for the given entity. The entry provides
-        ///     access to change tracking information and operations for the entity.
-        /// </summary>
-        /// <remarks>
-        ///     See <see href="https://aka.ms/efcore-docs-entity-entries">Accessing tracked entities in EF Core</see> for more information and
-        ///     examples.
-        /// </remarks>
-        /// <typeparam name="TEntity">The type of the elements of <paramref name="source" />.</typeparam>
-        /// <param name="source">An <see cref="IQueryable{T}" /> to enumerate.</param>
-        /// <param name="entity">The entity to get the entry for.</param>
-        /// <returns>The entry for the given entity.</returns>
-        public virtual EntityEntry<TEntity> Entry(TEntity entity)
-            => throw new NotSupportedException();
-
-        /// <summary>
-        ///     Returns an <see cref="IEnumerator{T}" /> which when enumerated will execute a query against the database
-        ///     to load all entities from the database.
-        /// </summary>
-        /// <remarks>
-        ///     See <see href="https://aka.ms/efcore-docs-query">Querying data with EF Core</see> for more information and examples.
-        /// </remarks>
-        /// <typeparam name="TEntity">The type of the elements of <paramref name="source" />.</typeparam>
-        /// <param name="source">An <see cref="IQueryable{T}" /> to enumerate.</param>
-        /// <returns>The query results.</returns>
-        IEnumerator<TEntity> IEnumerable<TEntity>.GetEnumerator()
-            => throw new NotSupportedException();
-
-        /// <summary>
-        ///     Returns an <see cref="IEnumerator" /> which when enumerated will execute a query against the database
-        ///     to load all entities from the database.
-        /// </summary>
-        /// <remarks>
-        ///     See <see href="https://aka.ms/efcore-docs-query">Querying data with EF Core</see> for more information and examples.
-        /// </remarks>
-        /// <typeparam name="TEntity">The type of the elements of <paramref name="source" />.</typeparam>
-        /// <param name="source">An <see cref="IQueryable{T}" /> to enumerate.</param>
-        /// <returns>The query results.</returns>
-        IEnumerator IEnumerable.GetEnumerator()
-            => throw new NotSupportedException();
+        public static void UpdateRange<TEntity>(this IQueryable<TEntity> source, IEnumerable<TEntity> entities)
+            where TEntity : class => _queryBuilder.UpdateRange(source, entities);
 
         /// <summary>
         ///     Returns an <see cref="IAsyncEnumerator{T}" /> which when enumerated will asynchronously execute a query against
@@ -2869,7 +2831,7 @@ namespace Umbraco.Cms.Infrastructure.Extensions
         ///     A <see cref="CancellationToken" /> that may be used to cancel the asynchronous iteration.
         /// </param>
         /// <returns>The query results.</returns>
-        public virtual IAsyncEnumerator<TEntity> GetAsyncEnumerator(CancellationToken cancellationToken = default)
-            => ((IAsyncEnumerable<TEntity>)this).GetAsyncEnumerator(cancellationToken);
+        public static IAsyncEnumerator<TEntity> GetAsyncEnumerator<TEntity>(this IQueryable<TEntity> source, CancellationToken cancellationToken = default)
+            where TEntity : class => _queryBuilder.GetAsyncEnumerator(source, cancellationToken);
     }
 }
