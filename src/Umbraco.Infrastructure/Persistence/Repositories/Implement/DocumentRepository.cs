@@ -969,7 +969,7 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
         }
         else
         {
-            Database.UmbracoNodes.Append(umbracoDocument.Node.Node);
+            Database.UmbracoNodes.Add(umbracoDocument.Node.Node);
             Database.SaveChanges();
         }
 
@@ -981,7 +981,7 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
         entity.Level = umbracoDocument.Node.Node.Level;
 
         umbracoDocument.Node.UmbracoContentVersions.First().Current = !publishing;
-        Database.UmbracoContentVersions.Append(umbracoDocument.Node.UmbracoContentVersions.First());
+        Database.UmbracoContentVersions.Add(umbracoDocument.Node.UmbracoContentVersions.First());
         Database.SaveChanges();
 
         umbracoDocument.NodeId = umbracoDocument.Node.UmbracoContentVersions.First().NodeId;
@@ -991,7 +991,7 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
             umbracoDocument.Published = true;
         }
 
-        Database.UmbracoDocuments.Append(umbracoDocument);
+        Database.UmbracoDocuments.Add(umbracoDocument);
 
         if (publishing)
         {
@@ -1017,7 +1017,7 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
 
         foreach (UmbracoPropertyDatum umbracoPropertyDatum in umbracoPropertyDatums)
         {
-            Database.UmbracoPropertyData.Append(umbracoPropertyDatum);
+            Database.UmbracoPropertyData.Add(umbracoPropertyDatum);
         }
 
         // if !publishing, we may have a new name != current publish name,
@@ -1052,14 +1052,14 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
 
             foreach (UmbracoContentVersionCultureVariation umbracoContentVersionCultureVariation in umbracoContentVersionCultureVariations)
             {
-                Database.UmbracoContentVersionCultureVariations.Append(umbracoContentVersionCultureVariation);
+                Database.UmbracoContentVersionCultureVariations.Add(umbracoContentVersionCultureVariation);
             }
 
             IEnumerable<UmbracoDocumentCultureVariation> umbracoDocumentCultureVariations = BuildUmbracoDocumentCultureVariations(entity, editedCultures!);
 
             foreach (UmbracoDocumentCultureVariation umbracoDocumentCultureVariation in umbracoDocumentCultureVariations)
             {
-                Database.UmbracoDocumentCultureVariations.Append(umbracoDocumentCultureVariation);
+                Database.UmbracoDocumentCultureVariations.Add(umbracoDocumentCultureVariation);
             }
         }
 
