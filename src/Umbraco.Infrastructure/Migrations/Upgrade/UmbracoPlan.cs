@@ -90,11 +90,11 @@ public class UmbracoPlan : MigrationPlan
 
         // To 12.1.0
         To<V_12_1_0.TablesIndexesImprovement>("{1187192D-EDB5-4619-955D-91D48D738871}");
+        To<MigrateTagsFromNVarcharToNText>("{2D4C9FBD-08B3-472D-A76C-6ED467A0CD20}");
+
+        // From this point onwards let EF Core handle mirgations. This allows us to switch away from NPOCO and not having to update the InitialCreate migration too many times.
         To<V_12_1_0.InitialCreate>("{92DFCC68-A1FD-4732-B6C0-52F58BF5DB3A}");
         To<V_12_1_0.AddOpenIddict>("{47DE85CE-1E16-42A0-8AF6-3EC3BCEF5471}");
         To<V_12_1_0.MoveModelsToInfrastructure>("{5A238BFE-2602-4004-9D1E-AB149359678C}");
-
-        // And once more for 12
-        To<MigrateTagsFromNVarcharToNText>("{2D4C9FBD-08B3-472D-A76C-6ED467A0CD20}");
     }
 }
