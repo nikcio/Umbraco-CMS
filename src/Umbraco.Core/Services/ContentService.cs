@@ -106,6 +106,11 @@ public class ContentService : RepositoryService, IContentService
 
     public OperationResult Rollback(int id, int versionId, string culture = "*", int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         EventMessages evtMsgs = EventMessagesFactory.Get();
 
         // Get the current copy of the node
@@ -272,6 +277,11 @@ public class ContentService : RepositoryService, IContentService
     /// </returns>
     public IContent Create(string name, Guid parentId, string contentTypeAlias, int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         // TODO: what about culture?
         IContent? parent = GetById(parentId);
         return Create(name, parent, contentTypeAlias, userId);
@@ -292,6 +302,11 @@ public class ContentService : RepositoryService, IContentService
     /// <returns>The content object.</returns>
     public IContent Create(string name, int parentId, string contentTypeAlias, int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         // TODO: what about culture?
         IContentType contentType = GetContentType(contentTypeAlias);
         return Create(name, parentId, contentType, userId);
@@ -312,6 +327,11 @@ public class ContentService : RepositoryService, IContentService
     /// <returns>The content object.</returns>
     public IContent Create(string name, int parentId, IContentType contentType, int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         if (contentType is null)
         {
             throw new ArgumentException("Content type must be specified", nameof(contentType));
@@ -343,6 +363,11 @@ public class ContentService : RepositoryService, IContentService
     /// <returns>The content object.</returns>
     public IContent Create(string name, IContent? parent, string contentTypeAlias, int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         // TODO: what about culture?
         if (parent == null)
         {
@@ -371,6 +396,11 @@ public class ContentService : RepositoryService, IContentService
     /// <returns>The content object.</returns>
     public IContent CreateAndSave(string name, int parentId, string contentTypeAlias, int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         // TODO: what about culture?
         using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
         {
@@ -410,6 +440,11 @@ public class ContentService : RepositoryService, IContentService
     /// <returns>The content object.</returns>
     public IContent CreateAndSave(string name, IContent parent, string contentTypeAlias, int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         // TODO: what about culture?
         if (parent == null)
         {
@@ -980,6 +1015,13 @@ public class ContentService : RepositoryService, IContentService
     /// <inheritdoc />
     public OperationResult Save(IContent content, int? userId = null, ContentScheduleCollection? contentSchedule = null)
     {
+        userId ??= Constants.Security.SuperUserId;
+
+        if (userId.Value == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         PublishedState publishedState = content.PublishedState;
         if (publishedState != PublishedState.Published && publishedState != PublishedState.Unpublished)
         {
@@ -1005,7 +1047,6 @@ public class ContentService : RepositoryService, IContentService
             }
 
             scope.WriteLock(Constants.Locks.ContentTree);
-            userId ??= Constants.Security.SuperUserId;
 
             if (userId.Value == 0)
             {
@@ -1070,6 +1111,11 @@ public class ContentService : RepositoryService, IContentService
     /// <inheritdoc />
     public OperationResult Save(IEnumerable<IContent> contents, int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         EventMessages eventMessages = EventMessagesFactory.Get();
         IContent[] contentsA = contents.ToArray();
 
@@ -1113,6 +1159,11 @@ public class ContentService : RepositoryService, IContentService
     /// <inheritdoc />
     public PublishResult SaveAndPublish(IContent content, string culture = "*", int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         EventMessages evtMsgs = EventMessagesFactory.Get();
 
         PublishedState publishedState = content.PublishedState;
@@ -1178,6 +1229,11 @@ public class ContentService : RepositoryService, IContentService
     /// <inheritdoc />
     public PublishResult SaveAndPublish(IContent content, string[] cultures, int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         if (content == null)
         {
             throw new ArgumentNullException(nameof(content));
@@ -1240,6 +1296,11 @@ public class ContentService : RepositoryService, IContentService
     /// <inheritdoc />
     public PublishResult Unpublish(IContent content, string? culture = "*", int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         if (content == null)
         {
             throw new ArgumentNullException(nameof(content));
@@ -1359,6 +1420,11 @@ public class ContentService : RepositoryService, IContentService
     /// </remarks>
     internal PublishResult CommitDocumentChanges(IContent content, int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         using (ICoreScope scope = ScopeProvider.CreateCoreScope())
         {
             EventMessages evtMsgs = EventMessagesFactory.Get();
@@ -1422,6 +1488,11 @@ public class ContentService : RepositoryService, IContentService
         if (eventMessages == null)
         {
             throw new ArgumentNullException(nameof(eventMessages));
+        }
+
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
         }
 
         PublishResult? publishResult = null;
@@ -1981,6 +2052,11 @@ public class ContentService : RepositoryService, IContentService
     /// <inheritdoc />
     public IEnumerable<PublishResult> SaveAndPublishBranch(IContent content, bool force, string culture = "*", int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         // note: EditedValue and PublishedValue are objects here, so it is important to .Equals()
         // and not to == them, else we would be comparing references, and that is a bad thing
 
@@ -2032,6 +2108,11 @@ public class ContentService : RepositoryService, IContentService
     /// <inheritdoc />
     public IEnumerable<PublishResult> SaveAndPublishBranch(IContent content, bool force, string[] cultures, int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         // note: EditedValue and PublishedValue are objects here, so it is important to .Equals()
         // and not to == them, else we would be comparing references, and that is a bad thing
         cultures = cultures ?? Array.Empty<string>();
@@ -2086,6 +2167,11 @@ public class ContentService : RepositoryService, IContentService
         if (publishCultures == null)
         {
             throw new ArgumentNullException(nameof(publishCultures));
+        }
+
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
         }
 
         EventMessages eventMessages = EventMessagesFactory.Get();
@@ -2192,6 +2278,11 @@ public class ContentService : RepositoryService, IContentService
         int userId,
         IReadOnlyCollection<ILanguage> allLangs)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         HashSet<string>? culturesToPublish = shouldPublish(document);
 
         // null = do not include
@@ -2235,6 +2326,11 @@ public class ContentService : RepositoryService, IContentService
     /// <inheritdoc />
     public OperationResult Delete(IContent content, int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         EventMessages eventMessages = EventMessagesFactory.Get();
 
         using (ICoreScope scope = ScopeProvider.CreateCoreScope())
@@ -2306,6 +2402,11 @@ public class ContentService : RepositoryService, IContentService
     /// <param name="userId">Optional Id of the User deleting versions of a Content object</param>
     public void DeleteVersions(int id, DateTime versionDate, int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         EventMessages evtMsgs = EventMessagesFactory.Get();
 
         using (ICoreScope scope = ScopeProvider.CreateCoreScope())
@@ -2340,6 +2441,11 @@ public class ContentService : RepositoryService, IContentService
     /// <param name="userId">Optional Id of the User deleting versions of a Content object</param>
     public void DeleteVersion(int id, int versionId, bool deletePriorVersions, int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         EventMessages evtMsgs = EventMessagesFactory.Get();
 
         using (ICoreScope scope = ScopeProvider.CreateCoreScope())
@@ -2383,6 +2489,11 @@ public class ContentService : RepositoryService, IContentService
     /// <inheritdoc />
     public OperationResult MoveToRecycleBin(IContent content, int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         EventMessages eventMessages = EventMessagesFactory.Get();
         var moves = new List<(IContent, string)>();
 
@@ -2439,6 +2550,11 @@ public class ContentService : RepositoryService, IContentService
     /// <param name="userId">Optional Id of the User moving the Content</param>
     public void Move(IContent content, int parentId, int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         if (content.ParentId == parentId)
         {
             return;
@@ -2578,6 +2694,11 @@ public class ContentService : RepositoryService, IContentService
     /// </summary>
     public OperationResult EmptyRecycleBin(int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         var deleted = new List<IContent>();
         EventMessages eventMessages = EventMessagesFactory.Get();
 
@@ -2657,6 +2778,11 @@ public class ContentService : RepositoryService, IContentService
     /// <returns>The newly created <see cref="IContent" /> object</returns>
     public IContent? Copy(IContent content, int parentId, bool relateToOriginal, bool recursive, int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         EventMessages eventMessages = EventMessagesFactory.Get();
 
         IContent copy = content.DeepCloneWithResetIdentities();
@@ -2779,6 +2905,11 @@ public class ContentService : RepositoryService, IContentService
     /// <returns>True if sending publication was successful otherwise false</returns>
     public bool SendToPublication(IContent? content, int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         if (content is null)
         {
             return false;
@@ -2845,6 +2976,11 @@ public class ContentService : RepositoryService, IContentService
     /// <returns>Result indicating what action was taken when handling the command.</returns>
     public OperationResult Sort(IEnumerable<IContent> items, int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         EventMessages evtMsgs = EventMessagesFactory.Get();
 
         IContent[] itemsA = items.ToArray();
@@ -2876,6 +3012,11 @@ public class ContentService : RepositoryService, IContentService
     /// <returns>Result indicating what action was taken when handling the command.</returns>
     public OperationResult Sort(IEnumerable<int>? ids, int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         EventMessages evtMsgs = EventMessagesFactory.Get();
 
         var idsA = ids?.ToArray();
@@ -3378,6 +3519,11 @@ public class ContentService : RepositoryService, IContentService
     /// <param name="userId">Optional Id of the user issuing the delete operation</param>
     public void DeleteOfTypes(IEnumerable<int> contentTypeIds, int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         // TODO: This currently this is called from the ContentTypeService but that needs to change,
         // if we are deleting a content type, we should just delete the data and do this operation slightly differently.
         // This method will recursively go lookup every content item, check if any of it's descendants are
@@ -3544,6 +3690,11 @@ public class ContentService : RepositoryService, IContentService
 
     public void SaveBlueprint(IContent content, int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         EventMessages evtMsgs = EventMessagesFactory.Get();
 
         // always ensure the blueprint is at the root
@@ -3577,6 +3728,11 @@ public class ContentService : RepositoryService, IContentService
 
     public void DeleteBlueprint(IContent content, int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         EventMessages evtMsgs = EventMessagesFactory.Get();
 
         using (ICoreScope scope = ScopeProvider.CreateCoreScope())
@@ -3592,6 +3748,11 @@ public class ContentService : RepositoryService, IContentService
 
     public IContent CreateContentFromBlueprint(IContent blueprint, string name, int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         if (blueprint == null)
         {
             throw new ArgumentNullException(nameof(blueprint));
@@ -3657,6 +3818,11 @@ public class ContentService : RepositoryService, IContentService
 
     public void DeleteBlueprintsOfTypes(IEnumerable<int> contentTypeIds, int userId = Constants.Security.SuperUserId)
     {
+        if (userId == 0)
+        {
+            throw new ArgumentException("The User id 0 isn't possible. Please specify a valid user id.", nameof(userId));
+        }
+
         EventMessages evtMsgs = EventMessagesFactory.Get();
 
         using (ICoreScope scope = ScopeProvider.CreateCoreScope())
