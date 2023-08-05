@@ -120,60 +120,60 @@ public class SqliteDistributedLockingMechanism : IDistributedLockingMechanism
         // Mostly no-op just check that we didn't end up ReadUncommitted for real.
         private void ObtainReadLock()
         {
-            //IUmbracoDatabase? db = _parent._scopeAccessor.Value.AmbientScope?.Database;
+            IUmbracoDatabase? db = _parent._scopeAccessor.Value.AmbientScope?.Database;
 
-            //if (db is null)
-            //{
-            //    throw new PanicException("no database was found");
-            //}
+            if (db is null)
+            {
+                throw new PanicException("no database was found");
+            }
 
-            //if (!db.InTransaction)
-            //{
-            //    throw new InvalidOperationException(
-            //        "SqliteDistributedLockingMechanism requires a transaction to function.");
-            //}
+            if (!db.InTransaction)
+            {
+                throw new InvalidOperationException(
+                    "SqliteDistributedLockingMechanism requires a transaction to function.");
+            }
         }
 
         // Only one writer is possible at a time
         // lock occurs for entire database as opposed to row/table.
         private void ObtainWriteLock()
         {
-            //IUmbracoDatabase? db = _parent._scopeAccessor.Value.AmbientScope?.Database;
+            IUmbracoDatabase? db = _parent._scopeAccessor.Value.AmbientScope?.Database;
 
-            //if (db is null)
-            //{
-            //    throw new PanicException("no database was found");
-            //}
+            if (db is null)
+            {
+                throw new PanicException("no database was found");
+            }
 
-            //if (!db.InTransaction)
-            //{
-            //    throw new InvalidOperationException(
-            //        "SqliteDistributedLockingMechanism requires a transaction to function.");
-            //}
+            if (!db.InTransaction)
+            {
+                throw new InvalidOperationException(
+                    "SqliteDistributedLockingMechanism requires a transaction to function.");
+            }
 
-            //var query = @$"UPDATE umbracoLock SET value = (CASE WHEN (value=1) THEN -1 ELSE 1 END) WHERE id = {LockId.ToString(CultureInfo.InvariantCulture)}";
+            var query = @$"UPDATE umbracoLock SET value = (CASE WHEN (value=1) THEN -1 ELSE 1 END) WHERE id = {LockId.ToString(CultureInfo.InvariantCulture)}";
 
-            //DbCommand command = db.CreateCommand(db.Connection, CommandType.Text, query);
+            DbCommand command = db.CreateCommand(db.Connection, CommandType.Text, query);
 
-            //// imagine there is an existing writer, whilst elapsed time is < command timeout sqlite will busy loop
-            //// Important to note that if this value == 0 then Command.DefaultTimeout (30s) is used.
-            //// Math.Ceiling such that (0 < totalseconds < 1) is rounded up to 1.
-            //command.CommandTimeout = (int)Math.Ceiling(_timeout.TotalSeconds);
+            // imagine there is an existing writer, whilst elapsed time is < command timeout sqlite will busy loop
+            // Important to note that if this value == 0 then Command.DefaultTimeout (30s) is used.
+            // Math.Ceiling such that (0 < totalseconds < 1) is rounded up to 1.
+            command.CommandTimeout = (int)Math.Ceiling(_timeout.TotalSeconds);
 
-            //try
-            //{
-            //    var i = command.ExecuteNonQuery();
+            try
+            {
+                var i = command.ExecuteNonQuery();
 
-            //    if (i == 0)
-            //    {
-            //        // ensure we are actually locking!
-            //        throw new ArgumentException($"LockObject with id={LockId} does not exist.");
-            //    }
-            //}
-            //catch (SqliteException ex) when (ex.IsBusyOrLocked())
-            //{
-            //    throw new DistributedWriteLockTimeoutException(LockId);
-            //}
+                if (i == 0)
+                {
+                    // ensure we are actually locking!
+                    throw new ArgumentException($"LockObject with id={LockId} does not exist.");
+                }
+            }
+            catch (SqliteException ex) when (ex.IsBusyOrLocked())
+            {
+                throw new DistributedWriteLockTimeoutException(LockId);
+            }
         }
     }
 }

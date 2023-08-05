@@ -1008,7 +1008,9 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
             Database.UmbracoDocumentCultureVariations.AddRange(BuildUmbracoDocumentCultureVariations(entity, editedCultures));
         }
 
+        Database.CompleteTransaction(); // Hack to avoid having to convert all calls to the database from the leagcy database to the new one
         Database.SaveChanges();
+        Database.BeginTransaction(); // Hack to avoid having to convert all calls to the database from the leagcy database to the new one
 
         umbracoDocument.Node.Node.Path = string.Concat(parent.Path, ",", umbracoDocument.Node.Node.Id);
         umbracoDocument.Node.Node.ValidatePathWithException();
@@ -1046,6 +1048,7 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
 
         Database.CompleteTransaction(); // Hack to avoid having to convert all calls to the database from the leagcy database to the new one
         Database.SaveChanges();
+        Database.BeginTransaction(); // Hack to avoid having to convert all calls to the database from the leagcy database to the new one
 
         PersistRelations(entity);
 
