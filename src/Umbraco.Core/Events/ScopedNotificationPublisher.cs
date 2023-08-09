@@ -7,6 +7,10 @@ namespace Umbraco.Cms.Core.Events;
 
 public class ScopedNotificationPublisher : ScopedNotificationPublisher<INotificationHandler>
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ScopedNotificationPublisher"/> class.
+    /// </summary>
+    /// <param name="eventAggregator"></param>
     public ScopedNotificationPublisher(IEventAggregator eventAggregator)
         : base(eventAggregator)
     { }
@@ -21,12 +25,18 @@ public class ScopedNotificationPublisher<TNotificationHandler> : IScopedNotifica
     private readonly object _locker = new();
     private bool _isSuppressed;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ScopedNotificationPublisher{TNotificationHandler}"/> class.
+    /// </summary>
+    /// <param name="eventAggregator"></param>
+    /// <param name="publishCancelableNotificationOnScopeExit"></param>
     public ScopedNotificationPublisher(IEventAggregator eventAggregator, bool publishCancelableNotificationOnScopeExit = false)
     {
         _eventAggregator = eventAggregator;
         _publishCancelableNotificationOnScopeExit = publishCancelableNotificationOnScopeExit;
     }
 
+    /// <inheritdoc/>
     public bool PublishCancelable(ICancelableNotification notification)
     {
         ArgumentNullException.ThrowIfNull(notification);
@@ -48,6 +58,7 @@ public class ScopedNotificationPublisher<TNotificationHandler> : IScopedNotifica
         return notification.Cancel;
     }
 
+    /// <inheritdoc/>
     public async Task<bool> PublishCancelableAsync(ICancelableNotification notification)
     {
         ArgumentNullException.ThrowIfNull(notification);
@@ -73,6 +84,7 @@ public class ScopedNotificationPublisher<TNotificationHandler> : IScopedNotifica
         return notification.Cancel;
     }
 
+    /// <inheritdoc/>
     public void Publish(INotification notification)
     {
         ArgumentNullException.ThrowIfNull(notification);
@@ -85,6 +97,7 @@ public class ScopedNotificationPublisher<TNotificationHandler> : IScopedNotifica
         _notificationOnScopeCompleted.Add(notification);
     }
 
+    /// <inheritdoc/>
     public void ScopeExit(bool completed)
     {
         try
@@ -100,6 +113,7 @@ public class ScopedNotificationPublisher<TNotificationHandler> : IScopedNotifica
         }
     }
 
+    /// <inheritdoc/>
     public IDisposable Suppress()
     {
         lock (_locker)
@@ -113,6 +127,10 @@ public class ScopedNotificationPublisher<TNotificationHandler> : IScopedNotifica
         }
     }
 
+    /// <summary>
+    /// Publishes scoped notifications through the event aggregator.
+    /// </summary>
+    /// <param name="notifications">The notification to publish</param>
     protected virtual void PublishScopedNotifications(IList<INotification> notifications)
         => _eventAggregator.Publish<INotification, TNotificationHandler>(notifications);
 
