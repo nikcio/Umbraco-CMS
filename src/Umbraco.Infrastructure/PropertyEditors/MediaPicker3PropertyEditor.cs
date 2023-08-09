@@ -20,7 +20,7 @@ namespace Umbraco.Cms.Core.PropertyEditors;
 /// </summary>
 [DataEditor(
     Constants.PropertyEditors.Aliases.MediaPicker3,
-    EditorType.PropertyValue,
+    EditorType.PropertyValue | EditorType.MacroParameter,
     "Media Picker",
     "mediapicker3",
     ValueType = ValueTypes.Json,
@@ -58,6 +58,8 @@ public class MediaPicker3PropertyEditor : DataEditor
         SupportsReadOnly = true;
     }
 
+    public override IPropertyIndexValueFactory PropertyIndexValueFactory { get; } = new NoopPropertyIndexValueFactory();
+
     /// <inheritdoc />
     protected override IConfigurationEditor CreateConfigurationEditor() =>
         new MediaPicker3ConfigurationEditor(_ioHelper, _editorConfigurationParser);
@@ -65,6 +67,8 @@ public class MediaPicker3PropertyEditor : DataEditor
     /// <inheritdoc />
     protected override IDataValueEditor CreateValueEditor() =>
         DataValueEditorFactory.Create<MediaPicker3PropertyValueEditor>(Attribute!);
+
+
 
     internal class MediaPicker3PropertyValueEditor : DataValueEditor, IDataValueReference
     {

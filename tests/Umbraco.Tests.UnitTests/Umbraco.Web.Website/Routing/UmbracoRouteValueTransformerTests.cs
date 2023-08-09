@@ -1,4 +1,3 @@
-using System;
 using System.Reflection;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.DataProtection;
@@ -67,7 +66,8 @@ public class UmbracoRouteValueTransformerTests
             Mock.Of<IDataProtectionProvider>(),
             Mock.Of<IControllerActionSearcher>(),
             publicAccessRequestHandler.Object,
-            Mock.Of<IUmbracoVirtualPageRoute>()
+            Mock.Of<IUmbracoVirtualPageRoute>(),
+            Mock.Of<IOptionsMonitor<GlobalSettings>>()
             );
         return transformer;
     }
