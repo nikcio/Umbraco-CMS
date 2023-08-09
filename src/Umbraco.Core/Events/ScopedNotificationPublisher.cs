@@ -16,7 +16,7 @@ public class ScopedNotificationPublisher<TNotificationHandler> : IScopedNotifica
     where TNotificationHandler : INotificationHandler
 {
     private readonly IEventAggregator _eventAggregator;
-    private readonly List<INotification> _notificationOnScopeCompleted = new List<INotification>();
+    private readonly List<INotification> _notificationOnScopeCompleted = new();
     private readonly bool _publishCancelableNotificationOnScopeExit;
     private readonly object _locker = new();
     private bool _isSuppressed;
@@ -24,7 +24,7 @@ public class ScopedNotificationPublisher<TNotificationHandler> : IScopedNotifica
     public ScopedNotificationPublisher(IEventAggregator eventAggregator, bool publishCancelableNotificationOnScopeExit = false)
     {
         _eventAggregator = eventAggregator;
-        _publishCancelableNotificationOnScopeExit |= publishCancelableNotificationOnScopeExit;
+        _publishCancelableNotificationOnScopeExit = publishCancelableNotificationOnScopeExit;
     }
 
     public bool PublishCancelable(ICancelableNotification notification)
@@ -116,7 +116,7 @@ public class ScopedNotificationPublisher<TNotificationHandler> : IScopedNotifica
     protected virtual void PublishScopedNotifications(IList<INotification> notifications)
         => _eventAggregator.Publish<INotification, TNotificationHandler>(notifications);
 
-    private class Suppressor : IDisposable
+    private sealed class Suppressor : IDisposable
     {
         private readonly ScopedNotificationPublisher<TNotificationHandler> _scopedNotificationPublisher;
         private bool _disposedValue;
@@ -127,9 +127,13 @@ public class ScopedNotificationPublisher<TNotificationHandler> : IScopedNotifica
             _scopedNotificationPublisher._isSuppressed = true;
         }
 
-        public void Dispose() => Dispose(true);
+        public void Dispose()
+        {
+            Dispose(disposing: true);
+            GC.SuppressFinalize(this);
+        }
 
-        protected virtual void Dispose(bool disposing)
+        private void Dispose(bool disposing)
         {
             if (!_disposedValue)
             {
