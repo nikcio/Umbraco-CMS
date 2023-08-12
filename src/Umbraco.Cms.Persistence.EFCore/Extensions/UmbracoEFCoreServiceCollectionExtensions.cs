@@ -12,10 +12,12 @@ namespace Umbraco.Extensions;
 
 public static class UmbracoEFCoreServiceCollectionExtensions
 {
-    public static IServiceCollection AddUmbracoEFCoreContext<T>(this IServiceCollection services)
+    public delegate void DefaultEFCoreOptionsAction(DbContextOptionsBuilder options, string? providerName, string? connectionString);
+
+    public static IServiceCollection AddUmbracoEFCoreContext<T>(this IServiceCollection services, DefaultEFCoreOptionsAction? defaultEFCoreOptionsAction = null)
         where T : DbContext
     {
-        services.AddPooledDbContextFactory<T>(SetupDbContext);
+        services.AddPooledDbContextFactory<T>((provider, builder) => SetupDbContext(provider, builder, defaultEFCoreOptionsAction));
 
         services.AddUnique<IAmbientEFCoreScopeStack<T>, AmbientEFCoreScopeStack<T>>();
         services.AddUnique<IEFCoreScopeAccessor<T>, EFCoreScopeAccessor<T>>();
@@ -26,13 +28,15 @@ public static class UmbracoEFCoreServiceCollectionExtensions
         return services;
     }
 
-    private static void SetupDbContext(IServiceProvider provider, DbContextOptionsBuilder builder)
+    private static void SetupDbContext(IServiceProvider provider, DbContextOptionsBuilder builder, DefaultEFCoreOptionsAction? defaultEFCoreOptionsAction)
     {
         ConnectionStrings connectionStrings = GetConnectionStringAndProviderName(provider);
         IEnumerable<IMigrationProviderSetup> migrationProviders = provider.GetServices<IMigrationProviderSetup>();
 
         IMigrationProviderSetup? migrationProvider = migrationProviders.FirstOrDefault(x => x.ProviderName == connectionStrings.ProviderName);
         migrationProvider?.Setup(builder, connectionStrings.ConnectionString);
+
+        defaultEFCoreOptionsAction?.Invoke(builder, connectionStrings.ConnectionString, connectionStrings.ProviderName);
     }
 
     private static ConnectionStrings GetConnectionStringAndProviderName(IServiceProvider serviceProvider)
