@@ -6,6 +6,7 @@ using Umbraco.Cms.Core.Events;
 using Umbraco.Cms.Core.Notifications;
 using Umbraco.Cms.Infrastructure.Migrations;
 using Umbraco.Cms.Infrastructure.Migrations.Notifications;
+using Umbraco.Cms.Persistence.EFCore.DbContexts;
 using Umbraco.Cms.Persistence.EFCore.Models;
 using Umbraco.Extensions;
 
