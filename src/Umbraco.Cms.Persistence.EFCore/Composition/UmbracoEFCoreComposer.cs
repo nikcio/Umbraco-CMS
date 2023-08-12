@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Umbraco.Cms.Core.Composing;
 using Umbraco.Cms.Core.DependencyInjection;
@@ -5,7 +6,8 @@ using Umbraco.Cms.Core.Events;
 using Umbraco.Cms.Core.Notifications;
 using Umbraco.Cms.Infrastructure.Migrations;
 using Umbraco.Cms.Infrastructure.Migrations.Notifications;
-using Umbraco.Cms.Persistence.EFCore;
+using Umbraco.Cms.Persistence.EFCore.Models;
+using Umbraco.Extensions;
 
 namespace Umbraco.Cms.Persistence.EFCore.Composition;
 
@@ -17,6 +19,13 @@ public class UmbracoEFCoreComposer : IComposer
 
         builder.AddNotificationAsyncHandler<DatabaseSchemaAndDataCreatedNotification, EFCoreCreateTablesNotificationHandler>();
         builder.AddNotificationAsyncHandler<UnattendedInstallNotification, EFCoreCreateTablesNotificationHandler>();
+
+        builder.Services.AddUmbracoEFCoreContext<UmbracoDbContext>((options, connectionString, providerName) =>
+        {
+            // Register the entity sets needed by OpenIddict.
+            options.UseOpenIddict<UmbracoOpenIddictApplication, UmbracoOpenIddictAuthorization, UmbracoOpenIddictScope, UmbracoOpenIddictToken, string>();
+        });
+
         builder.Services.AddOpenIddict()
 
             // Register the OpenIddict core components.
