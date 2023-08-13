@@ -1773,7 +1773,7 @@ public class DocumentRepository : ContentRepositoryBase<int, IContent, DocumentR
 
             // get a unique name
             IEnumerable<SimilarNodeName> otherNames =
-                cultureNames.Select(x => new SimilarNodeName {Id = x.Id, Name = x.Name});
+                cultureNames.Where(x => x.Name != null).Select(x => new SimilarNodeName {Id = x.Id, Name = x.Name!});
             var uniqueName = SimilarNodeName.GetUniqueName(otherNames, 0, cultureInfo.Name);
 
             if (uniqueName == content.GetCultureName(cultureInfo.Culture))

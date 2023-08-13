@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Umbraco.Cms.Core.Cache;
 using Umbraco.Cms.Core.DependencyInjection;
 using Umbraco.Cms.Core.Events;
 using Umbraco.Cms.Core.Exceptions;
@@ -32,6 +33,11 @@ public class ContentService : RepositoryService, IContentService
     private readonly Lazy<IPropertyValidationService> _propertyValidationService;
     private readonly IShortStringHelper _shortStringHelper;
     private readonly ICultureImpactFactory _cultureImpactFactory;
+    private readonly IDatabaseUnitOfWork _contentWork;
+    private readonly IScopedNotificationPublisher _notificationPublisher;
+    private readonly IEntityCache<IContent, int> _contentCache;
+    private readonly IDatabaseContentScheduleRepository _contentScheduleRepository;
+    private readonly IDatabaseContentRepository _contentRepository;
     private IQuery<IContent>? _queryNotTrashed;
 
     #region Constructors
@@ -48,7 +54,12 @@ public class ContentService : RepositoryService, IContentService
     ILanguageRepository languageRepository,
     Lazy<IPropertyValidationService> propertyValidationService,
     IShortStringHelper shortStringHelper,
-    ICultureImpactFactory cultureImpactFactory)
+    ICultureImpactFactory cultureImpactFactory,
+    IDatabaseUnitOfWork contentUnitOfWork,
+    IScopedNotificationPublisher scopedNotificationPublisher,
+    IEntityCache<IContent, int> contentCache,
+    IDatabaseContentScheduleRepository contentScheduleRepository,
+    IDatabaseContentRepository contentRepository)
     : base(provider, loggerFactory, eventMessagesFactory)
     {
         _documentRepository = documentRepository;
@@ -60,6 +71,11 @@ public class ContentService : RepositoryService, IContentService
         _propertyValidationService = propertyValidationService;
         _shortStringHelper = shortStringHelper;
         _cultureImpactFactory = cultureImpactFactory;
+        _contentWork = contentUnitOfWork;
+        _notificationPublisher = scopedNotificationPublisher;
+        _contentCache = contentCache;
+        _contentScheduleRepository = contentScheduleRepository;
+        _contentRepository = contentRepository;
         _logger = loggerFactory.CreateLogger<ContentService>();
     }
 
@@ -88,7 +104,12 @@ public class ContentService : RepositoryService, IContentService
             languageRepository,
             propertyValidationService,
             shortStringHelper,
-            StaticServiceProvider.Instance.GetRequiredService<ICultureImpactFactory>())
+            StaticServiceProvider.Instance.GetRequiredService<ICultureImpactFactory>(),
+            StaticServiceProvider.Instance.GetRequiredService<IDatabaseUnitOfWork>(),
+            StaticServiceProvider.Instance.GetRequiredService<IScopedNotificationPublisher>(),
+            StaticServiceProvider.Instance.GetRequiredService<IEntityCache<IContent, int>>(),
+            StaticServiceProvider.Instance.GetRequiredService<IDatabaseContentScheduleRepository>(),
+            StaticServiceProvider.Instance.GetRequiredService<IDatabaseContentRepository>())
     {
     }
 
@@ -977,87 +998,106 @@ public class ContentService : RepositoryService, IContentService
 
     #region Save, Publish, Unpublish
 
-    /// <inheritdoc />
-    public OperationResult Save(IContent content, int? userId = null, ContentScheduleCollection? contentSchedule = null)
+    private void PrepareForSave(IContent contentItem, int userId)
     {
-        PublishedState publishedState = content.PublishedState;
-        if (publishedState != PublishedState.Published && publishedState != PublishedState.Unpublished)
+        if (!contentItem.HasIdentity)
         {
-            throw new InvalidOperationException(
-                $"Cannot save (un)publishing content with name: {content.Name} - and state: {content.PublishedState}, use the dedicated SavePublished method.");
+            contentItem.CreatorId = userId;
         }
 
-        if (content.Name != null && content.Name.Length > 255)
+        contentItem.WriterId = userId;
+        contentItem.AddingEntity();
+
+        if (!contentItem.TemplateId.HasValue)
         {
-            throw new InvalidOperationException(
-                $"Content with the name {content.Name} cannot be more than 255 characters in length.");
+            contentItem.TemplateId = contentItem.ContentType.DefaultTemplate?.Id;
         }
 
-        EventMessages eventMessages = EventMessagesFactory.Get();
+        EnsureInvariantNameExists(contentItem);
 
-        using (ICoreScope scope = ScopeProvider.CreateCoreScope())
+        // TODO: Do we still need to keep doing this?
+        contentItem.SanitizeEntityPropertiesForXmlStorage();
+    }
+
+    private void EnsureInvariantNameExists(IContent contentItem)
+    {
+        if (contentItem.ContentType.VariesByCulture())
         {
-            var savingNotification = new ContentSavingNotification(content, eventMessages);
-            if (scope.Notifications.PublishCancelable(savingNotification))
+            if (contentItem.CultureInfos?.Count == 0)
             {
-                scope.Complete();
-                return OperationResult.Cancel(eventMessages);
+                throw new InvalidOperationException("Cannot save content with an empty name.");
             }
 
-            scope.WriteLock(Constants.Locks.ContentTree);
-            userId ??= Constants.Security.SuperUserId;
-
-            if (content.HasIdentity == false)
+            var defaultCulture = _languageRepository.GetDefaultIsoCode();
+            if (defaultCulture != null && contentItem.CultureInfos != null && contentItem.CultureInfos.TryGetValue(defaultCulture, out ContentCultureInfos cultureName) && cultureName.Name != null)
             {
-                content.CreatorId = userId.Value;
+                contentItem.Name = cultureName.Name;
             }
-
-            content.WriterId = userId.Value;
-
-            // track the cultures that have changed
-            List<string>? culturesChanging = content.ContentType.VariesByCulture()
-                ? content.CultureInfos?.Values.Where(x => x.IsDirty()).Select(x => x.Culture).ToList()
-                : null;
-
-            // TODO: Currently there's no way to change track which variant properties have changed, we only have change
-            // tracking enabled on all values on the Property which doesn't allow us to know which variants have changed.
-            // in this particular case, determining which cultures have changed works with the above with names since it will
-            // have always changed if it's been saved in the back office but that's not really fail safe.
-            _documentRepository.Save(content);
-
-            if (contentSchedule != null)
+            else if (contentItem.CultureInfos != null && contentItem.CultureInfos.Count > 0 && contentItem.CultureInfos[0].Name != null)
             {
-                _documentRepository.PersistContentSchedule(content, contentSchedule);
-            }
-
-            scope.Notifications.Publish(
-                new ContentSavedNotification(content, eventMessages).WithStateFrom(savingNotification));
-
-            // TODO: we had code here to FORCE that this event can never be suppressed. But that just doesn't make a ton of sense?!
-            // I understand that if its suppressed that the caches aren't updated, but that would be expected. If someone
-            // is supressing events then I think it's expected that nothing will happen. They are probably doing it for perf
-            // reasons like bulk import and in those cases we don't want this occuring.
-            scope.Notifications.Publish(
-                new ContentTreeChangeNotification(content, TreeChangeTypes.RefreshNode, eventMessages));
-
-            if (culturesChanging != null)
-            {
-                IEnumerable<string>? languages = _languageRepository.GetMany()?
-                    .Where(x => culturesChanging.InvariantContains(x.IsoCode))
-                    .Select(x => x.CultureName);
-                if (languages is not null)
-                {
-                    var langs = string.Join(", ", languages);
-                    Audit(AuditType.SaveVariant, userId.Value, content.Id, $"Saved languages: {langs}", langs);
-                }
+                contentItem.Name = contentItem.CultureInfos[0].Name;
             }
             else
             {
-                Audit(AuditType.Save, userId.Value, content.Id);
+                throw new InvalidOperationException($"Cannot save content with an empty name on default culture {defaultCulture} and first culture info.");
             }
-
-            scope.Complete();
         }
+        else
+        {
+            if (string.IsNullOrWhiteSpace(contentItem.Name))
+            {
+                throw new InvalidOperationException("Cannot save content with an empty name.");
+            }
+        }
+    }
+
+    private static void ValidateForSave(IContent contentItem)
+    {
+        if (contentItem.PublishedState != PublishedState.Published && contentItem.PublishedState != PublishedState.Unpublished)
+        {
+            throw new InvalidOperationException($"Cannot save (un)publishing content with name: {contentItem.Name} - and state: {contentItem.PublishedState}, use the dedicated SavePublished method.");
+        }
+
+        if (contentItem.Name != null && contentItem.Name.Length > 255)
+        {
+            throw new InvalidOperationException($"Content with the name {contentItem.Name} cannot be more than 255 characters in length.");
+        }
+    }
+
+    /// <inheritdoc />
+    public OperationResult Save(IContent content, int? userId = Constants.Security.SuperUserId, ContentScheduleCollection? contentSchedule = null)
+    {
+        userId ??= Constants.Security.SuperUserId;
+        PrepareForSave(content, userId.Value);
+
+        ValidateForSave(content);
+
+        EventMessages eventMessages = EventMessagesFactory.Get();
+
+        var savingNotification = new ContentSavingNotification(content, eventMessages);
+        if (_notificationPublisher.PublishCancelable(savingNotification))
+        {
+            return OperationResult.Cancel(eventMessages);
+        }
+
+        _contentWork.Start();
+
+        _contentWork.WriteLock(Constants.Locks.ContentTree);
+
+        IContent savedContentItem = _contentRepository.SaveContent(content);
+
+        if (contentSchedule != null)
+        {
+            _contentScheduleRepository.SaveContentSchedule(savedContentItem, contentSchedule);
+        }
+
+        _contentWork.Complete();
+
+        _contentCache.Set(savedContentItem);
+
+        _notificationPublisher.Publish(new ContentSavedNotification(content, eventMessages).WithStateFrom(savingNotification));
+
+        _notificationPublisher.Publish(new ContentTreeChangeNotification(content, TreeChangeTypes.RefreshNode, eventMessages));
 
         return OperationResult.Succeed(eventMessages);
     }

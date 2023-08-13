@@ -3,6 +3,7 @@ using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Persistence.Repositories;
 using Umbraco.Cms.Infrastructure.Persistence.Dtos;
+using Umbraco.Cms.Infrastructure.Persistence.Models;
 using Umbraco.Extensions;
 
 namespace Umbraco.Cms.Infrastructure.Persistence.Factories;
@@ -216,5 +217,167 @@ internal static class PropertyFactory
         }
 
         return dto;
+    }
+
+    /// <summary>
+    /// Creates a collection of <see cref="PropertyDataDto" /> from a collection of <see cref="Property" />
+    /// </summary>
+    /// <param name="contentItem"></param>
+    /// <param name="languageRepository"></param>
+    /// <param name="edited">out parameter indicating that one or more properties have been edited</param>
+    /// <param name="editedCultures">
+    ///     Out parameter containing a collection of edited cultures when the contentVariation varies by culture.
+    ///     The value of this will be used to populate the edited cultures in the umbracoDocumentCultureVariation table.
+    /// </param>
+    /// <returns></returns>
+    internal static IEnumerable<UmbracoPropertyDatum> BuildUmbracoPropertyDatums(
+        IContent contentItem,
+        IDatabaseLanguageRepository languageRepository,
+        out bool edited,
+        out HashSet<string>? editedCultures)
+    {
+        var propertyData = new List<UmbracoPropertyDatum>();
+        edited = false;
+        editedCultures = null;
+        string? defaultCulture = null;
+
+        var contentItemVariesByCulture = contentItem.ContentType.VariesByCulture();
+
+        foreach (IProperty property in contentItem.Properties)
+        {
+            if (property.PropertyType.SupportsPublishing)
+            {
+                if (contentItemVariesByCulture && editedCultures == null)
+                {
+                    editedCultures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                }
+
+                foreach (IPropertyValue propertyValue in property.Values)
+                {
+                    var isInvariantValue = propertyValue.Culture == null && propertyValue.Segment == null;
+                    var isCultureValue = propertyValue.Culture != null;
+                    var isSegmentValue = propertyValue.Segment != null;
+
+                    if ((propertyValue.PublishedValue != null || isSegmentValue) && contentItem.PublishedVersionId > 0)
+                    {
+                        propertyData.Add(BuildUmbracoPropertyDatum(contentItem.PublishedVersionId, GetLanguageId(languageRepository, propertyValue), property, propertyValue));
+                    }
+
+                    if (propertyValue.EditedValue != null || isSegmentValue)
+                    {
+                        propertyData.Add(BuildUmbracoPropertyDatum(contentItem.VersionId, GetLanguageId(languageRepository, propertyValue), property, propertyValue));
+                    }
+
+                    // property.Values will contain ALL of it's values, both variant and invariant which will be populated if the
+                    // administrator has previously changed the property type to be variant vs invariant.
+                    // We need to check for this scenario here because otherwise the editedCultures and edited flags
+                    // will end up incorrectly set in the umbracoDocumentCultureVariation table so here we need to
+                    // only process edited cultures based on the current value type and how the property varies.
+                    // The above logic will still persist the currently saved property value for each culture in case the admin
+                    // decides to swap the property's variance again, in which case the edited flag will be recalculated.
+                    if ((property.PropertyType.VariesByCulture() && isInvariantValue) || (!property.PropertyType.VariesByCulture() && isCultureValue))
+                    {
+                        continue;
+                    }
+
+                    var sameValues = propertyValue?.PublishedValue == null
+                        ? propertyValue?.EditedValue == null
+                        : propertyValue.PublishedValue.Equals(propertyValue.EditedValue);
+
+                    edited |= !sameValues;
+
+                    if (contentItemVariesByCulture && !sameValues)
+                    {
+                        if (isCultureValue && propertyValue?.Culture is not null)
+                        {
+                            editedCultures?.Add(propertyValue.Culture);
+                        }
+                        else if (isInvariantValue)
+                        {
+                            defaultCulture ??= languageRepository.GetDefaultIsoCode();
+
+                            editedCultures?.Add(defaultCulture);
+                        }
+                    }
+                }
+            }
+            else
+            {
+                foreach (IPropertyValue propertyValue in property.Values)
+                {
+                    if (propertyValue.EditedValue != null)
+                    {
+                        propertyData.Add(BuildUmbracoPropertyDatum(contentItem.VersionId, GetLanguageId(languageRepository, propertyValue), property, propertyValue));
+                    }
+                }
+
+                edited = true;
+            }
+        }
+
+        return propertyData;
+
+        static int? GetLanguageId(IDatabaseLanguageRepository languageRepository, IPropertyValue propertyValue) => propertyValue.Culture == null ? null : languageRepository.GetIdByIsoCode(propertyValue.Culture);
+    }
+
+    private static UmbracoPropertyDatum BuildUmbracoPropertyDatum(int versionId, int? languageId, IProperty property, IPropertyValue propertyValue)
+    {
+        var umbracoPropertyDatum = new UmbracoPropertyDatum
+        {
+            VersionId = versionId,
+            PropertyTypeId = property.PropertyTypeId,
+        };
+
+        if (languageId.HasValue)
+        {
+            umbracoPropertyDatum.LanguageId = languageId;
+        }
+
+        if (propertyValue.Segment != null)
+        {
+            umbracoPropertyDatum.Segment = propertyValue.Segment;
+        }
+
+        if (property.ValueStorageType == ValueStorageType.Integer && (propertyValue.EditedValue is bool || property.PropertyType.PropertyEditorAlias == Constants.PropertyEditors.Aliases.Boolean))
+        {
+            umbracoPropertyDatum.IntValue = propertyValue.EditedValue != null && string.IsNullOrEmpty(propertyValue.EditedValue.ToString()) ? 0 : Convert.ToInt32(propertyValue.EditedValue);
+        }
+
+        if (propertyValue.EditedValue == null)
+        {
+            return umbracoPropertyDatum;
+        }
+
+        if (property.ValueStorageType == ValueStorageType.Integer)
+        {
+            if (propertyValue.EditedValue != null && !string.IsNullOrWhiteSpace(propertyValue.EditedValue.ToString()) && int.TryParse(propertyValue.EditedValue.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var val))
+            {
+                umbracoPropertyDatum.IntValue = val;
+            }
+        }
+        else if (property.ValueStorageType == ValueStorageType.Decimal)
+        {
+            if (decimal.TryParse(propertyValue.EditedValue.ToString(), out var val))
+            {
+                umbracoPropertyDatum.DecimalValue = val;
+            }
+        }
+        else if (property.ValueStorageType == ValueStorageType.Date && !string.IsNullOrWhiteSpace(propertyValue.EditedValue.ToString()))
+        {
+            if (DateTime.TryParse(propertyValue.EditedValue.ToString(), out DateTime date))
+            {
+                umbracoPropertyDatum.DateValue = date;
+            }
+        }
+        else if (property.ValueStorageType == ValueStorageType.Ntext)
+        {
+            umbracoPropertyDatum.TextValue = propertyValue.EditedValue.ToString();
+        }
+        else if (property.ValueStorageType == ValueStorageType.Nvarchar)
+        {
+            umbracoPropertyDatum.VarcharValue = propertyValue.EditedValue.ToString();
+        }
+
+        return umbracoPropertyDatum;
     }
 }

@@ -265,7 +265,7 @@ public interface IContentService : IContentServiceBase<IContent>
     /// <summary>
     ///     Saves a document.
     /// </summary>
-    OperationResult Save(IContent content, int? userId = null, ContentScheduleCollection? contentSchedule = null);
+    OperationResult Save(IContent content, int? userId = Constants.Security.SuperUserId, ContentScheduleCollection? contentSchedule = null);
 
     /// <summary>
     ///     Saves documents.

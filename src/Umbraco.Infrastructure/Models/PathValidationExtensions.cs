@@ -46,6 +46,35 @@ internal static class PathValidationExtensions
     }
 
     /// <summary>
+    /// Does a quick check on the entity's set path to ensure that it's valid and consistent.
+    /// </summary>
+    /// <param name="path">The path to validate.</param>
+    /// <param name="parentId">The parent id of the entity.</param>
+    internal static void ValidatePathWithException(this string path, int parentId)
+    {
+        if (path.IsNullOrWhiteSpace())
+        {
+            throw new ArgumentException($"The path provided is empty", nameof(path));
+        }
+
+        if (parentId == default)
+        {
+            throw new ArgumentException($"The parent id cannot be the default value", nameof(parentId));
+        }
+
+        var pathParts = path.Split(Constants.CharArrays.Comma, StringSplitOptions.RemoveEmptyEntries);
+        if (pathParts.Length < 2)
+        {
+            throw new InvalidDataException($"The path provided is invalid. It must at a minium include the root Id (-1) and the content items own id.");
+        }
+
+        if (pathParts[^2] != parentId.ToInvariantString())
+        {
+            throw new InvalidDataException($"The path provided is invalid. The 2nd last id in the path must be the parent id.");
+        }
+    }
+
+    /// <summary>
     ///     Does a quick check on the entity's set path to ensure that it's valid and consistent
     /// </summary>
     /// <param name="entity"></param>

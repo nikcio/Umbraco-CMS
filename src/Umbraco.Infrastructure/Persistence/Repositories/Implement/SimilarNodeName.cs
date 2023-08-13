@@ -19,26 +19,44 @@ internal static class ListExtensions
 
 internal class SimilarNodeName
 {
-    public int Id { get; set; }
-
-    public string? Name { get; set; }
-
-    public static string? GetUniqueName(IEnumerable<SimilarNodeName> names, int nodeId, string? nodeName)
+    [Obsolete("Use the constructor with parameters instead")]
+    internal SimilarNodeName()
     {
-        IEnumerable<string?> items = names
+        Name = string.Empty;
+    }
+
+    internal SimilarNodeName(int id, string name)
+    {
+        Id = id;
+        Name = name;
+    }
+
+    internal int Id { get; set; }
+
+    internal string Name { get; set; }
+
+    internal static string? GetUniqueName(IEnumerable<SimilarNodeName> names, int nodeId, string? nodeName)
+    {
+        if (nodeName == null)
+        {
+            return null; // Unique names doesn't apply if name is null
+        }
+
+        IEnumerable<string> items = names
             .Where(x => x.Id != nodeId) // ignore same node
-            .Select(x => x.Name);
+            .Select(x => x.Name)
+            .OfType<string>();
 
         var uniqueName = GetUniqueName(items, nodeName);
 
         return uniqueName;
     }
 
-    public static string? GetUniqueName(IEnumerable<string?> names, string? name)
+    internal static string GetUniqueName(IEnumerable<string> names, string name)
     {
         var model = new StructuredName(name);
         IEnumerable<StructuredName> items = names
-            .Where(x => x?.InvariantStartsWith(model.Text) ?? false) // ignore non-matching names
+            .Where(x => x.InvariantStartsWith(model.Text)) // ignore non-matching names
             .Select(x => new StructuredName(x)).ToArray();
 
         // name is empty, and there are no other names with suffixes, so just return " (1)"
@@ -214,7 +232,7 @@ internal class SimilarNodeName
             Text = name;
         }
 
-        public string FullName
+        internal string FullName
         {
             get
             {
