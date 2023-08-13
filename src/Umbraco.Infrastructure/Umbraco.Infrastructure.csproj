@@ -82,4 +82,8 @@
       <DependentUpon>Resources.resx</DependentUpon>
     </Compile>
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Umbraco.Cms.Persistence.EFCore"/>
+  </ItemGroup>
 </Project>
