@@ -9,4 +9,6 @@ namespace Umbraco.Cms.Infrastructure.Persistence.Repositories;
 /// </summary>
 public abstract class DatabaseRepositoryBase : IDatabaseRepository
 {
+    /// <inheritdoc/>
+    public abstract object GetDatabaseConnection();
 }

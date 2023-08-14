@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Persistence.Repositories;
+using Umbraco.Cms.Core.Persistence.Repositories.Factories;
 using Umbraco.Cms.Infrastructure.Persistence.Factories;
 using Umbraco.Cms.Infrastructure.Persistence.Models;
 using Umbraco.Cms.Infrastructure.Persistence.Repositories.Implement;
@@ -26,24 +27,18 @@ internal class ContentRepository : EFCoreDatabaseRepositoryBase, IDatabaseConten
     /// Initializes a new instance of the <see cref="ContentRepository"/> class.
     /// </summary>
     /// <param name="dbContext"></param>
-    /// <param name="languageRepository"></param>
-    /// <param name="contentTagRepository"></param>
-    /// <param name="contentRelationRepository"></param>
-    /// <param name="auditRepository"></param>
+    /// <param name="databaseRepositoryFactory"></param>
     /// <param name="logger"></param>
     internal ContentRepository(
         UmbracoDbContext dbContext,
-        IDatabaseLanguageRepository languageRepository,
-        IDatabaseContentTagRepository contentTagRepository,
-        IDatabaseContentRelationRepository contentRelationRepository,
-        IDatabaseAuditRepository auditRepository,
+        IDatabaseRepositoryFactory databaseRepositoryFactory,
         ILogger<ContentRepository> logger)
         : base(dbContext)
     {
-        _languageRepository = languageRepository;
-        _contentTagRepository = contentTagRepository;
-        _contentRelationRepository = contentRelationRepository;
-        _auditRepository = auditRepository;
+        _languageRepository = databaseRepositoryFactory.CreateRepository<IDatabaseLanguageRepository>(this);
+        _contentTagRepository = databaseRepositoryFactory.CreateRepository<IDatabaseContentTagRepository>(this);
+        _contentRelationRepository = databaseRepositoryFactory.CreateRepository<IDatabaseContentRelationRepository>(this);
+        _auditRepository = databaseRepositoryFactory.CreateRepository<IDatabaseAuditRepository>(this);
         _logger = logger;
     }
 

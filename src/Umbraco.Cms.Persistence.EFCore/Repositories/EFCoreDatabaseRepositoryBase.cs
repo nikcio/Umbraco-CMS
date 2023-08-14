@@ -23,4 +23,7 @@ internal abstract class EFCoreDatabaseRepositoryBase : DatabaseRepositoryBase
     /// Gets the database context.
     /// </summary>
     protected UmbracoDbContext Context { get; }
+
+    /// <inheritdoc/>
+    public override object GetDatabaseConnection() => Context;
 }

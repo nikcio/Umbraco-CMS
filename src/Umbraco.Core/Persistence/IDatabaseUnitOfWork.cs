@@ -58,4 +58,10 @@ public interface IDatabaseUnitOfWork
     /// <param name="timeout">The database timeout in milliseconds</param>
     /// <param name="lockIds">Array of object identifiers.</param>
     void WriteLock(TimeSpan timeout, params int[] lockIds);
+
+    /// <summary>
+    /// Gets the database connection.
+    /// </summary>
+    /// <returns>The database connection.</returns>
+    object GetDatabaseConnection();
 }

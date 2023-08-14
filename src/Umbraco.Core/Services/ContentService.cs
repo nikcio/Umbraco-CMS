@@ -11,6 +11,7 @@ using Umbraco.Cms.Core.Notifications;
 using Umbraco.Cms.Core.Persistence;
 using Umbraco.Cms.Core.Persistence.Querying;
 using Umbraco.Cms.Core.Persistence.Repositories;
+using Umbraco.Cms.Core.Persistence.Repositories.Factories;
 using Umbraco.Cms.Core.Scoping;
 using Umbraco.Cms.Core.Services.Changes;
 using Umbraco.Cms.Core.Strings;
@@ -36,8 +37,8 @@ public class ContentService : RepositoryService, IContentService
     private readonly IDatabaseUnitOfWork _contentWork;
     private readonly IScopedNotificationPublisher _notificationPublisher;
     private readonly IEntityCache<IContent, int> _contentCache;
-    private readonly IDatabaseContentScheduleRepository _contentScheduleRepository;
     private readonly IDatabaseContentRepository _contentRepository;
+    private readonly IDatabaseContentScheduleRepository _contentScheduleRepository;
     private IQuery<IContent>? _queryNotTrashed;
 
     #region Constructors
@@ -58,8 +59,7 @@ public class ContentService : RepositoryService, IContentService
     IDatabaseUnitOfWork contentUnitOfWork,
     IScopedNotificationPublisher scopedNotificationPublisher,
     IEntityCache<IContent, int> contentCache,
-    IDatabaseContentScheduleRepository contentScheduleRepository,
-    IDatabaseContentRepository contentRepository)
+    IDatabaseRepositoryFactory databaseRepositoyFactory)
     : base(provider, loggerFactory, eventMessagesFactory)
     {
         _documentRepository = documentRepository;
@@ -74,8 +74,8 @@ public class ContentService : RepositoryService, IContentService
         _contentWork = contentUnitOfWork;
         _notificationPublisher = scopedNotificationPublisher;
         _contentCache = contentCache;
-        _contentScheduleRepository = contentScheduleRepository;
-        _contentRepository = contentRepository;
+        _contentRepository = databaseRepositoyFactory.CreateRepository<IDatabaseContentRepository>(_contentWork);
+        _contentScheduleRepository = databaseRepositoyFactory.CreateRepository<IDatabaseContentScheduleRepository>(_contentWork);
         _logger = loggerFactory.CreateLogger<ContentService>();
     }
 
@@ -108,8 +108,7 @@ public class ContentService : RepositoryService, IContentService
             StaticServiceProvider.Instance.GetRequiredService<IDatabaseUnitOfWork>(),
             StaticServiceProvider.Instance.GetRequiredService<IScopedNotificationPublisher>(),
             StaticServiceProvider.Instance.GetRequiredService<IEntityCache<IContent, int>>(),
-            StaticServiceProvider.Instance.GetRequiredService<IDatabaseContentScheduleRepository>(),
-            StaticServiceProvider.Instance.GetRequiredService<IDatabaseContentRepository>())
+            StaticServiceProvider.Instance.GetRequiredService<IDatabaseRepositoryFactory>())
     {
     }
 

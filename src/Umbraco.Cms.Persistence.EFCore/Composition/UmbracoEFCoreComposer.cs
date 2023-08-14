@@ -36,6 +36,8 @@ public class UmbracoEFCoreComposer : IComposer
                     .UseEntityFrameworkCore()
                     .UseDbContext<UmbracoDbContext>();
             });
+
+        
     }
 }
 
