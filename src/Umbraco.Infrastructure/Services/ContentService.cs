@@ -39,7 +39,7 @@ public class ContentService : RepositoryService, IContentService
     private readonly ICultureImpactFactory _cultureImpactFactory;
     private readonly IDatabaseUnitOfWork _contentWork;
     private readonly IScopedNotificationPublisher _notificationPublisher;
-    private readonly IEntityCache<IContent, int> _contentCache;
+    private readonly IEntityCache<IContent> _contentCache;
     private readonly IDatabaseContentRepository _contentRepository;
     private readonly IDatabaseContentScheduleRepository _contentScheduleRepository;
     private readonly IDatabaseLanguageRepository _languageRepository;
@@ -62,7 +62,7 @@ public class ContentService : RepositoryService, IContentService
     ICultureImpactFactory cultureImpactFactory,
     IDatabaseUnitOfWork contentUnitOfWork,
     IScopedNotificationPublisher scopedNotificationPublisher,
-    IEntityCache<IContent, int> contentCache,
+    IEntityCache<IContent> contentCache,
     IDatabaseRepositoryFactory databaseRepositoyFactory)
     : base(provider, loggerFactory, eventMessagesFactory)
     {
@@ -112,7 +112,7 @@ public class ContentService : RepositoryService, IContentService
             StaticServiceProvider.Instance.GetRequiredService<ICultureImpactFactory>(),
             StaticServiceProvider.Instance.GetRequiredService<IDatabaseUnitOfWork>(),
             StaticServiceProvider.Instance.GetRequiredService<IScopedNotificationPublisher>(),
-            StaticServiceProvider.Instance.GetRequiredService<IEntityCache<IContent, int>>(),
+            StaticServiceProvider.Instance.GetRequiredService<IEntityCache<IContent>>(),
             StaticServiceProvider.Instance.GetRequiredService<IDatabaseRepositoryFactory>())
     {
     }

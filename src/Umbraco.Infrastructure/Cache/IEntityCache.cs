@@ -7,8 +7,7 @@ namespace Umbraco.Cms.Infrastructure.Cache;
 /// Represents a cache for an entity.
 /// </summary>
 /// <typeparam name="TEntity"></typeparam>
-/// <typeparam name="TId"></typeparam>
-public interface IEntityCache<TEntity, TId>
+public interface IEntityCache<TEntity>
     where TEntity : class, IEntity
 {
     /// <summary>
@@ -17,7 +16,7 @@ public interface IEntityCache<TEntity, TId>
     /// <param name="id">The identifier.</param>
     /// <param name="performGet">How to get an entity if none exists in the cache.</param>
     /// <returns>The entity with the specified identifier, if it exits, else null.</returns>
-    TEntity? GetEntity(TId? id, Func<TId?, TEntity?>? performGet = null);
+    TEntity? GetEntity(int id, Func<int, TEntity?>? performGet = null);
 
     /// <summary>
     /// Gets an entity from the cache or by <paramref name="performGet"/>.
@@ -26,15 +25,15 @@ public interface IEntityCache<TEntity, TId>
     /// <param name="performGet">How to get an entity if none exists in the cache.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns>The entity with the specified identifier, if it exits, else null.</returns>
-    Task<TEntity?> GetEntityAsync(TId? id, Func<TId?, TEntity?>? performGet = null, CancellationToken cancellationToken = default) => throw new NotImplementedException(); //TODO: Implement
+    Task<TEntity?> GetEntityAsync(int id, Func<int, TEntity?>? performGet = null, CancellationToken cancellationToken = default) => throw new NotImplementedException(); //TODO: Implement
 
     /// <summary>
-    /// Gets entities from the cache or by <paramref name="performEntities"/>.
+    /// Gets entities from the cache or by <paramref name="performGetEntities"/>.
     /// </summary>
     /// <param name="ids">The identifiers.</param>
-    /// <param name="performEntities">How to get entities if they are not in the cache.</param>
+    /// <param name="performGetEntities">How to get entities if they are not in the cache.</param>
     /// <returns>The entities with the specified identifiers.</returns>
-    TEntity[] GetEntities(TId[]? ids, Func<TId[]?, IEnumerable<TEntity>>? performEntities = null);
+    TEntity[] GetEntities(int[] ids, Func<int[], IEnumerable<TEntity>>? performGetEntities = null);
 
     /// <summary>
     /// Gets entities from the cache or by <paramref name="performEntities"/>.
@@ -43,7 +42,7 @@ public interface IEntityCache<TEntity, TId>
     /// <param name="performEntities">How to get entities if they are not in the cache.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns>The entities with the specified identifiers.</returns>
-    Task<TEntity[]> GetEntitiesAsync(TId[]? ids, Func<TId[]?, IEnumerable<TEntity>>? performEntities = null, CancellationToken cancellationToken = default) => throw new NotImplementedException(); //TODO: Implement
+    Task<TEntity[]> GetEntitiesAsync(int[] ids, Func<int[], IEnumerable<TEntity>>? performEntities = null, CancellationToken cancellationToken = default) => throw new NotImplementedException(); //TODO: Implement
 
     /// <summary>
     /// Sets an entity in the cache.
@@ -79,12 +78,12 @@ public interface IEntityCache<TEntity, TId>
     /// Refreshes the entity in the cache based on its identifier, resetting its sliding expiration timeout (if any).
     /// </summary>
     /// <param name="id">The identifier.</param>
-    void RefreshEntity(TId id);
+    void RefreshEntity(int id);
 
     /// <summary>
     /// Refreshes the entity in the cache based on its identifier, resetting its sliding expiration timeout (if any).
     /// </summary>
     /// <param name="id">The identifier.</param>
     /// <param name="cancellation">A cancellation token.</param>
-    Task RefreshEntityAsync(TId id, CancellationToken cancellation = default) => throw new NotImplementedException(); //TODO: Implement
+    Task RefreshEntityAsync(int id, CancellationToken cancellation = default) => throw new NotImplementedException(); //TODO: Implement
 }
