@@ -11,10 +11,13 @@ using Umbraco.Cms.Core.Notifications;
 using Umbraco.Cms.Core.Persistence;
 using Umbraco.Cms.Core.Persistence.Querying;
 using Umbraco.Cms.Core.Persistence.Repositories;
-using Umbraco.Cms.Core.Persistence.Repositories.Factories;
 using Umbraco.Cms.Core.Scoping;
 using Umbraco.Cms.Core.Services.Changes;
 using Umbraco.Cms.Core.Strings;
+using Umbraco.Cms.Infrastructure.Cache;
+using Umbraco.Cms.Infrastructure.Persistence.Factories;
+using Umbraco.Cms.Infrastructure.Persistence.Repositories;
+using Umbraco.Cms.Infrastructure.Persistence.UnitOfWorks;
 using Umbraco.Extensions;
 
 namespace Umbraco.Cms.Core.Services;

@@ -1,6 +1,6 @@
 using Umbraco.Cms.Core.Models;
 
-namespace Umbraco.Cms.Core.Persistence.Repositories;
+namespace Umbraco.Cms.Infrastructure.Persistence.Repositories;
 
 /// <summary>
 /// Represents the ContentScheduleRepository for doing CRUD operations for <see cref="ContentSchedule"/>.

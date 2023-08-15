@@ -1,4 +1,4 @@
-namespace Umbraco.Cms.Core.Persistence.Repositories;
+namespace Umbraco.Cms.Infrastructure.Persistence.Repositories;
 
 /// <summary>
 /// Represents a repository that works with the database.

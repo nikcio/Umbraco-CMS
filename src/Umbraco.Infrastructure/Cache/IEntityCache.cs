@@ -1,6 +1,7 @@
+using Umbraco.Cms.Core.Cache;
 using Umbraco.Cms.Core.Models.Entities;
 
-namespace Umbraco.Cms.Core.Cache;
+namespace Umbraco.Cms.Infrastructure.Cache;
 
 /// <summary>
 /// Represents a cache for an entity.

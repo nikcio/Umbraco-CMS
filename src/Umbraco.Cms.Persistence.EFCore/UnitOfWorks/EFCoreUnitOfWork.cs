@@ -2,7 +2,7 @@ using System.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Umbraco.Cms.Core.DistributedLocking;
-using Umbraco.Cms.Core.Persistence.Repositories;
+using Umbraco.Cms.Infrastructure.Persistence.Repositories;
 using Umbraco.Cms.Infrastructure.Persistence.UnitOfWorks;
 using Umbraco.Cms.Persistence.EFCore.DbContexts;
 

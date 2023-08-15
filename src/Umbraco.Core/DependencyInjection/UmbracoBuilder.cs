@@ -288,7 +288,6 @@ namespace Umbraco.Cms.Core.DependencyInjection
             Services.AddUnique<IPropertyValidationService, PropertyValidationService>();
             Services.AddUnique<IDomainService, DomainService>();
             Services.AddUnique<ITagService, TagService>();
-            Services.AddUnique<IContentService, ContentService>(ServiceLifetime.Transient);
             Services.AddUnique<IContentVersionCleanupPolicy, DefaultContentVersionCleanupPolicy>();
             Services.AddUnique<IMemberService, MemberService>();
             Services.AddUnique<IMediaService, MediaService>();

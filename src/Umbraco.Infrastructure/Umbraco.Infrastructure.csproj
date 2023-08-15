@@ -84,6 +84,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="Umbraco.Cms.Persistence.EFCore"/>
+    <InternalsVisibleTo Include="Umbraco.Cms.Persistence.EFCore" />
   </ItemGroup>
 </Project>

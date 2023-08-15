@@ -1,6 +1,5 @@
 using Umbraco.Cms.Core.Cache;
 using Umbraco.Cms.Core.Models.Entities;
-using Umbraco.Cms.Core.Persistence.Repositories;
 
 namespace Umbraco.Cms.Infrastructure.Persistence.Repositories;
 

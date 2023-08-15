@@ -1,6 +1,6 @@
-﻿using Umbraco.Cms.Core.Models;
+using Umbraco.Cms.Core.Models;
 
-namespace Umbraco.Cms.Core.Persistence.Repositories;
+namespace Umbraco.Cms.Infrastructure.Persistence.Repositories;
 
 /// <summary>
 /// Represents the ContentRelationRepository for doing CRUD operations for realtions on a<see cref="IContent"/>.

@@ -1,4 +1,7 @@
-namespace Umbraco.Cms.Core.Persistence.Repositories.Factories;
+using Umbraco.Cms.Infrastructure.Persistence.Repositories;
+using Umbraco.Cms.Infrastructure.Persistence.UnitOfWorks;
+
+namespace Umbraco.Cms.Infrastructure.Persistence.Factories;
 
 /// <summary>
 /// A factory used to create database repositories.

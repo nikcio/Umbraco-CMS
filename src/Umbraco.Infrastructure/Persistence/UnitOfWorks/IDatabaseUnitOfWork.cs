@@ -2,7 +2,7 @@ using System.Data;
 using Umbraco.Cms.Core.Models.Entities;
 using Umbraco.Cms.Core.Persistence.Repositories;
 
-namespace Umbraco.Cms.Core.Persistence;
+namespace Umbraco.Cms.Infrastructure.Persistence.UnitOfWorks;
 
 /// <summary>
 /// Represents a unit of work for a database.

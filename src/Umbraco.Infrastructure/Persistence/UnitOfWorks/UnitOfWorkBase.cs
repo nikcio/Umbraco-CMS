@@ -1,9 +1,8 @@
 using System.Data;
 using Microsoft.Extensions.Logging;
 using Umbraco.Cms.Core.DistributedLocking;
-using Umbraco.Cms.Core.Persistence;
-using Umbraco.Cms.Core.Persistence.Repositories;
 using Umbraco.Cms.Core.Scoping;
+using Umbraco.Cms.Infrastructure.Persistence.Repositories;
 
 namespace Umbraco.Cms.Infrastructure.Persistence.UnitOfWorks;
 

@@ -1,9 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Umbraco.Cms.Core.Persistence;
-using Umbraco.Cms.Core.Persistence.Repositories;
-using Umbraco.Cms.Core.Persistence.Repositories.Factories;
+using Umbraco.Cms.Infrastructure.Persistence.Factories;
+using Umbraco.Cms.Infrastructure.Persistence.Repositories;
+using Umbraco.Cms.Infrastructure.Persistence.UnitOfWorks;
 using Umbraco.Cms.Persistence.EFCore.DbContexts;
 using Umbraco.Cms.Persistence.EFCore.Repositories;
 
