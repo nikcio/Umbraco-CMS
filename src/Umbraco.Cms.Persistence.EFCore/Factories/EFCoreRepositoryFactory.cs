@@ -1,8 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -14,6 +9,9 @@ using Umbraco.Cms.Persistence.EFCore.Repositories;
 
 namespace Umbraco.Cms.Persistence.EFCore.Factories;
 
+/// <summary>
+/// A factory for creating <see cref="IDatabaseRepository"/> instances.
+/// </summary>
 internal class EFCoreRepositoryFactory : IDatabaseRepositoryFactory
 {
     private readonly IServiceProvider _serviceProvider;
@@ -21,6 +19,11 @@ internal class EFCoreRepositoryFactory : IDatabaseRepositoryFactory
 
     private readonly Dictionary<Type, Func<IServiceProvider, UmbracoDbContext, IDatabaseRepository>> _registeredRepositories = new();
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="EFCoreRepositoryFactory"/> class.
+    /// </summary>
+    /// <param name="serviceProvider"></param>
+    /// <param name="dbContextFactory"></param>
     public EFCoreRepositoryFactory(IServiceProvider serviceProvider, IDbContextFactory<UmbracoDbContext> dbContextFactory)
     {
         _serviceProvider = serviceProvider;
@@ -29,6 +32,7 @@ internal class EFCoreRepositoryFactory : IDatabaseRepositoryFactory
         RegisterRepository<IDatabaseContentRepository>((provider, dbContext) => new ContentRepository(dbContext, provider.GetRequiredService<IDatabaseRepositoryFactory>(), provider.GetRequiredService<ILogger<ContentRepository>>()));
     }
 
+    /// <inheritdoc/>
     public TRepository CreateRepository<TRepository>()
         where TRepository : class, IDatabaseRepository
     {
@@ -42,6 +46,7 @@ internal class EFCoreRepositoryFactory : IDatabaseRepositoryFactory
         }
     }
 
+    /// <inheritdoc/>
     public TRepository CreateRepository<TRepository>(IDatabaseUnitOfWork unitOfWork)
         where TRepository : class, IDatabaseRepository
     {
@@ -62,6 +67,7 @@ internal class EFCoreRepositoryFactory : IDatabaseRepositoryFactory
         }
     }
 
+    /// <inheritdoc/>
     public TRepository CreateRepository<TRepository>(IDatabaseRepository repository)
         where TRepository : class, IDatabaseRepository
     {

@@ -62,6 +62,9 @@ internal class EFCoreUnitOfWork : UnitOfWorkBase
     }
 
     /// <inheritdoc/>
+    public override object GetDatabaseConnection() => _dbContext;
+
+    /// <inheritdoc/>
     public override void Start(IsolationLevel? isolationLevel = null)
     {
         if (isolationLevel.HasValue)

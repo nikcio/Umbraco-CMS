@@ -29,7 +29,7 @@ public class ContentService : RepositoryService, IContentService
     private readonly IDocumentBlueprintRepository _documentBlueprintRepository;
     private readonly IDocumentRepository _documentRepository;
     private readonly IEntityRepository _entityRepository;
-    private readonly ILanguageRepository _languageRepository;
+    private readonly ILanguageRepository _oldLanguageRepository;
     private readonly ILogger<ContentService> _logger;
     private readonly Lazy<IPropertyValidationService> _propertyValidationService;
     private readonly IShortStringHelper _shortStringHelper;
@@ -39,6 +39,7 @@ public class ContentService : RepositoryService, IContentService
     private readonly IEntityCache<IContent, int> _contentCache;
     private readonly IDatabaseContentRepository _contentRepository;
     private readonly IDatabaseContentScheduleRepository _contentScheduleRepository;
+    private readonly IDatabaseLanguageRepository _languageRepository;
     private IQuery<IContent>? _queryNotTrashed;
 
     #region Constructors
@@ -67,7 +68,7 @@ public class ContentService : RepositoryService, IContentService
         _auditRepository = auditRepository;
         _contentTypeRepository = contentTypeRepository;
         _documentBlueprintRepository = documentBlueprintRepository;
-        _languageRepository = languageRepository;
+        _oldLanguageRepository = languageRepository;
         _propertyValidationService = propertyValidationService;
         _shortStringHelper = shortStringHelper;
         _cultureImpactFactory = cultureImpactFactory;
@@ -76,6 +77,7 @@ public class ContentService : RepositoryService, IContentService
         _contentCache = contentCache;
         _contentRepository = databaseRepositoyFactory.CreateRepository<IDatabaseContentRepository>(_contentWork);
         _contentScheduleRepository = databaseRepositoyFactory.CreateRepository<IDatabaseContentScheduleRepository>(_contentWork);
+        _languageRepository = databaseRepositoyFactory.CreateRepository<IDatabaseLanguageRepository>(_contentWork);
         _logger = loggerFactory.CreateLogger<ContentService>();
     }
 
@@ -1183,7 +1185,7 @@ public class ContentService : RepositoryService, IContentService
         {
             scope.WriteLock(Constants.Locks.ContentTree);
 
-            var allLangs = _languageRepository.GetMany().ToList();
+            var allLangs = _oldLanguageRepository.GetMany().ToList();
 
             // Change state to publishing
             content.PublishedState = PublishedState.Publishing;
@@ -1231,7 +1233,7 @@ public class ContentService : RepositoryService, IContentService
         {
             scope.WriteLock(Constants.Locks.ContentTree);
 
-            var allLangs = _languageRepository.GetMany().ToList();
+            var allLangs = _oldLanguageRepository.GetMany().ToList();
 
             EventMessages evtMsgs = EventMessagesFactory.Get();
 
@@ -1318,7 +1320,7 @@ public class ContentService : RepositoryService, IContentService
         {
             scope.WriteLock(Constants.Locks.ContentTree);
 
-            var allLangs = _languageRepository.GetMany().ToList();
+            var allLangs = _oldLanguageRepository.GetMany().ToList();
 
             var savingNotification = new ContentSavingNotification(content, evtMsgs);
             if (scope.Notifications.PublishCancelable(savingNotification))
@@ -1405,7 +1407,7 @@ public class ContentService : RepositoryService, IContentService
                 return new PublishResult(PublishResultType.FailedPublishCancelledByEvent, evtMsgs, content);
             }
 
-            var allLangs = _languageRepository.GetMany().ToList();
+            var allLangs = _oldLanguageRepository.GetMany().ToList();
 
             PublishResult result = CommitDocumentChangesInternal(scope, content, evtMsgs, allLangs, savingNotification.State, userId);
             scope.Complete();
@@ -1756,7 +1758,7 @@ public class ContentService : RepositoryService, IContentService
     /// <inheritdoc />
     public IEnumerable<PublishResult> PerformScheduledPublish(DateTime date)
     {
-        var allLangs = new Lazy<List<ILanguage>>(() => _languageRepository.GetMany().ToList());
+        var allLangs = new Lazy<List<ILanguage>>(() => _oldLanguageRepository.GetMany().ToList());
         EventMessages evtMsgs = EventMessagesFactory.Get();
         var results = new List<PublishResult>();
 
@@ -2130,7 +2132,7 @@ public class ContentService : RepositoryService, IContentService
         {
             scope.WriteLock(Constants.Locks.ContentTree);
 
-            var allLangs = _languageRepository.GetMany().ToList();
+            var allLangs = _oldLanguageRepository.GetMany().ToList();
 
             if (!document.HasIdentity)
             {

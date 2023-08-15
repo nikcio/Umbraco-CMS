@@ -37,6 +37,9 @@ internal abstract class UnitOfWorkBase : IDatabaseUnitOfWork
     public abstract void Complete();
 
     /// <inheritdoc/>
+    public abstract object GetDatabaseConnection();
+
+    /// <inheritdoc/>
     public void ReadLock(params int[] lockIds) => LockingMechanism.ReadLock(InstanceId, lockIds);
 
     /// <inheritdoc/>
