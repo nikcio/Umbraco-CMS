@@ -28,7 +28,7 @@ namespace Umbraco.Cms.Persistence.EFCore.DbContexts;
 /// To find documentation about this way of working with the context see
 /// https://learn.microsoft.com/en-us/ef/core/managing-schemas/migrations/providers?tabs=dotnet-core-cli#using-one-context-type
 /// </remarks>
-public class UmbracoDbContext : UmbracoDbContextBase
+public class UmbracoDbContext : DbContext
 {
     public UmbracoDbContext(DbContextOptions<UmbracoDbContext> options)
         : base(ConfigureOptions(options, out IOptionsMonitor<ConnectionStrings>? connectionStringsOptionsMonitor))
@@ -67,124 +67,124 @@ public class UmbracoDbContext : UmbracoDbContextBase
     }
 
     /// <inheritdoc/>
-    public override DbSet<CmsContentNu> CmsContentNus => Set<CmsContentNu>();
+    public DbSet<CmsContentNu> CmsContentNus => Set<CmsContentNu>();
 
     /// <inheritdoc/>
-    public override DbSet<CmsContentType> CmsContentTypes => Set<CmsContentType>();
+    public DbSet<CmsContentType> CmsContentTypes => Set<CmsContentType>();
 
     /// <inheritdoc/>
-    public override DbSet<CmsContentTypeAllowedContentType> CmsContentTypeAllowedContentTypes => Set<CmsContentTypeAllowedContentType>();
+    public DbSet<CmsContentTypeAllowedContentType> CmsContentTypeAllowedContentTypes => Set<CmsContentTypeAllowedContentType>();
 
     /// <inheritdoc/>
-    public override DbSet<CmsDictionary> CmsDictionaries => Set<CmsDictionary>();
+    public DbSet<CmsDictionary> CmsDictionaries => Set<CmsDictionary>();
 
     /// <inheritdoc/>
-    public override DbSet<CmsDocumentType> CmsDocumentTypes => Set<CmsDocumentType>();
+    public DbSet<CmsDocumentType> CmsDocumentTypes => Set<CmsDocumentType>();
 
     /// <inheritdoc/>
-    public override DbSet<CmsLanguageText> CmsLanguageTexts => Set<CmsLanguageText>();
+    public DbSet<CmsLanguageText> CmsLanguageTexts => Set<CmsLanguageText>();
 
     /// <inheritdoc/>
-    public override DbSet<CmsMacro> CmsMacros => Set<CmsMacro>();
+    public DbSet<CmsMacro> CmsMacros => Set<CmsMacro>();
 
     /// <inheritdoc/>
-    public override DbSet<CmsMacroProperty> CmsMacroProperties => Set<CmsMacroProperty>();
+    public DbSet<CmsMacroProperty> CmsMacroProperties => Set<CmsMacroProperty>();
 
     /// <inheritdoc/>
-    public override DbSet<CmsMember> CmsMembers => Set<CmsMember>();
+    public DbSet<CmsMember> CmsMembers => Set<CmsMember>();
 
     /// <inheritdoc/>
-    public override DbSet<CmsMemberType> CmsMemberTypes => Set<CmsMemberType>();
+    public DbSet<CmsMemberType> CmsMemberTypes => Set<CmsMemberType>();
 
     /// <inheritdoc/>
-    public override DbSet<CmsPropertyType> CmsPropertyTypes => Set<CmsPropertyType>();
+    public DbSet<CmsPropertyType> CmsPropertyTypes => Set<CmsPropertyType>();
 
     /// <inheritdoc/>
-    public override DbSet<CmsPropertyTypeGroup> CmsPropertyTypeGroups => Set<CmsPropertyTypeGroup>();
+    public DbSet<CmsPropertyTypeGroup> CmsPropertyTypeGroups => Set<CmsPropertyTypeGroup>();
 
     /// <inheritdoc/>
-    public override DbSet<CmsTag> CmsTags => Set<CmsTag>();
+    public DbSet<CmsTag> CmsTags => Set<CmsTag>();
 
     /// <inheritdoc/>
-    public override DbSet<CmsTagRelationship> CmsTagRelationships => Set<CmsTagRelationship>();
+    public DbSet<CmsTagRelationship> CmsTagRelationships => Set<CmsTagRelationship>();
 
     /// <inheritdoc/>
-    public override DbSet<CmsTemplate> CmsTemplates => Set<CmsTemplate>();
+    public DbSet<CmsTemplate> CmsTemplates => Set<CmsTemplate>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoAccess> UmbracoAccesses => Set<UmbracoAccess>();
+    public DbSet<UmbracoAccess> UmbracoAccesses => Set<UmbracoAccess>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoAccessRule> UmbracoAccessRules => Set<UmbracoAccessRule>();
+    public DbSet<UmbracoAccessRule> UmbracoAccessRules => Set<UmbracoAccessRule>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoAudit> UmbracoAudits => Set<UmbracoAudit>();
+    public DbSet<UmbracoAudit> UmbracoAudits => Set<UmbracoAudit>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoCacheInstruction> UmbracoCacheInstructions => Set<UmbracoCacheInstruction>();
+    public DbSet<UmbracoCacheInstruction> UmbracoCacheInstructions => Set<UmbracoCacheInstruction>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoConsent> UmbracoConsents => Set<UmbracoConsent>();
+    public DbSet<UmbracoConsent> UmbracoConsents => Set<UmbracoConsent>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoContent> UmbracoContents => Set<UmbracoContent>();
+    public DbSet<UmbracoContent> UmbracoContents => Set<UmbracoContent>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoContentSchedule> UmbracoContentSchedules => Set<UmbracoContentSchedule>();
+    public DbSet<UmbracoContentSchedule> UmbracoContentSchedules => Set<UmbracoContentSchedule>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoContentVersion> UmbracoContentVersions => Set<UmbracoContentVersion>();
+    public DbSet<UmbracoContentVersion> UmbracoContentVersions => Set<UmbracoContentVersion>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoContentVersionCleanupPolicy> UmbracoContentVersionCleanupPolicies => Set<UmbracoContentVersionCleanupPolicy>();
+    public DbSet<UmbracoContentVersionCleanupPolicy> UmbracoContentVersionCleanupPolicies => Set<UmbracoContentVersionCleanupPolicy>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoContentVersionCultureVariation> UmbracoContentVersionCultureVariations => Set<UmbracoContentVersionCultureVariation>();
+    public DbSet<UmbracoContentVersionCultureVariation> UmbracoContentVersionCultureVariations => Set<UmbracoContentVersionCultureVariation>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoCreatedPackageSchema> UmbracoCreatedPackageSchemas => Set<UmbracoCreatedPackageSchema>();
+    public DbSet<UmbracoCreatedPackageSchema> UmbracoCreatedPackageSchemas => Set<UmbracoCreatedPackageSchema>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoDataType> UmbracoDataTypes => Set<UmbracoDataType>();
+    public DbSet<UmbracoDataType> UmbracoDataTypes => Set<UmbracoDataType>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoDocument> UmbracoDocuments => Set<UmbracoDocument>();
+    public DbSet<UmbracoDocument> UmbracoDocuments => Set<UmbracoDocument>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoDocumentCultureVariation> UmbracoDocumentCultureVariations => Set<UmbracoDocumentCultureVariation>();
+    public DbSet<UmbracoDocumentCultureVariation> UmbracoDocumentCultureVariations => Set<UmbracoDocumentCultureVariation>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoDocumentVersion> UmbracoDocumentVersions => Set<UmbracoDocumentVersion>();
+    public DbSet<UmbracoDocumentVersion> UmbracoDocumentVersions => Set<UmbracoDocumentVersion>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoDomain> UmbracoDomains => Set<UmbracoDomain>();
+    public DbSet<UmbracoDomain> UmbracoDomains => Set<UmbracoDomain>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoExternalLogin> UmbracoExternalLogins => Set<UmbracoExternalLogin>();
+    public DbSet<UmbracoExternalLogin> UmbracoExternalLogins => Set<UmbracoExternalLogin>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoExternalLoginToken> UmbracoExternalLoginTokens => Set<UmbracoExternalLoginToken>();
+    public DbSet<UmbracoExternalLoginToken> UmbracoExternalLoginTokens => Set<UmbracoExternalLoginToken>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoKeyValue> UmbracoKeyValues => Set<UmbracoKeyValue>();
+    public DbSet<UmbracoKeyValue> UmbracoKeyValues => Set<UmbracoKeyValue>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoLanguage> UmbracoLanguages => Set<UmbracoLanguage>();
+    public DbSet<UmbracoLanguage> UmbracoLanguages => Set<UmbracoLanguage>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoLock> UmbracoLocks => Set<UmbracoLock>();
+    public DbSet<UmbracoLock> UmbracoLocks => Set<UmbracoLock>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoLog> UmbracoLogs => Set<UmbracoLog>();
+    public DbSet<UmbracoLog> UmbracoLogs => Set<UmbracoLog>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoLogViewerQuery> UmbracoLogViewerQueries => Set<UmbracoLogViewerQuery>();
+    public DbSet<UmbracoLogViewerQuery> UmbracoLogViewerQueries => Set<UmbracoLogViewerQuery>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoMediaVersion> UmbracoMediaVersions => Set<UmbracoMediaVersion>();
+    public DbSet<UmbracoMediaVersion> UmbracoMediaVersions => Set<UmbracoMediaVersion>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoNode> UmbracoNodes => Set<UmbracoNode>();
+    public DbSet<UmbracoNode> UmbracoNodes => Set<UmbracoNode>();
 
     /// <remarks>
     /// Not included in <see cref="IUmbracoDatabaseContract"/> because the model depends on <see cref="OpenIddict.EntityFrameworkCore"/>
@@ -207,43 +207,43 @@ public class UmbracoDbContext : UmbracoDbContextBase
     public virtual DbSet<UmbracoOpenIddictToken> UmbracoOpenIddictTokens => Set<UmbracoOpenIddictToken>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoPropertyDatum> UmbracoPropertyData => Set<UmbracoPropertyDatum>();
+    public DbSet<UmbracoPropertyDatum> UmbracoPropertyData => Set<UmbracoPropertyDatum>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoRedirectUrl> UmbracoRedirectUrls => Set<UmbracoRedirectUrl>();
+    public DbSet<UmbracoRedirectUrl> UmbracoRedirectUrls => Set<UmbracoRedirectUrl>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoRelation> UmbracoRelations => Set<UmbracoRelation>();
+    public DbSet<UmbracoRelation> UmbracoRelations => Set<UmbracoRelation>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoRelationType> UmbracoRelationTypes => Set<UmbracoRelationType>();
+    public DbSet<UmbracoRelationType> UmbracoRelationTypes => Set<UmbracoRelationType>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoServer> UmbracoServers => Set<UmbracoServer>();
+    public DbSet<UmbracoServer> UmbracoServers => Set<UmbracoServer>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoTwoFactorLogin> UmbracoTwoFactorLogins => Set<UmbracoTwoFactorLogin>();
+    public DbSet<UmbracoTwoFactorLogin> UmbracoTwoFactorLogins => Set<UmbracoTwoFactorLogin>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoUser> UmbracoUsers => Set<UmbracoUser>();
+    public DbSet<UmbracoUser> UmbracoUsers => Set<UmbracoUser>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoUser2NodeNotify> UmbracoUser2NodeNotifies => Set<UmbracoUser2NodeNotify>();
+    public DbSet<UmbracoUser2NodeNotify> UmbracoUser2NodeNotifies => Set<UmbracoUser2NodeNotify>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoUserGroup> UmbracoUserGroups => Set<UmbracoUserGroup>();
+    public DbSet<UmbracoUserGroup> UmbracoUserGroups => Set<UmbracoUserGroup>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoUserGroup2App> UmbracoUserGroup2Apps => Set<UmbracoUserGroup2App>();
+    public DbSet<UmbracoUserGroup2App> UmbracoUserGroup2Apps => Set<UmbracoUserGroup2App>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoUserGroup2NodePermission> UmbracoUserGroup2NodePermissions => Set<UmbracoUserGroup2NodePermission>();
+    public DbSet<UmbracoUserGroup2NodePermission> UmbracoUserGroup2NodePermissions => Set<UmbracoUserGroup2NodePermission>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoUserLogin> UmbracoUserLogins => Set<UmbracoUserLogin>();
+    public DbSet<UmbracoUserLogin> UmbracoUserLogins => Set<UmbracoUserLogin>();
 
     /// <inheritdoc/>
-    public override DbSet<UmbracoUserStartNode> UmbracoUserStartNodes => Set<UmbracoUserStartNode>();
+    public DbSet<UmbracoUserStartNode> UmbracoUserStartNodes => Set<UmbracoUserStartNode>();
 
     /// <inheritdoc/>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
