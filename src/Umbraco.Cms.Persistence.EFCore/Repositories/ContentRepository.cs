@@ -14,7 +14,7 @@ namespace Umbraco.Cms.Persistence.EFCore.Repositories;
 /// <summary>
 /// Represents the ContentRepository for doing CRUD operations for <see cref="IContent"/>.
 /// </summary>
-internal class ContentRepository : EFCoreDatabaseRepositoryBase, IDatabaseContentRepository
+internal class ContentRepository : EFCoreeRepositoryBase, IDatabaseContentRepository
 {
     private readonly IDatabaseLanguageRepository _languageRepository;
     private readonly IDatabaseContentTagRepository _contentTagRepository;

@@ -46,11 +46,11 @@ internal class LegacyEntityCache<TEntity> : IEntityCache<TEntity>
     {
         var scopeAccessor = new BridgeScopeAccessor(scopeProvider);
 
-        if (_fullDataSetRepositoryCacheTypes.Any(type => type == typeof(TEntity) || type.IsAssignableFrom(typeof(TEntity))))
+        if (_fullDataSetRepositoryCacheTypes.Exists(type => type == typeof(TEntity) || type.IsAssignableFrom(typeof(TEntity))))
         {
             _cachePolicy = new FullDataSetRepositoryCachePolicy<TEntity, int>(appPolicyCache, scopeAccessor, item => item.Id, false);
         }
-        else if (_singleItemsOnlyRepositoryCacheTypes.Any(type => type == typeof(TEntity) || type.IsAssignableFrom(typeof(TEntity))))
+        else if (_singleItemsOnlyRepositoryCacheTypes.Exists(type => type == typeof(TEntity) || type.IsAssignableFrom(typeof(TEntity))))
         {
             _cachePolicy = new SingleItemsOnlyRepositoryCachePolicy<TEntity, int>(appPolicyCache, scopeAccessor, new RepositoryCachePolicyOptions());
         }
@@ -59,55 +59,61 @@ internal class LegacyEntityCache<TEntity> : IEntityCache<TEntity>
     }
 
     /// <inheritdoc/>
-    public TEntity[] GetEntities(int[] ids, Func<int[], IEnumerable<TEntity>>? performGetEntities = null)
+    public TEntity[] GetEntities(string[] ids, Func<string[], IEnumerable<TEntity>>? performGetEntities = null)
     {
+        var intIds = ids.Select(int.Parse).ToArray();
         if (performGetEntities == null)
         {
-            return _cachePolicy.GetAll(ids, _ => Enumerable.Empty<TEntity>());
+            return _cachePolicy.GetAll(intIds, _ => Enumerable.Empty<TEntity>());
         }
 
-        return _cachePolicy.GetAll(ids, ids => performGetEntities(ids ?? Array.Empty<int>()));
+        TEntity[] returnValue = _cachePolicy.GetAll(intIds, _ => Enumerable.Empty<TEntity>());
+
+        if (!returnValue.Any())
+        {
+            returnValue = performGetEntities(ids).ToArray();
+        }
+
+        return returnValue;
     }
 
     /// <inheritdoc/>
-    public TEntity? GetEntity(int id, Func<int, TEntity?>? performGet = null)
+    public TEntity? GetEntity(string id, Func<string, TEntity?>? performGet = null)
     {
+        var intId = int.Parse(id);
         if (performGet == null)
         {
-            return _cachePolicy.Get(id, _ => null, _ => null);
+            return _cachePolicy.Get(intId, _ => null, _ => null);
         }
 
-        return _cachePolicy.Get(id, performGet, _ => null);
+        return _cachePolicy.Get(intId, _ => null, _ => null) ?? performGet(id);
     }
 
     /// <inheritdoc/>
-    public void RefreshEntity(int id) => throw new NotImplementedException("This implementation doesn't support refreshing entities.");
+    public void RefreshEntity(string id) => throw new NotImplementedException("This implementation doesn't support refreshing entities.");
 
     /// <inheritdoc/>
     public void Remove(TEntity entity)
     {
-        _cachePolicy.Delete(entity, entity =>
-        {
-            return; // Delete should only affect the cache, not the database.
-        });
+        _cachePolicy.Delete(entity, entity => { });
     }
 
     /// <inheritdoc/>
     public void Set(TEntity entity, EntityCacheOptions? options = null)
     {
-        if (GetEntity(entity.Id) != null)
+        Set(entity.Id.ToString(), entity, options);
+    }
+
+    /// <inheritdoc/>
+    public void Set(string key, TEntity entity, EntityCacheOptions? options = null)
+    {
+        if (GetEntity(key) != null)
         {
-            _cachePolicy.Update(entity, entity =>
-            {
-                return; // Update should only affect the cache, not the database.
-            });
+            _cachePolicy.Update(entity, entity => { });
             return;
         }
 
-        _cachePolicy.Create(entity, entity =>
-        {
-            return; // Create should only affect the cache, not the database.
-        });
+        _cachePolicy.Create(entity, entity => { });
     }
 
     internal class BridgeScopeAccessor : IScopeAccessor

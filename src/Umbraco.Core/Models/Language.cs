@@ -29,13 +29,28 @@ public class Language : EntityBase, ILanguage
         _cultureName = cultureName ?? throw new ArgumentNullException(nameof(cultureName));
     }
 
-        /// <inheritdoc />
-        [DataMember]
-        public string IsoCode
+    /// <summary>
+    /// Initializes a new instance of the <see cref="Language"/> class.
+    /// </summary>
+    /// <param name="cultureName"></param>
+    /// <param name="fallbackLanguageIsoCode"></param>
+    /// <param name="isDefaultVariantLanguage"></param>
+    /// <param name="isoCode"></param>
+    public Language(string cultureName, string? fallbackLanguageIsoCode, bool isDefaultVariantLanguage, string isoCode)
+    {
+        _cultureName = cultureName;
+        _fallbackLanguageIsoCode = fallbackLanguageIsoCode;
+        _isDefaultVariantLanguage = isDefaultVariantLanguage;
+        _isoCode = isoCode;
+    }
+
+    /// <inheritdoc />
+    [DataMember]
+    public string IsoCode
+    {
+        get => _isoCode;
+        set
         {
-            get => _isoCode;
-            set
-            {
                 ArgumentNullException.ThrowIfNull(value);
 
             SetPropertyValueAndDetectChanges(value, ref _isoCode!, nameof(IsoCode));

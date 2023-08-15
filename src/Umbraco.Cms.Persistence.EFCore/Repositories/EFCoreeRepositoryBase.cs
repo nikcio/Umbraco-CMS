@@ -8,13 +8,13 @@ namespace Umbraco.Cms.Persistence.EFCore.Repositories;
 /// <summary>
 /// Represents the base class for all EFCore database repositories.
 /// </summary>
-internal abstract class EFCoreDatabaseRepositoryBase : DatabaseRepositoryBase
+internal abstract class EFCoreeRepositoryBase : DatabaseRepositoryBase
 {
     /// <summary>
-    /// Initializes a new instance of the <see cref="EFCoreDatabaseRepositoryBase"/> class.
+    /// Initializes a new instance of the <see cref="EFCoreeRepositoryBase"/> class.
     /// </summary>
     /// <param name="dbContext"></param>
-    protected EFCoreDatabaseRepositoryBase(UmbracoDbContext dbContext)
+    protected EFCoreeRepositoryBase(UmbracoDbContext dbContext)
     {
         Context = dbContext;
     }

@@ -75,7 +75,7 @@ internal class EFCoreRepositoryFactory : IDatabaseRepositoryFactory
 
         if (databaseConnection is not UmbracoDbContext dbContext)
         {
-            throw new InvalidOperationException($"The unit of work isn't using the same database connection as required for {typeof(TRepository)} ({typeof(UmbracoDbContext)})");
+            throw new InvalidOperationException($"The repository isn't using the same database connection as required for {typeof(TRepository)} ({typeof(UmbracoDbContext)})");
         }
 
         if (_registeredRepositories.TryGetValue(typeof(TRepository), out Func<IServiceProvider, UmbracoDbContext, IDatabaseRepository>? factory))
