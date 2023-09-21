@@ -7,6 +7,7 @@ using Umbraco.Cms.Core.Notifications;
 using Umbraco.Cms.Infrastructure.Migrations;
 using Umbraco.Cms.Infrastructure.Migrations.Notifications;
 using Umbraco.Cms.Persistence.EFCore;
+using Umbraco.Cms.Persistence.EFCore.Factories;
 using Umbraco.Extensions;
 
 namespace Umbraco.Cms.Persistence.EFCore.Composition;
@@ -35,6 +36,8 @@ public class UmbracoEFCoreComposer : IComposer
                     .UseEntityFrameworkCore()
                     .UseDbContext<UmbracoDbContext>();
             });
+
+        builder.AddNotificationHandler<UmbracoApplicationStartingNotification, UmbracoStartingHandler>();
     }
 }
 

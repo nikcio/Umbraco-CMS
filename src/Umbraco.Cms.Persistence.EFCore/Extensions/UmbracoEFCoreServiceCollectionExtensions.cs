@@ -1,9 +1,13 @@
+using System.Configuration.Provider;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Configuration.Models;
 using Umbraco.Cms.Core.DistributedLocking;
+using Umbraco.Cms.Persistence.EFCore.Factories;
 using Umbraco.Cms.Persistence.EFCore.Locking;
 using Umbraco.Cms.Persistence.EFCore.Migrations;
 using Umbraco.Cms.Persistence.EFCore.Scoping;
@@ -17,7 +21,14 @@ public static class UmbracoEFCoreServiceCollectionExtensions
     public static IServiceCollection AddUmbracoEFCoreContext<T>(this IServiceCollection services, DefaultEFCoreOptionsAction? defaultEFCoreOptionsAction = null)
         where T : DbContext
     {
-        services.AddPooledDbContextFactory<T>((provider, builder) => SetupDbContext(defaultEFCoreOptionsAction, provider, builder));
+        var optionsBuilder = new DbContextOptionsBuilder<T>();
+        services.TryAddSingleton<IDbContextFactory<T>>(
+            sp =>
+            {
+                SetupDbContext(defaultEFCoreOptionsAction, sp, optionsBuilder);
+                return new UmbracoPooledDbContextFactory<T>(optionsBuilder.Options);
+            });
+
         services.AddTransient(services => services.GetRequiredService<IDbContextFactory<T>>().CreateDbContext());
 
         services.AddUnique<IAmbientEFCoreScopeStack<T>, AmbientEFCoreScopeStack<T>>();
@@ -39,7 +50,11 @@ public static class UmbracoEFCoreServiceCollectionExtensions
             connectionString = connectionString.Replace(Constants.System.DataDirectoryPlaceholder, dataDirectory);
         }
 
-        services.AddPooledDbContextFactory<T>(options => defaultEFCoreOptionsAction?.Invoke(options, providerName, connectionString));
+        var optionsBuilder = new DbContextOptionsBuilder<T>();
+        defaultEFCoreOptionsAction?.Invoke(optionsBuilder, providerName, connectionString);
+        services.TryAddSingleton<IDbContextFactory<T>>(
+            sp => new UmbracoPooledDbContextFactory<T>(optionsBuilder.Options));
+
         services.AddTransient(services => services.GetRequiredService<IDbContextFactory<T>>().CreateDbContext());
 
         services.AddUnique<IAmbientEFCoreScopeStack<T>, AmbientEFCoreScopeStack<T>>();

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Serilog;
 using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Configuration.Models;
 using Umbraco.Cms.Core.DependencyInjection;
@@ -31,6 +32,8 @@ namespace Umbraco.Cms.Persistence.EFCore;
 /// </remarks>
 public class UmbracoDbContext : DbContext
 {
+    private bool _disposed;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="UmbracoDbContext"/> class.
     /// </summary>
@@ -38,11 +41,18 @@ public class UmbracoDbContext : DbContext
     public UmbracoDbContext(DbContextOptions<UmbracoDbContext> options)
         : base(ConfigureOptions(options, out IOptionsMonitor<ConnectionStrings>? connectionStringsOptionsMonitor))
     {
+        Log.Fatal("Created DbContext");
         connectionStringsOptionsMonitor.OnChange(c =>
         {
-            ILogger<UmbracoDbContext> logger = StaticServiceProvider.Instance.GetRequiredService<ILogger<UmbracoDbContext>>();
-            logger.LogWarning("Connection string changed, disposing context");
-            Dispose();
+            if (!_disposed)
+            {
+                _disposed = true;
+                Log.Warning("Dispose");
+                ILogger<UmbracoDbContext> logger = StaticServiceProvider.Instance.GetRequiredService<ILogger<UmbracoDbContext>>();
+                //logger.LogWarning("Connection string changed, disposing context");
+
+                Dispose();
+            }
         });
     }
 

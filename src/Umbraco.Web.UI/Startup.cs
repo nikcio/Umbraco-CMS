@@ -1,3 +1,5 @@
+using Umbraco.Cms.Core.Notifications;
+
 namespace Umbraco.Cms.Web.UI
 {
     public class Startup
@@ -34,6 +36,9 @@ namespace Umbraco.Cms.Web.UI
                 .AddWebsite()
                 .AddDeliveryApi()
                 .AddComposers()
+                .AddNotificationAsyncHandler<UmbracoApplicationStartingNotification, MyStartupHandler>()
+                .AddNotificationHandler<UmbracoApplicationStartingNotification, MyStartupHandlerSync>()
+                .AddNotificationHandler<UmbracoApplicationStartedNotification, MyStartupHandlerSyncStarted>()
                 .Build();
         }
 
