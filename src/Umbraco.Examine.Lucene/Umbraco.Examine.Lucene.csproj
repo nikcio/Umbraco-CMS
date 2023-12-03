@@ -9,8 +9,4 @@
   <ItemGroup>
     <PackageReference Include="Examine" />
   </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\Umbraco.Infrastructure\Umbraco.Infrastructure.csproj" />
-  </ItemGroup>
 </Project>
