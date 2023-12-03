@@ -9,4 +9,8 @@
   <ItemGroup>
     <PackageReference Include="Examine" />
   </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Umbraco.Core\Umbraco.Core.csproj" />
+  </ItemGroup>
 </Project>
