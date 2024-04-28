@@ -14,7 +14,6 @@ using Umbraco.Cms.Core.Notifications;
 using Umbraco.Cms.Core.Scoping;
 using Umbraco.Cms.Core.Services;
 using Umbraco.Cms.Core.Sync;
-using Umbraco.Cms.Infrastructure.PublishedCache;
 using Umbraco.Cms.Infrastructure.Scoping;
 using Umbraco.Cms.Infrastructure.Serialization;
 using Umbraco.Cms.Infrastructure.Sync;
@@ -47,7 +46,7 @@ public class ScopedRepositoryTests : UmbracoIntegrationTest
 
     protected override void CustomTestSetup(IUmbracoBuilder builder)
     {
-        builder.AddNuCache();
+        //builder.AddNuCache();
         builder.Services.AddUnique<IServerMessenger, LocalServerMessenger>();
         builder
             .AddNotificationHandler<DictionaryItemDeletedNotification, DictionaryItemDeletedDistributedCacheNotificationHandler>()
@@ -58,7 +57,7 @@ public class ScopedRepositoryTests : UmbracoIntegrationTest
             .AddNotificationHandler<LanguageDeletedNotification, LanguageDeletedDistributedCacheNotificationHandler>()
             .AddNotificationHandler<MemberGroupDeletedNotification, MemberGroupDeletedDistributedCacheNotificationHandler>()
             .AddNotificationHandler<MemberGroupSavedNotification, MemberGroupSavedDistributedCacheNotificationHandler>();
-        builder.AddNotificationHandler<LanguageSavedNotification, PublishedSnapshotServiceEventHandler>();
+        //builder.AddNotificationHandler<LanguageSavedNotification, PublishedSnapshotServiceEventHandler>();
     }
 
     [TestCase(true)]

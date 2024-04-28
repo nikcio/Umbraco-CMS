@@ -28,7 +28,7 @@ public class TrackRelationsTests : UmbracoIntegrationTestWithContent
     protected override void CustomTestSetup(IUmbracoBuilder builder)
     {
         base.CustomTestSetup(builder);
-        builder.AddNuCache();
+        //builder.AddNuCache();
     }
 
     [Test]

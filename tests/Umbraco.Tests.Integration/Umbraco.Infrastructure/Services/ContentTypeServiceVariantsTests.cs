@@ -36,7 +36,7 @@ public class ContentTypeServiceVariantsTests : UmbracoIntegrationTest
 
     protected override void CustomTestSetup(IUmbracoBuilder builder)
     {
-        builder.AddNuCache();
+        //builder.AddNuCache();
         builder.Services.AddUnique<IServerMessenger, ScopedRepositoryTests.LocalServerMessenger>();
         builder.Services.PostConfigure<NuCacheSettings>(options =>
         {

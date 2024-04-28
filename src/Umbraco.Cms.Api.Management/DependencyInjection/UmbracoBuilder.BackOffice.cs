@@ -34,11 +34,12 @@ public static partial class UmbracoBuilderExtensions
         .AddMvcAndRazor(configureMvc)
         .AddWebServer()
         .AddRecurringBackgroundJobs()
-        .AddNuCache()
-        .AddDistributedCache()
         .AddCoreNotifications()
         .AddExamine()
         .AddExamineIndexes();
+
+        //.AddNuCache()
+        //.AddDistributedCache()
 
     public static IUmbracoBuilder AddBackOfficeCore(this IUmbracoBuilder builder)
     {

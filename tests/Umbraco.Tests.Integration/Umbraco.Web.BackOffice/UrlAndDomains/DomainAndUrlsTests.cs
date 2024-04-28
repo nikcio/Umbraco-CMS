@@ -66,7 +66,7 @@ public class DomainAndUrlsTests : UmbracoIntegrationTest
     protected override void CustomTestSetup(IUmbracoBuilder builder)
     {
         builder.Services.AddUnique<IVariationContextAccessor>(_variationContextAccessor);
-        builder.AddNuCache();
+        //builder.AddNuCache();
     }
 
     private readonly TestVariationContextAccessor _variationContextAccessor = new();

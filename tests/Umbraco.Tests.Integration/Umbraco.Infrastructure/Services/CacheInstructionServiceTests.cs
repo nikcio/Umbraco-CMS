@@ -27,7 +27,7 @@ public class CacheInstructionServiceTests : UmbracoIntegrationTest
     protected override void CustomTestSetup(IUmbracoBuilder builder)
     {
         base.CustomTestSetup(builder);
-        builder.AddNuCache();
+        //builder.AddNuCache();
     }
 
     [Test]

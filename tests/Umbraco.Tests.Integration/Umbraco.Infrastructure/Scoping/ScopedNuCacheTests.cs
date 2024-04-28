@@ -37,7 +37,7 @@ public class ScopedNuCacheTests : UmbracoIntegrationTest
         builder.AddNotificationHandler<ContentPublishedNotification, NotificationHandler>();
         builder.Services.AddUnique<IUmbracoContextAccessor, TestUmbracoContextAccessor>();
         builder.Services.AddUnique(MockHttpContextAccessor.Object);
-        builder.AddNuCache();
+        //builder.AddNuCache();
     }
 
     public class NotificationHandler : INotificationHandler<ContentPublishedNotification>

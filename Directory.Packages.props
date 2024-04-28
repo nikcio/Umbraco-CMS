@@ -33,6 +33,9 @@
     <PackageVersion Include="Microsoft.Extensions.Options" Version="8.0.2" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="8.0.0" />
+    <PackageVersion Include="NeoSmart.Caching.Sqlite" Version="8.0.0" />
+    <PackageVersion Include="ZiggyCreatures.FusionCache" Version="1.1.0" />
+    <PackageVersion Include="ZiggyCreatures.FusionCache.Serialization.SystemTextJson" Version="1.1.0" />
   </ItemGroup>
   <!-- Umbraco packages -->
   <ItemGroup>
