@@ -80,6 +80,7 @@ internal abstract class ContentTypeRepositoryBase<TEntity> : EntityRepositoryBas
     public IEnumerable<MoveEventInfo<TEntity>> Move(TEntity moving, EntityContainer? container)
     {
         var parentId = Constants.System.Root;
+        Guid? parentKey = Constants.System.RootKey;
         if (container != null)
         {
             // check path
@@ -92,10 +93,11 @@ internal abstract class ContentTypeRepositoryBase<TEntity> : EntityRepositoryBas
             }
 
             parentId = container.Id;
+            parentKey = container.Key;
         }
 
         // track moved entities
-        var moveInfo = new List<MoveEventInfo<TEntity>> { new(moving, moving.Path, parentId) };
+        var moveInfo = new List<MoveEventInfo<TEntity>> { new(moving, moving.Path, parentId, parentKey) };
 
         // get the level delta (old pos to new pos)
         var levelDelta = container == null
@@ -118,6 +120,7 @@ internal abstract class ContentTypeRepositoryBase<TEntity> : EntityRepositoryBas
 
         foreach (TEntity descendant in descendants.OrderBy(x => x.Level))
         {
+            //FIXME: Use MoveEventInfo constructor that takes a parentKey when this method is refactored
             moveInfo.Add(new MoveEventInfo<TEntity>(descendant, descendant.Path, descendant.ParentId));
 
             descendant.Path = paths[descendant.Id] = paths[descendant.ParentId] + "," + descendant.Id;
@@ -243,15 +246,16 @@ AND umbracoNode.nodeObjectType = @objectType",
             }
         }
 
-        if (entity.AllowedContentTypes is not null)
+        (TEntity Entity, int SortOrder)[] allowedContentTypes = GetAllowedContentTypes(entity);
+        if (allowedContentTypes.Any())
         {
             // Insert collection of allowed content types
-            foreach (ContentTypeSort allowedContentType in entity.AllowedContentTypes)
+            foreach ((TEntity Entity, int SortOrder) allowedContentType in allowedContentTypes)
             {
                 Database.Insert(new ContentTypeAllowedContentTypeDto
                 {
                     Id = entity.Id,
-                    AllowedId = allowedContentType.Id.Value,
+                    AllowedId = allowedContentType.Entity.Id,
                     SortOrder = allowedContentType.SortOrder,
                 });
             }
@@ -398,14 +402,16 @@ AND umbracoNode.id <> @id",
 
         // delete the allowed content type entries before re-inserting the collection of allowed content types
         Database.Delete<ContentTypeAllowedContentTypeDto>("WHERE Id = @Id", new { entity.Id });
-        if (entity.AllowedContentTypes is not null)
+
+        (TEntity Entity, int SortOrder)[] allowedContentTypes = GetAllowedContentTypes(entity);
+        if (allowedContentTypes.Any())
         {
-            foreach (ContentTypeSort allowedContentType in entity.AllowedContentTypes)
+            foreach ((TEntity Entity, int SortOrder) allowedContentType in allowedContentTypes)
             {
                 Database.Insert(new ContentTypeAllowedContentTypeDto
                 {
                     Id = entity.Id,
-                    AllowedId = allowedContentType.Id.Value,
+                    AllowedId = allowedContentType.Entity.Id,
                     SortOrder = allowedContentType.SortOrder,
                 });
             }
@@ -1223,8 +1229,11 @@ AND umbracoNode.id <> @id",
     ///     If this is not done, then in some cases the "edited" value for a particular culture for a document will remain true
     ///     when it should be false
     ///     if the property was changed to invariant. In order to do this we need to recalculate this value based on the values
-    ///     stored for each
-    ///     property, culture and current/published version.
+    ///     stored for each property, culture and current/published version.
+    ///
+    ///     Some of the sql statements in this function have a tendency to take a lot of parameters (nodeIds)
+    ///     as the WhereIn Npoco method translates all the nodeIds being passed in as parameters when using the SqlClient provider.
+    ///     this results in to many parameters (>2100) error => We need to batch the calls
     /// </remarks>
     private void RenormalizeDocumentEditedFlags(
         IReadOnlyCollection<int> propertyTypeIds,
@@ -1380,16 +1389,19 @@ AND umbracoNode.id <> @id",
         // Now bulk update the table DocumentCultureVariationDto, once for edited = true, another for edited = false
         foreach (IGrouping<bool, DocumentCultureVariationDto> editValue in toUpdate.GroupBy(x => x.Edited))
         {
-            Database.Execute(Sql().Update<DocumentCultureVariationDto>(u => u.Set(x => x.Edited, editValue.Key))
-                .WhereIn<DocumentCultureVariationDto>(x => x.Id, editValue.Select(x => x.Id)));
+            // update in batches to account for maximum parameter count
+            foreach (IEnumerable<DocumentCultureVariationDto> batchedValues in editValue.InGroupsOf(Constants.Sql.MaxParameterCount))
+            {
+                Database.Execute(Sql().Update<DocumentCultureVariationDto>(u => u.Set(x => x.Edited, editValue.Key))
+                    .WhereIn<DocumentCultureVariationDto>(x => x.Id, batchedValues.Select(x => x.Id)));
+            }
         }
 
         // Now bulk update the umbracoDocument table
-        // we need to do this in batches as the WhereIn Npoco method translates to all the nodeIds being passed in as parameters when using the SqlClient provider
-        // this results in to many parameters (>2100) being passed to the client when there are a lot of documents being normalized
         foreach (IGrouping<bool, KeyValuePair<int, bool>> groupByValue in editedDocument.GroupBy(x => x.Value))
         {
-            foreach (IEnumerable<KeyValuePair<int, bool>> batch in groupByValue.InGroupsOf(2000))
+            // update in batches to account for maximum parameter count
+            foreach (IEnumerable<KeyValuePair<int, bool>> batch in groupByValue.InGroupsOf(Constants.Sql.MaxParameterCount))
             {
                 Database.Execute(Sql().Update<DocumentDto>(u => u.Set(x => x.Edited, groupByValue.Key))
                     .WhereIn<DocumentDto>(x => x.NodeId, batch.Select(x => x.Key)));
@@ -1498,8 +1510,7 @@ WHERE cmsContentType." + aliasColumn + @" LIKE @pattern",
         var sql = new Sql(
             $@"SELECT COUNT(*) FROM cmsContentType
 INNER JOIN {Constants.DatabaseSchema.Tables.Content} ON cmsContentType.nodeId={Constants.DatabaseSchema.Tables.Content}.contentTypeId
-WHERE {Constants.DatabaseSchema.Tables.Content}.nodeId IN (@ids) AND cmsContentType.isContainer=@isContainer",
-            new { ids, isContainer = true });
+WHERE {Constants.DatabaseSchema.Tables.Content}.nodeId IN (@ids) AND cmsContentType.listView IS NULL", new { ids});
         return Database.ExecuteScalar<int>(sql) > 0;
     }
 
@@ -1522,8 +1533,8 @@ WHERE {Constants.DatabaseSchema.Tables.Content}.nodeId IN (@ids) AND cmsContentT
         var list = new List<string>
         {
             "DELETE FROM umbracoUser2NodeNotify WHERE nodeId = @id",
-            "DELETE FROM umbracoUserGroup2Node WHERE nodeId = @id",
-            "DELETE FROM umbracoUserGroup2NodePermission WHERE nodeId = @id",
+            "DELETE FROM umbracoUserGroup2Permission WHERE userGroupKey IN (SELECT [umbracoUserGroup].[Key] FROM umbracoUserGroup WHERE Id = @id)",
+            "DELETE FROM umbracoUserGroup2GranularPermission WHERE userGroupKey IN (SELECT [umbracoUserGroup].[Key] FROM umbracoUserGroup WHERE Id = @id)",
             "DELETE FROM cmsTagRelationship WHERE nodeId = @id",
             "DELETE FROM cmsContentTypeAllowedContentType WHERE Id = @id",
             "DELETE FROM cmsContentTypeAllowedContentType WHERE AllowedId = @id",
@@ -1537,6 +1548,26 @@ WHERE {Constants.DatabaseSchema.Tables.Content}.nodeId IN (@ids) AND cmsContentT
             " WHERE contenttypeNodeId = @id",
         };
         return list;
+    }
+
+    private (TEntity Entity, int SortOrder)[] GetAllowedContentTypes(IContentTypeBase contentTypeBase)
+    {
+        if (contentTypeBase.AllowedContentTypes?.Any() is not true)
+        {
+            return Array.Empty<(TEntity, int)>();
+        }
+
+        Guid[] allowedContentTypeKeys = contentTypeBase
+            .AllowedContentTypes
+            .OrderBy(c => c.SortOrder)
+            .Select(c => c.Key)
+            .ToArray();
+
+        // NOTE: we're efficiently discarding the input sort order here in favor of a "0 to n" sorting (which is the correct sort order).
+        //       i.e. if the input sort orders are [5, 3, 17] they will be come [1, 0, 2] (in effect though they will also be sorted by
+        //       the 0 based sort order, so they will be returned as [0, 1, 2]).
+        return PerformGetAll(allowedContentTypeKeys)?.Select(c => (c, allowedContentTypeKeys.IndexOf(c.Key))).ToArray()
+            ?? Array.Empty<(TEntity, int)>();
     }
 
     private class NameCompareDto

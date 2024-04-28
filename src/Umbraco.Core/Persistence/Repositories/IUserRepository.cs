@@ -4,7 +4,7 @@ using Umbraco.Cms.Core.Persistence.Querying;
 
 namespace Umbraco.Cms.Core.Persistence.Repositories;
 
-public interface IUserRepository : IReadWriteQueryRepository<int, IUser>
+public interface IUserRepository : IReadWriteQueryRepository<Guid, IUser>
 {
     /// <summary>
     ///     Gets the count of items based on a complex query
@@ -82,6 +82,39 @@ public interface IUserRepository : IReadWriteQueryRepository<int, IUser>
     IUser? GetByUsername(string username, bool includeSecurityData);
 
     /// <summary>
+    /// Gets a user by username for upgrade purposes, this will only return a result if the current runtime state is upgrade.
+    /// </summary>
+    /// <remarks>
+    /// This only resolves the minimum amount of fields required to authorize for an upgrade.
+    /// We need this to be able to add new columns to the user table.
+    /// </remarks>
+    /// <param name="username">The username to find the user by.</param>
+    /// <returns>An uncached <see cref="IUser"/> instance.</returns>
+    IUser? GetForUpgradeByUsername(string username) => GetByUsername(username, false);
+
+    /// <summary>
+    /// Gets a user by email for upgrade purposes, this will only return a result if the current runtime state is upgrade.
+    /// </summary>
+    /// <remarks>
+    /// This only resolves the minimum amount of fields required to authorize for an upgrade.
+    /// We need this to be able to add new columns to the user table.
+    /// </remarks>
+    /// <param name="email">The email to find the user by.</param>
+    /// <returns>An uncached <see cref="IUser"/> instance.</returns>
+    IUser? GetForUpgradeByEmail(string email) => GetMany().FirstOrDefault(x=>x.Email == email);
+
+    /// <summary>
+    /// Gets a user for upgrade purposes, this will only return a result if the current runtime state is upgrade.
+    /// </summary>
+    /// <remarks>
+    /// This only resolves the minimum amount of fields required to authorize for an upgrade.
+    /// We need this to be able to add new columns to the user table.
+    /// </remarks>
+    /// <param name="id">The id to find the user by.</param>
+    /// <returns>An uncached <see cref="IUser"/> instance.</returns>
+    IUser? GetForUpgrade(int id) => Get(id, false);
+
+    /// <summary>
     ///     Returns a user by id
     /// </summary>
     /// <param name="id"></param>
@@ -108,6 +141,4 @@ public interface IUserRepository : IReadWriteQueryRepository<int, IUser>
     int ClearLoginSessions(TimeSpan timespan);
 
     void ClearLoginSession(Guid sessionId);
-
-    IEnumerable<IUser> GetNextUsers(int id, int count);
 }
