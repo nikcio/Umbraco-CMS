@@ -27,5 +27,8 @@ internal class CacheComposer : IComposer
             })
             .WithSerializer(new FusionCacheSystemTextJsonSerializer())
             .WithDistributedCache(new SqliteCache(new SqliteCacheOptions { CachePath = "fusion-cache.db" }));
+
+        builder.Services.AddSingleton<IDomainCache, DomainCache>();
+        builder.Services.AddSingleton<DomainCacheFactory>();
     }
 }
