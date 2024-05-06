@@ -4,8 +4,8 @@ using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Models.PublishedContent;
 using Umbraco.Cms.Core.PublishedCache;
 using Umbraco.Cms.Core.Services;
-using ZiggyCreatures.Caching.Fusion;
 using Umbraco.Extensions;
+using ZiggyCreatures.Caching.Fusion;
 
 namespace Umbraco.Cms.Caching;
 
@@ -28,12 +28,33 @@ internal class PublishedContentCache : IPublishedContentCache
 
     public IEnumerable<IPublishedContent> GetAtRoot(bool preview, string? culture = null)
     {
+        FusionCacheEntryOptions cacheOptions = new()
+        {
+            Duration = TimeSpan.FromHours(1),
+        };
 
+        string cacheKey = CacheKeys.GetKeysAtRoot(preview, culture);
+
+        List<Guid> allContentKeys = _cache.GetOrSet(cacheKey, (_) => _publishedContentCacheFactory.GetKeysAtRootFactory(preview, culture), cacheOptions);
+
+        return allContentKeys.Select(GetById).OfType<IPublishedContent>();
     }
 
-    public IEnumerable<IPublishedContent> GetAtRoot(string? culture = null) => throw new NotImplementedException();
+    public IEnumerable<IPublishedContent> GetAtRoot(string? culture = null) => GetAtRoot(_defaultPreviewValue, culture);
 
-    public IEnumerable<IPublishedContent> GetByContentType(IPublishedContentType contentType) => throw new NotImplementedException();
+    public IEnumerable<IPublishedContent> GetByContentType(IPublishedContentType contentType)
+    {
+        FusionCacheEntryOptions cacheOptions = new()
+        {
+            Duration = TimeSpan.FromHours(1),
+        };
+
+        string cacheKey = CacheKeys.GetKeysByContentType(contentType.Alias);
+
+        List<Guid> allContentKeys = _cache.GetOrSet(cacheKey, (_) => _publishedContentCacheFactory.GetKeysByContentTypeFactory(contentType), cacheOptions);
+
+        return allContentKeys.Select(GetById).OfType<IPublishedContent>();
+    }
 
     public IPublishedContent? GetById(bool preview, int contentId) => throw new NotImplementedException();
 
@@ -71,7 +92,7 @@ internal class PublishedContentCache : IPublishedContentCache
 
     public static class CacheKeys
     {
-        public static string GetKeysAtRoot(string? culture, bool includePreview) => includePreview ? $"v0:GetKeysAtRoot:{culture ?? "__NULL__"}" : $"v0:GetKeysAtRoot:{culture ?? "__NULL__"}:IncludePreivew";
+        public static string GetKeysAtRoot(bool includePreview, string? culture) => includePreview ? $"v0:GetKeysAtRoot:{culture ?? "__NULL__"}" : $"v0:GetKeysAtRoot:{culture ?? "__NULL__"}:IncludePreivew";
 
         public static string GetKeysByContentType(string contentTypeAlias) => $"v0:GetKeysByContentType:{contentTypeAlias}";
 
@@ -94,13 +115,55 @@ internal class PublishedContentCacheFactory
         _logger = logger;
     }
 
-    public List<Guid> GetAtRootFactory(bool includePreview, string? culture)
+    public List<Guid> GetKeysAtRootFactory(bool includePreview, string? culture)
     {
         IEnumerable<IContent> contentAtRoot = _contentService.GetRootContent();
 
         return contentAtRoot
             .Where(content => ShouldIncludeContentInCache(content, includePreview, culture))
             .Select(content => content.Key).ToList();
+    }
+
+    public List<Guid> GetKeysByContentTypeFactory(IPublishedContentType contentType)
+    {
+        IEnumerable<IContent> contentOfContentType = _contentService.GetRootContent()
+            .SelectMany(x => _contentService.GetPagedDescendants(x.Id, 0, int.MaxValue, out _))
+            .Where(x => x.ContentType.Id == contentType.Id);
+
+        return contentOfContentType.Select(x => x.Key).ToList();
+    }
+
+    public Guid? GetKeyById(bool includePreview, int id)
+    {
+        IContent? contentItem = _contentService.GetById(id);
+
+        if (contentItem == null)
+        {
+            return null;
+        }
+
+        if (!ShouldIncludeContentInCache(contentItem, includePreview, culture: null))
+        {
+            return null;
+        }
+
+        return contentItem.Key;
+    }
+
+    public IPublishedContent? GetByKey(bool includePreview, Guid key)
+    {
+        IContent? contentItem = _contentService.GetById(key);
+
+        if (contentItem == null)
+        {
+            return null;
+        }
+
+
+        if (!ShouldIncludeContentInCache(contentItem, includePreview, culture: null))
+        {
+            return null;
+        }
     }
 
     // TODO: Make unit tests for this method
