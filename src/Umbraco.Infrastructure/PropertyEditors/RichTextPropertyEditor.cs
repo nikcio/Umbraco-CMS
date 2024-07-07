@@ -4,6 +4,8 @@
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Logging;
 using Umbraco.Cms.Core.Cache;
+using Umbraco.Cms.Core.Cache.PropertyEditors;
+using Umbraco.Cms.Core.DependencyInjection;
 using Umbraco.Cms.Core.IO;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Models.Blocks;
@@ -67,7 +69,7 @@ public class RichTextPropertyEditor : DataEditor
         private readonly HtmlLocalLinkParser _localLinkParser;
         private readonly RichTextEditorPastedImages _pastedImages;
         private readonly IJsonSerializer _jsonSerializer;
-        private readonly IContentTypeService _contentTypeService;
+        private readonly IBlockEditorElementTypeCache _elementTypeCache;
         private readonly ILogger<RichTextPropertyValueEditor> _logger;
 
         public RichTextPropertyValueEditor(
@@ -84,7 +86,7 @@ public class RichTextPropertyEditor : DataEditor
             IJsonSerializer jsonSerializer,
             IIOHelper ioHelper,
             IHtmlSanitizer htmlSanitizer,
-            IContentTypeService contentTypeService,
+            IBlockEditorElementTypeCache elementTypeCache,
             IPropertyValidationService propertyValidationService,
             DataValueReferenceFactoryCollection dataValueReferenceFactoryCollection)
             : base(attribute, propertyEditors, dataTypeReadCache, localizedTextService, logger, shortStringHelper, jsonSerializer, ioHelper, dataValueReferenceFactoryCollection)
@@ -94,11 +96,11 @@ public class RichTextPropertyEditor : DataEditor
             _localLinkParser = localLinkParser;
             _pastedImages = pastedImages;
             _htmlSanitizer = htmlSanitizer;
-            _contentTypeService = contentTypeService;
+            _elementTypeCache = elementTypeCache;
             _jsonSerializer = jsonSerializer;
             _logger = logger;
 
-            Validators.Add(new RichTextEditorBlockValidator(propertyValidationService, CreateBlockEditorValues(), contentTypeService, jsonSerializer, logger));
+            Validators.Add(new RichTextEditorBlockValidator(propertyValidationService, CreateBlockEditorValues(), elementTypeCache, jsonSerializer, logger));
         }
 
         /// <inheritdoc />
@@ -214,8 +216,7 @@ public class RichTextPropertyEditor : DataEditor
                           Constants.Security.SuperUserKey;
 
             var config = editorValue.DataTypeConfiguration as RichTextConfiguration;
-            GuidUdi? mediaParent = config?.MediaParentId;
-            Guid mediaParentId = mediaParent == null ? Guid.Empty : mediaParent.Guid;
+            Guid mediaParentId = config?.MediaParentId ?? Guid.Empty;
 
             if (string.IsNullOrWhiteSpace(richTextEditorValue.Markup))
             {
@@ -255,7 +256,8 @@ public class RichTextPropertyEditor : DataEditor
                 handleMapping(blockEditorData.BlockValue);
                 return new RichTextEditorValue
                 {
-                    Markup = richTextEditorValue.Markup, Blocks = blockEditorData.BlockValue
+                    Markup = richTextEditorValue.Markup,
+                    Blocks = blockEditorData.BlockValue,
                 };
             }
 
@@ -264,7 +266,8 @@ public class RichTextPropertyEditor : DataEditor
 
             RichTextEditorValue MarkupWithEmptyBlocks() => new()
             {
-                Markup = richTextEditorValue.Markup, Blocks = new RichTextBlockValue()
+                Markup = richTextEditorValue.Markup,
+                Blocks = new RichTextBlockValue(),
             };
         }
 
@@ -275,6 +278,6 @@ public class RichTextPropertyEditor : DataEditor
         }
 
         private BlockEditorValues<RichTextBlockValue, RichTextBlockLayoutItem> CreateBlockEditorValues()
-            => new(new RichTextEditorBlockDataConverter(), _contentTypeService, _logger);
+            => new(new RichTextEditorBlockDataConverter(_jsonSerializer), _elementTypeCache, _logger);
     }
 }

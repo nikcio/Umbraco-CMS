@@ -6,6 +6,10 @@ using Umbraco.Extensions;
 
 namespace Umbraco.Cms.Web.Common.Helpers;
 
+/// <remark>
+/// This class seems unused, but is used by implementors to configure the error flow for external login providers
+/// so that they properly route towards our default error handling page with the correct parameters.
+/// </remark>
 public class OAuthOptionsHelper
 {
     // https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.2.1
@@ -48,7 +52,7 @@ public class OAuthOptionsHelper
     public T SetUmbracoRedirectWithFilteredParams<T>(T context, string providerFriendlyName, string eventName)
         where T : HandleRequestContext<RemoteAuthenticationOptions>
     {
-        var callbackPath = _securitySettings.Value.AuthorizeCallbackErrorPathName;
+        var callbackPath =_securitySettings.Value.BackOfficeHost + _securitySettings.Value.AuthorizeCallbackErrorPathName;
 
         callbackPath = callbackPath.AppendQueryStringToUrl("flow=external-login")
         .AppendQueryStringToUrl($"provider={providerFriendlyName}")
@@ -64,20 +68,5 @@ public class OAuthOptionsHelper
 
         context.Response.Redirect(callbackPath);
         return context;
-    }
-
-    /// <summary>
-    /// Sets the callbackPath for the RemoteAuthenticationOptions based on the configured Umbraco path and the path supplied.
-    /// By default this will result in "/umbraco/your-supplied-path".
-    /// </summary>
-    /// <param name="options">The options object to set the path on.</param>
-    /// <param name="path">The path that should go after the umbraco path, will add a leading slash if it's missing.</param>
-    /// <returns></returns>
-    public RemoteAuthenticationOptions SetUmbracoBasedCallbackPath(RemoteAuthenticationOptions options, string path)
-    {
-        var umbracoCallbackPath = _securitySettings.Value.AuthorizeCallbackPathName;
-
-        options.CallbackPath = umbracoCallbackPath + path.EnsureStartsWith("/");
-        return options;
     }
 }

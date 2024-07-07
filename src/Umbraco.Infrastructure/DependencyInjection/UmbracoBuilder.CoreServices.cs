@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Cache;
+using Umbraco.Cms.Core.Cache.PropertyEditors;
 using Umbraco.Cms.Core.Configuration;
 using Umbraco.Cms.Core.Configuration.Models;
 using Umbraco.Cms.Core.DeliveryApi;
@@ -93,7 +94,6 @@ public static partial class UmbracoBuilderExtensions
             .Add<JITOptimizerValidator>()
             .Add<UmbracoApplicationUrlValidator>()
             .Add<UseHttpsValidator>()
-            .Add<RuntimeMinificationValidator>()
             .Add<ModelsBuilderModeValidator>();
 
         // composers
@@ -234,6 +234,8 @@ public static partial class UmbracoBuilderExtensions
         builder.Services.AddUnique<IPasswordChanger<BackOfficeIdentityUser>, PasswordChanger<BackOfficeIdentityUser>>();
         builder.Services.AddUnique<IPasswordChanger<MemberIdentityUser>, PasswordChanger<MemberIdentityUser>>();
         builder.Services.AddTransient<IMemberEditingService, MemberEditingService>();
+
+        builder.Services.AddSingleton<IBlockEditorElementTypeCache, BlockEditorElementTypeCache>();
 
         return builder;
     }
@@ -400,6 +402,10 @@ public static partial class UmbracoBuilderExtensions
             .AddNotificationHandler<UserDeletedNotification, AuditNotificationsHandler>()
             .AddNotificationHandler<UserGroupWithUsersSavedNotification, AuditNotificationsHandler>()
             .AddNotificationHandler<AssignedUserGroupPermissionsNotification, AuditNotificationsHandler>();
+
+        // Handlers for publish warnings
+        builder
+            .AddNotificationHandler<ContentPublishedNotification, AddDomainWarningsWhenPublishingNotificationHandler>();
 
         return builder;
     }

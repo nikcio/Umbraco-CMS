@@ -35,8 +35,10 @@ using Umbraco.Cms.Core.Security;
 using Umbraco.Cms.Core.Services;
 using Umbraco.Cms.Core.Services.ContentTypeEditing;
 using Umbraco.Cms.Core.DynamicRoot;
+using Umbraco.Cms.Core.Preview;
 using Umbraco.Cms.Core.Security.Authorization;
 using Umbraco.Cms.Core.Services.FileSystem;
+using Umbraco.Cms.Core.Services.ImportExport;
 using Umbraco.Cms.Core.Services.Querying.RecycleBin;
 using Umbraco.Cms.Core.Sync;
 using Umbraco.Cms.Core.Telemetry;
@@ -286,6 +288,7 @@ namespace Umbraco.Cms.Core.DependencyInjection
             Services.AddUnique<IMediaTypeContainerService, MediaTypeContainerService>();
             Services.AddUnique<IContentBlueprintContainerService, ContentBlueprintContainerService>();
             Services.AddUnique<IIsoCodeValidator, IsoCodeValidator>();
+            Services.AddUnique<ICultureService, CultureService>();
             Services.AddUnique<ILanguageService, LanguageService>();
             Services.AddUnique<IMemberGroupService, MemberGroupService>();
             Services.AddUnique<IRedirectUrlService, RedirectUrlService>();
@@ -323,6 +326,7 @@ namespace Umbraco.Cms.Core.DependencyInjection
             Services.AddUnique<ITemporaryFileService, TemporaryFileService>();
             Services.AddUnique<ITemplateContentParserService, TemplateContentParserService>();
             Services.AddUnique<IEntityService, EntityService>();
+            Services.AddUnique<IOEmbedService, OEmbedService>();
             Services.AddUnique<IRelationService, RelationService>();
             Services.AddUnique<IMemberTypeService, MemberTypeService>();
             Services.AddUnique<IMemberContentEditingService, MemberContentEditingService>();
@@ -346,6 +350,7 @@ namespace Umbraco.Cms.Core.DependencyInjection
 
             Services.AddSingleton<ConflictingPackageData>();
             Services.AddSingleton<CompiledPackageXmlParser>();
+            Services.AddUnique<IPreviewTokenGenerator, NoopPreviewTokenGenerator>();
             Services.AddUnique<IPreviewService, PreviewService>();
 
             // Register a noop IHtmlSanitizer & IMarkdownSanitizer to be replaced
@@ -393,6 +398,11 @@ namespace Umbraco.Cms.Core.DependencyInjection
 
             // Segments
             Services.AddUnique<ISegmentService, NoopSegmentService>();
+            
+            // definition Import/export
+            Services.AddUnique<ITemporaryFileToXmlImportService, TemporaryFileToXmlImportService>();
+            Services.AddUnique<IContentTypeImportService, ContentTypeImportService>();
+            Services.AddUnique<IMediaTypeImportService, MediaTypeImportService>();
         }
     }
 }
