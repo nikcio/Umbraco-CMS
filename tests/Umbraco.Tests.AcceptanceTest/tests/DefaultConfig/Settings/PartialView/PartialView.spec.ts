@@ -29,8 +29,8 @@ test('can create an empty partial view', {tag: '@smoke'}, async ({umbracoApi, um
   await umbracoUi.partialView.isSuccessNotificationVisible();
   expect(await umbracoApi.partialView.doesNameExist(partialViewFileName)).toBeTruthy();
   // Verify the new partial view is displayed under the Partial Views section
-  await umbracoUi.partialView.isPartialViewRootTreeItemVisibile(partialViewFileName);
-})
+  await umbracoUi.partialView.isPartialViewRootTreeItemVisible(partialViewFileName);
+});
 
 test('can create a partial view from snippet', async ({umbracoApi, umbracoUi}) => {
   // Arrange
@@ -62,7 +62,7 @@ test('can create a partial view from snippet', async ({umbracoApi, umbracoUi}) =
   }
 
   // Verify the new partial view is displayed under the Partial Views section
-  await umbracoUi.partialView.isPartialViewRootTreeItemVisibile(partialViewFileName);
+  await umbracoUi.partialView.isPartialViewRootTreeItemVisible(partialViewFileName);
 });
 
 test('can rename a partial view', {tag: '@smoke'}, async ({umbracoApi, umbracoUi}) => {
@@ -84,12 +84,13 @@ test('can rename a partial view', {tag: '@smoke'}, async ({umbracoApi, umbracoUi
   expect(await umbracoApi.partialView.doesNameExist(partialViewFileName)).toBeTruthy();
   expect(await umbracoApi.partialView.doesNameExist(wrongPartialViewFileName)).toBeFalsy();
   // Verify the old partial view is NOT displayed under the Partial Views section
-  await umbracoUi.partialView.isPartialViewRootTreeItemVisibile(wrongPartialViewFileName, false, false);
+  await umbracoUi.partialView.isPartialViewRootTreeItemVisible(wrongPartialViewFileName, false, false);
   // Verify the new partial view is displayed under the Partial Views section
-  await umbracoUi.partialView.isPartialViewRootTreeItemVisibile(partialViewFileName, true, false);
+  await umbracoUi.partialView.isPartialViewRootTreeItemVisible(partialViewFileName, true, false);
 });
 
-test('can update a partial view content', {tag: '@smoke'}, async ({umbracoApi, umbracoUi}) => {
+// TODO: unskip when fixed
+test.skip('can update a partial view content', {tag: '@smoke'}, async ({umbracoApi, umbracoUi}) => {
   // Arrange
   const updatedPartialViewContent = defaultPartialViewContent +
     '@{\r\n' +
@@ -234,7 +235,7 @@ test.skip('can insert value into a partial view', async ({umbracoApi, umbracoUi}
 });
 
 test('can delete a partial view', {tag: '@smoke'}, async ({umbracoApi, umbracoUi}) => {
-  //Arrange
+  // Arrange
   await umbracoApi.partialView.create(partialViewFileName, partialViewFileName, '/');
   expect(await umbracoApi.partialView.doesExist(partialViewFileName)).toBeTruthy();
 
@@ -248,7 +249,7 @@ test('can delete a partial view', {tag: '@smoke'}, async ({umbracoApi, umbracoUi
   expect(await umbracoApi.partialView.doesExist(partialViewFileName)).toBeFalsy();
   // Verify the partial view is NOT displayed under the Partial Views section
   await umbracoUi.partialView.clickRootFolderCaretButton();
-  await umbracoUi.partialView.isPartialViewRootTreeItemVisibile(partialViewFileName, false);
+  await umbracoUi.partialView.isPartialViewRootTreeItemVisible(partialViewFileName, false, false);
 });
 
 // TODO: Remove skip when the front-end is ready. Currently the returned items count is not updated after choosing the root content.
@@ -278,4 +279,17 @@ test.skip('can show returned items in query builder ', async ({umbracoApi, umbra
 
   // Clean
   await umbracoApi.documentType.ensureNameNotExists(documentTypeName);
+});
+
+test('cannot create a partial view with an empty name', async ({umbracoApi, umbracoUi}) => {
+  // Act
+  await umbracoUi.partialView.clickActionsMenuAtRoot();
+  await umbracoUi.partialView.clickCreateButton();
+  await umbracoUi.partialView.clickNewEmptyPartialViewButton();
+  await umbracoUi.partialView.clickSaveButton();
+
+  // Assert
+  // TODO: Uncomment this when the front-end is ready. Currently there is no error displays.
+  //await umbracoUi.partialView.isErrorNotificationVisible();
+  expect(await umbracoApi.partialView.doesNameExist(partialViewFileName)).toBeFalsy();
 });

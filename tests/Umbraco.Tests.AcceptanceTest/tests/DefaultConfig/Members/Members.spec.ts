@@ -24,7 +24,7 @@ test.afterEach(async ({umbracoApi}) => {
 
 test('can create a member', {tag: '@smoke'}, async ({umbracoApi, umbracoUi}) => {
   // Arrange
-  await umbracoUi.member.goToSection(ConstantHelper.sections.members);
+  await umbracoUi.member.goToMembers();
 
   // Act
   await umbracoUi.member.clickCreateButton();
@@ -46,7 +46,7 @@ test('can edit comments', async ({umbracoApi, umbracoUi}) => {
   // Arrange
   const defaultMemberTypeData = await umbracoApi.memberType.getByName(defaultMemberTypeName);
   memberId = await umbracoApi.member.createDefaultMember(memberName, defaultMemberTypeData.id, email, username, password);
-  await umbracoUi.member.goToSection(ConstantHelper.sections.members);
+  await umbracoUi.member.goToMembers();
 
   // Act
   await umbracoUi.member.clickMemberLinkByName(memberName);
@@ -65,7 +65,7 @@ test('can edit username', async ({umbracoApi, umbracoUi}) => {
   const updatedUsername = 'updatedusername';
   memberTypeId = await umbracoApi.memberType.createDefaultMemberType(memberTypeName);
   memberId = await umbracoApi.member.createDefaultMember(memberName, memberTypeId, email, username, password);
-  await umbracoUi.member.goToSection(ConstantHelper.sections.members);
+  await umbracoUi.member.goToMembers();
 
   // Act
   await umbracoUi.member.clickMemberLinkByName(memberName);
@@ -83,7 +83,7 @@ test('can edit email', async ({umbracoApi, umbracoUi}) => {
   const updatedEmail = 'updated@acceptance.test';
   memberTypeId = await umbracoApi.memberType.createDefaultMemberType(memberTypeName);
   memberId = await umbracoApi.member.createDefaultMember(memberName, memberTypeId, email, username, password);
-  await umbracoUi.member.goToSection(ConstantHelper.sections.members);
+  await umbracoUi.member.goToMembers();
 
   // Act
   await umbracoUi.member.clickMemberLinkByName(memberName);
@@ -101,13 +101,13 @@ test('can edit password', {tag: '@smoke'}, async ({umbracoApi, umbracoUi}) => {
   const updatedPassword = '9876543210';
   memberTypeId = await umbracoApi.memberType.createDefaultMemberType(memberTypeName);
   memberId = await umbracoApi.member.createDefaultMember(memberName, memberTypeId, email, username, password);
-  await umbracoUi.member.goToSection(ConstantHelper.sections.members);
+  await umbracoUi.member.goToMembers();
 
   // Act
   await umbracoUi.member.clickMemberLinkByName(memberName);
   await umbracoUi.member.clickChangePasswordButton();
   await umbracoUi.member.enterNewPassword(updatedPassword);
-  await umbracoUi.member.enterConfirmPassword(updatedPassword);
+  await umbracoUi.member.enterConfirmNewPassword(updatedPassword);
   await umbracoUi.member.clickSaveButton();
 
   // Assert
@@ -121,7 +121,7 @@ test('can add member group', {tag: '@smoke'}, async ({umbracoApi, umbracoUi}) =>
   const memberGroupId = await umbracoApi.memberGroup.create(memberGroupName);
   memberTypeId = await umbracoApi.memberType.createDefaultMemberType(memberTypeName);
   memberId = await umbracoApi.member.createDefaultMember(memberName, memberTypeId, email, username, password);
-  await umbracoUi.member.goToSection(ConstantHelper.sections.members);
+  await umbracoUi.member.goToMembers();
 
   // Act
   await umbracoUi.member.clickMemberLinkByName(memberName);
@@ -144,7 +144,7 @@ test('can remove member group', async ({umbracoApi, umbracoUi}) => {
   const memberGroupId = await umbracoApi.memberGroup.create(memberGroupName);
   memberTypeId = await umbracoApi.memberType.createDefaultMemberType(memberTypeName);
   memberId = await umbracoApi.member.createMemberWithMemberGroup(memberName, memberTypeId, email, username, password, memberGroupId);
-  await umbracoUi.member.goToSection(ConstantHelper.sections.members);
+  await umbracoUi.member.goToMembers();
 
   // Act
   await umbracoUi.member.clickMemberLinkByName(memberName);
@@ -165,7 +165,7 @@ test('can view member info', async ({umbracoApi, umbracoUi}) => {
   // Arrange
   memberTypeId = await umbracoApi.memberType.createDefaultMemberType(memberTypeName);
   memberId = await umbracoApi.member.createDefaultMember(memberName, memberTypeId, email, username, password);
-  await umbracoUi.member.goToSection(ConstantHelper.sections.members);
+  await umbracoUi.member.goToMembers();
 
   // Act
   await umbracoUi.member.clickMemberLinkByName(memberName);
@@ -173,16 +173,23 @@ test('can view member info', async ({umbracoApi, umbracoUi}) => {
   // Assert
   const memberData = await umbracoApi.member.get(memberId);
   await umbracoUi.member.doesMemberInfoHaveValue('Failed login attempts', memberData.failedPasswordAttempts.toString());
-  await umbracoUi.member.doesMemberInfoHaveValue('Last lockout date', memberData.lastLoginDate == null ? 'never' : memberData.lastLoginDate);
-  await umbracoUi.member.doesMemberInfoHaveValue('Last login', memberData.lastLoginDate == null ? 'never' : memberData.lastLoginDate);
-  await umbracoUi.member.doesMemberInfoHaveValue('Password changed', new Date(memberData.lastPasswordChangeDate).toLocaleString());
+  await umbracoUi.member.doesMemberInfoHaveValue('Last lockout date', memberData.lastLoginDate == null ? 'Never' : memberData.lastLoginDate);
+  await umbracoUi.member.doesMemberInfoHaveValue('Last login', memberData.lastLoginDate == null ? 'Never' : memberData.lastLoginDate);
+  await umbracoUi.member.doesMemberInfoHaveValue('Password changed', new Date(memberData.lastPasswordChangeDate).toLocaleString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    hour12: true,
+  }));
 });
 
 test('can enable approved', async ({umbracoApi, umbracoUi}) => {
   // Arrange
   memberTypeId = await umbracoApi.memberType.createDefaultMemberType(memberTypeName);
   memberId = await umbracoApi.member.createDefaultMember(memberName, memberTypeId, email, username, password);
-  await umbracoUi.member.goToSection(ConstantHelper.sections.members);
+  await umbracoUi.member.goToMembers();
 
   // Act
   await umbracoUi.member.clickMemberLinkByName(memberName);
@@ -199,7 +206,7 @@ test('can delete member', {tag: '@smoke'}, async ({umbracoApi, umbracoUi}) => {
   // Arrange
   memberTypeId = await umbracoApi.memberType.createDefaultMemberType(memberTypeName);
   memberId = await umbracoApi.member.createDefaultMember(memberName, memberTypeId, email, username, password);
-  await umbracoUi.member.goToSection(ConstantHelper.sections.members);
+  await umbracoUi.member.goToMembers();
   
   // Act
   await umbracoUi.member.clickMemberLinkByName(memberName);
@@ -215,7 +222,7 @@ test('can delete member', {tag: '@smoke'}, async ({umbracoApi, umbracoUi}) => {
 test('cannot create member with invalid email', async ({umbracoApi, umbracoUi}) => {
   // Arrange
   const invalidEmail = 'invalidemail';
-  await umbracoUi.member.goToSection(ConstantHelper.sections.members);
+  await umbracoUi.member.goToMembers();
 
   // Act
   await umbracoUi.member.clickCreateButton();
@@ -239,7 +246,7 @@ test.skip('cannot update email to an invalid email', async ({umbracoApi, umbraco
   const invalidEmail = 'invalidemail';
   memberTypeId = await umbracoApi.memberType.createDefaultMemberType(memberTypeName);
   memberId = await umbracoApi.member.createDefaultMember(memberName, memberTypeId, email, username, password);
-  await umbracoUi.member.goToSection(ConstantHelper.sections.members);
+  await umbracoUi.member.goToMembers();
 
   // Act
   await umbracoUi.member.clickMemberLinkByName(memberName);

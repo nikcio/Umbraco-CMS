@@ -80,6 +80,7 @@ public class UserPresentationFactory : IUserPresentationFactory
             LastLockoutDate = user.LastLockoutDate,
             LastPasswordChangeDate = user.LastPasswordChangeDate,
             IsAdmin = user.IsAdmin(),
+            Kind = user.Kind
         };
 
         return responseModel;
@@ -92,6 +93,7 @@ public class UserPresentationFactory : IUserPresentationFactory
             Name = user.Name ?? user.Username,
             AvatarUrls = user.GetUserAvatarUrls(_appCaches.RuntimeCache, _mediaFileManager, _imageUrlGenerator)
                 .Select(url => _absoluteUrlBuilder.ToAbsoluteUrl(url).ToString()),
+            Kind = user.Kind
         };
 
     public async Task<UserCreateModel> CreateCreationModelAsync(CreateUserRequestModel requestModel)
@@ -103,6 +105,7 @@ public class UserPresentationFactory : IUserPresentationFactory
             Name = requestModel.Name,
             UserName = requestModel.UserName,
             UserGroupKeys = requestModel.UserGroupIds.Select(x => x.Id).ToHashSet(),
+            Kind = requestModel.Kind
         };
 
         return await Task.FromResult(createModel);
@@ -150,6 +153,7 @@ public class UserPresentationFactory : IUserPresentationFactory
         {
             // You should not be able to invite users if any providers has deny local login set.
             CanInviteUsers = _emailSender.CanSendRequiredEmail() && _externalLoginProviders.HasDenyLocalLogin() is false,
+            UsernameIsEmail = _securitySettings.UsernameIsEmail,
             PasswordConfiguration = _passwordConfigurationPresentationFactory.CreatePasswordConfigurationResponseModel(),
         });
 
