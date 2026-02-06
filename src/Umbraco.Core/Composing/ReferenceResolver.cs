@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security;
 using Microsoft.Extensions.Logging;
 
@@ -12,7 +13,7 @@ namespace Umbraco.Cms.Core.Composing;
 ///     Borrowed and modified from
 ///     https://github.com/dotnet/aspnetcore-tooling/blob/master/src/Razor/src/Microsoft.NET.Sdk.Razor/ReferenceResolver.cs
 /// </remarks>
-internal class ReferenceResolver
+internal sealed class ReferenceResolver
 {
     private readonly IReadOnlyList<Assembly> _assemblies;
     private readonly Dictionary<Assembly, Classification> _classifications;
@@ -20,6 +21,12 @@ internal class ReferenceResolver
     private readonly List<Assembly> _lookup = new();
     private readonly HashSet<string> _umbracoAssemblies;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ReferenceResolver" /> class.
+    /// </summary>
+    /// <param name="targetAssemblies">The target assembly names to check for references.</param>
+    /// <param name="entryPointAssemblies">The entry point assemblies to start resolution from.</param>
+    /// <param name="logger">The logger instance.</param>
     public ReferenceResolver(IReadOnlyList<string> targetAssemblies, IReadOnlyList<Assembly> entryPointAssemblies, ILogger<ReferenceResolver> logger)
     {
         _umbracoAssemblies = new HashSet<string>(targetAssemblies, StringComparer.Ordinal);
@@ -33,20 +40,38 @@ internal class ReferenceResolver
         }
     }
 
-    protected enum Classification
+    /// <summary>
+    /// Classification states for assembly reference resolution.
+    /// </summary>
+    private enum Classification
     {
+        /// <summary>
+        /// The assembly classification is not yet determined.
+        /// </summary>
         Unknown,
+
+        /// <summary>
+        /// The assembly does not reference Umbraco.
+        /// </summary>
         DoesNotReferenceUmbraco,
+
+        /// <summary>
+        /// The assembly references Umbraco directly or transitively.
+        /// </summary>
         ReferencesUmbraco,
+
+        /// <summary>
+        /// The assembly is part of Umbraco core.
+        /// </summary>
         IsUmbraco,
     }
 
     /// <summary>
-    ///     Returns a list of assemblies that directly reference or transitively reference the targetAssemblies
+    /// Returns a list of assemblies that directly reference or transitively reference the target assemblies.
     /// </summary>
-    /// <returns></returns>
+    /// <returns>A collection of assemblies that reference the target assemblies.</returns>
     /// <remarks>
-    ///     This includes all assemblies in the same location as the entry point assemblies
+    /// This includes all assemblies in the same location as the entry point assemblies.
     /// </remarks>
     public IEnumerable<Assembly> ResolveAssemblies()
     {
@@ -59,7 +84,7 @@ internal class ReferenceResolver
 
         // Load in each assembly in the directory of the entry assembly to be included in the search
         // for Umbraco dependencies/transitive dependencies
-        foreach (var dir in assemblyLocations)
+        foreach (var dir in CollectionsMarshal.AsSpan(assemblyLocations))
         {
             foreach (var dll in Directory.EnumerateFiles(dir ?? string.Empty, "*.dll"))
             {
@@ -118,7 +143,7 @@ internal class ReferenceResolver
         return applicationParts;
     }
 
-    protected virtual IEnumerable<Assembly> GetReferences(Assembly assembly)
+    private IEnumerable<Assembly> GetReferences(Assembly assembly)
     {
         foreach (AssemblyName referenceName in assembly.GetReferencedAssemblies())
         {
@@ -142,11 +167,11 @@ internal class ReferenceResolver
         }
     }
 
-    private IEnumerable<string?> GetAssemblyFolders(IEnumerable<Assembly> assemblies) =>
+    private static IEnumerable<string?> GetAssemblyFolders(IEnumerable<Assembly> assemblies) =>
         assemblies.Select(x => Path.GetDirectoryName(GetAssemblyLocation(x))).Distinct();
 
     // borrowed from https://github.com/dotnet/aspnetcore/blob/master/src/Mvc/Mvc.Core/src/ApplicationParts/RelatedAssemblyAttribute.cs
-    private string GetAssemblyLocation(Assembly assembly)
+    private static string GetAssemblyLocation(Assembly assembly)
     {
         if (Uri.TryCreate(assembly.Location, UriKind.Absolute, out Uri? result) &&
             result.IsFile && string.IsNullOrWhiteSpace(result.Fragment))
@@ -195,7 +220,7 @@ internal class ReferenceResolver
             }
         }
 
-        Debug.Assert(classification != Classification.Unknown);
+        Debug.Assert(classification != Classification.Unknown, "Assembly classification should not be unknown at this point.");
         _classifications[assembly] = classification;
         return classification;
     }

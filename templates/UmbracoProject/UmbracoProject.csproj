@@ -4,14 +4,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace Condition="'$(name)' != '$(name{-VALUE-FORMS-}safe_namespace)'">Umbraco.Cms.Web.UI</RootNamespace>
+    <CompressionEnabled>false</CompressionEnabled> <!-- Disable compression. E.g. for umbraco backoffice files. These files should be precompressed by node and not let dotnet handle it -->
   </PropertyGroup>
 
   <ItemGroup>
-    <!--#if (UmbracoVersion != "null")
-    <PackageReference Include="Umbraco.Cms" Version="CUSTOM_VERSION" />
-    #else
     <PackageReference Include="Umbraco.Cms" Version="UMBRACO_VERSION_FROM_TEMPLATE" />
-    #endif-->
+    <!--#if (ModelsBuilderMode == "InMemoryAuto" || (DevelopmentMode == "BackofficeDevelopment" && ModelsBuilderMode == "Default")) -->
+    <PackageReference Include="Umbraco.Cms.DevelopmentMode.Backoffice" Version="UMBRACO_VERSION_FROM_TEMPLATE" />
+    <!--#endif -->
     <!--#if (StarterKit != "None") -->
     <PackageReference Include="STARTER_KIT_NAME" Version="STARTER_KIT_VERSION"/>
     <!--#endif -->

@@ -17,6 +17,9 @@ using Umbraco.Extensions;
 
 namespace Umbraco.Cms.Core.Events;
 
+/// <summary>
+///     Handles content-related notifications to send user notifications.
+/// </summary>
 public sealed class UserNotificationsHandler :
     INotificationHandler<ContentSavedNotification>,
     INotificationHandler<ContentSortedNotification>,
@@ -25,7 +28,6 @@ public sealed class UserNotificationsHandler :
     INotificationHandler<ContentMovedToRecycleBinNotification>,
     INotificationHandler<ContentCopiedNotification>,
     INotificationHandler<ContentRolledBackNotification>,
-    INotificationHandler<ContentSentToPublishNotification>,
     INotificationHandler<ContentUnpublishedNotification>,
     INotificationHandler<AssignedUserGroupPermissionsNotification>,
     INotificationHandler<PublicAccessEntrySavedNotification>
@@ -34,6 +36,12 @@ public sealed class UserNotificationsHandler :
     private readonly IContentService _contentService;
     private readonly Notifier _notifier;
 
+    /// <summary>
+    ///     Initializes a new instance of the <see cref="UserNotificationsHandler" /> class.
+    /// </summary>
+    /// <param name="notifier">The notifier service.</param>
+    /// <param name="actions">The action collection.</param>
+    /// <param name="contentService">The content service.</param>
     public UserNotificationsHandler(Notifier notifier, ActionCollection actions, IContentService contentService)
     {
         _notifier = notifier;
@@ -41,6 +49,7 @@ public sealed class UserNotificationsHandler :
         _contentService = contentService;
     }
 
+    /// <inheritdoc />
     public void Handle(AssignedUserGroupPermissionsNotification notification)
     {
         IContent[]? entities = _contentService.GetByIds(notification.EntityPermissions.Select(e => e.EntityId)).ToArray();
@@ -52,9 +61,11 @@ public sealed class UserNotificationsHandler :
         _notifier.Notify(_actions.GetAction<ActionRights>(), entities!);
     }
 
+    /// <inheritdoc />
     public void Handle(ContentCopiedNotification notification) =>
         _notifier.Notify(_actions.GetAction<ActionCopy>(), notification.Original);
 
+    /// <inheritdoc />
     public void Handle(ContentMovedNotification notification)
     {
         // notify about the move for all moved items
@@ -73,15 +84,19 @@ public sealed class UserNotificationsHandler :
         }
     }
 
+    /// <inheritdoc />
     public void Handle(ContentMovedToRecycleBinNotification notification) => _notifier.Notify(
         _actions.GetAction<ActionDelete>(), notification.MoveInfoCollection.Select(m => m.Entity).ToArray());
 
+    /// <inheritdoc />
     public void Handle(ContentPublishedNotification notification) =>
         _notifier.Notify(_actions.GetAction<ActionPublish>(), notification.PublishedEntities.ToArray());
 
+    /// <inheritdoc />
     public void Handle(ContentRolledBackNotification notification) =>
         _notifier.Notify(_actions.GetAction<ActionRollback>(), notification.Entity);
 
+    /// <inheritdoc />
     public void Handle(ContentSavedNotification notification)
     {
         var newEntities = new List<IContent>();
@@ -107,10 +122,7 @@ public sealed class UserNotificationsHandler :
         _notifier.Notify(_actions.GetAction<ActionUpdate>(), updatedEntities.ToArray());
     }
 
-    [Obsolete("Scheduled for removal in v13")]
-    public void Handle(ContentSentToPublishNotification notification) =>
-        _notifier.Notify(_actions.GetAction<ActionToPublish>(), notification.Entity);
-
+    /// <inheritdoc />
     public void Handle(ContentSortedNotification notification)
     {
         var parentId = notification.SortedEntities.Select(x => x.ParentId).Distinct().ToList();
@@ -135,9 +147,11 @@ public sealed class UserNotificationsHandler :
         _notifier.Notify(_actions.GetAction<ActionSort>(), parent);
     }
 
+    /// <inheritdoc />
     public void Handle(ContentUnpublishedNotification notification) =>
         _notifier.Notify(_actions.GetAction<ActionUnpublish>(), notification.UnpublishedEntities.ToArray());
 
+    /// <inheritdoc />
     public void Handle(PublicAccessEntrySavedNotification notification)
     {
         IContent[] entities = _contentService.GetByIds(notification.SavedEntities.Select(e => e.ProtectedNodeId)).ToArray();
@@ -185,6 +199,11 @@ public sealed class UserNotificationsHandler :
             globalSettings.OnChange(x => _globalSettings = x);
         }
 
+        /// <summary>
+        ///     Sends notifications for the specified action and entities.
+        /// </summary>
+        /// <param name="action">The action that was performed.</param>
+        /// <param name="entities">The entities that were affected.</param>
         public void Notify(IAction? action, params IContent[] entities)
         {
             IUser? user = _backOfficeSecurityAccessor?.BackOfficeSecurity?.CurrentUser;
@@ -210,6 +229,13 @@ public sealed class UserNotificationsHandler :
             SendNotification(user, entities, action, _hostingEnvironment.ApplicationMainUrl);
         }
 
+        /// <summary>
+        ///     Sends notification emails for the specified entities.
+        /// </summary>
+        /// <param name="sender">The user who performed the action.</param>
+        /// <param name="entities">The entities that were affected.</param>
+        /// <param name="action">The action that was performed.</param>
+        /// <param name="siteUri">The site URI.</param>
         private void SendNotification(IUser sender, IEnumerable<IContent> entities, IAction? action, Uri? siteUri)
         {
             if (sender == null)

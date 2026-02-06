@@ -12,17 +12,24 @@ namespace Umbraco.Cms.Core.PropertyEditors;
 ///     CUstom value editor so we can serialize with the correct date format (excluding time)
 ///     and includes the date validator
 /// </summary>
-internal class DateValueEditor : DataValueEditor
+internal sealed class DateValueEditor : DataValueEditor
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="DateValueEditor"/> class.
+    /// </summary>
+    /// <param name="shortStringHelper">The short string helper.</param>
+    /// <param name="jsonSerializer">The JSON serializer.</param>
+    /// <param name="ioHelper">The IO helper.</param>
+    /// <param name="attribute">The data editor attribute.</param>
     public DateValueEditor(
-        ILocalizedTextService localizedTextService,
         IShortStringHelper shortStringHelper,
         IJsonSerializer jsonSerializer,
         IIOHelper ioHelper,
         DataEditorAttribute attribute)
-        : base(localizedTextService, shortStringHelper, jsonSerializer, ioHelper, attribute) =>
+        : base(shortStringHelper, jsonSerializer, ioHelper, attribute) =>
         Validators.Add(new DateTimeValidator());
 
+    /// <inheritdoc />
     public override object ToEditor(IProperty property, string? culture = null, string? segment = null)
     {
         Attempt<DateTime?> date = property.GetValue(culture, segment).TryConvertTo<DateTime?>();

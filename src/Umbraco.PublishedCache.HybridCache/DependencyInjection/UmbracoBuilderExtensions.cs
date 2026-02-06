@@ -1,7 +1,5 @@
-﻿
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using Umbraco.Cms.Core.Cache;
 using Umbraco.Cms.Core.Configuration.Models;
 using Umbraco.Cms.Core.DependencyInjection;
 using Umbraco.Cms.Core.Notifications;
@@ -29,7 +27,14 @@ public static class UmbracoBuilderExtensions
     /// </summary>
     public static IUmbracoBuilder AddUmbracoHybridCache(this IUmbracoBuilder builder)
     {
-        builder.Services.AddHybridCache();
+#pragma warning disable EXTEXP0018
+        builder.Services.AddHybridCache(options =>
+        {
+            // We'll be a bit friendlier and default this to a higher value, you quickly hit the 1MB limit with a few languages and especially blocks.
+            // This can be overwritten later if needed.
+            options.MaximumPayloadBytes = 1024 * 1024 * 100; // 100MB
+        }).AddSerializer<ContentCacheNode, HybridCacheSerializer>();
+#pragma warning restore EXTEXP0018
         builder.Services.AddSingleton<IDatabaseCacheRepository, DatabaseCacheRepository>();
         builder.Services.AddSingleton<IPublishedContentCache, DocumentCache>();
         builder.Services.AddSingleton<IPublishedMediaCache, MediaCache>();
@@ -58,6 +63,7 @@ public static class UmbracoBuilderExtensions
                     throw new IndexOutOfRangeException();
             }
         });
+        builder.AddNotificationAsyncHandler<UmbracoApplicationStartingNotification, HybridCacheStartupNotificationHandler>(); // Need to happen before notification handlers use the cache. Eg. seeding
         builder.Services.AddSingleton<IPropertyCacheCompressionOptions, NoopPropertyCacheCompressionOptions>();
         builder.AddNotificationAsyncHandler<ContentRefreshNotification, CacheRefreshingNotificationHandler>();
         builder.AddNotificationAsyncHandler<ContentDeletedNotification, CacheRefreshingNotificationHandler>();
@@ -67,7 +73,7 @@ public static class UmbracoBuilderExtensions
         builder.AddNotificationAsyncHandler<ContentTypeDeletedNotification, CacheRefreshingNotificationHandler>();
         builder.AddNotificationAsyncHandler<MediaTypeRefreshedNotification, CacheRefreshingNotificationHandler>();
         builder.AddNotificationAsyncHandler<MediaTypeDeletedNotification, CacheRefreshingNotificationHandler>();
-        builder.AddNotificationAsyncHandler<UmbracoApplicationStartedNotification, SeedingNotificationHandler>();
+        builder.AddNotificationAsyncHandler<UmbracoApplicationStartingNotification, SeedingNotificationHandler>();
         builder.AddCacheSeeding();
         return builder;
     }

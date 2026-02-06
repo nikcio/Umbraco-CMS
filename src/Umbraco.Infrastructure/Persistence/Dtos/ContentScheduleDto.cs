@@ -5,13 +5,14 @@ using Umbraco.Cms.Infrastructure.Persistence.DatabaseAnnotations;
 namespace Umbraco.Cms.Infrastructure.Persistence.Dtos;
 
 [TableName(TableName)]
-[PrimaryKey("id", AutoIncrement = false)]
+[PrimaryKey(PrimaryKeyColumnName, AutoIncrement = false)]
 [ExplicitColumns]
-internal class ContentScheduleDto
+internal sealed class ContentScheduleDto
 {
     public const string TableName = Constants.DatabaseSchema.Tables.ContentSchedule;
+    public const string PrimaryKeyColumnName = Constants.DatabaseSchema.Columns.PrimaryKeyNameId;
 
-    [Column("id")]
+    [Column(PrimaryKeyColumnName)]
     [PrimaryKeyColumn(AutoIncrement = false)]
     public Guid Id { get; set; }
 
@@ -24,6 +25,7 @@ internal class ContentScheduleDto
     [NullSetting(NullSetting = NullSettings.Null)] // can be invariant
     public int? LanguageId { get; set; }
 
+    // NOTE: this date is explicitly stored and treated as UTC despite the lack of "Utc" postfix.
     [Column("date")]
     public DateTime Date { get; set; }
 

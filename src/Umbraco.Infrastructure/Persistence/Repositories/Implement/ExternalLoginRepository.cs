@@ -1,3 +1,4 @@
+using System.Data.Common;
 using Microsoft.Extensions.Logging;
 using NPoco;
 using Umbraco.Cms.Core;
@@ -14,13 +15,23 @@ using Umbraco.Extensions;
 
 namespace Umbraco.Cms.Infrastructure.Persistence.Repositories.Implement;
 
-internal class ExternalLoginRepository : EntityRepositoryBase<int, IIdentityUserLogin>, IExternalLoginWithKeyRepository
+internal sealed class ExternalLoginRepository : EntityRepositoryBase<int, IIdentityUserLogin>, IExternalLoginWithKeyRepository
 {
-    public ExternalLoginRepository(IScopeAccessor scopeAccessor, AppCaches cache,
-        ILogger<ExternalLoginRepository> logger)
-        : base(scopeAccessor, cache, logger)
+    public ExternalLoginRepository(
+        IScopeAccessor scopeAccessor,
+        AppCaches cache,
+        ILogger<ExternalLoginRepository> logger,
+        IRepositoryCacheVersionService repositoryCacheVersionService,
+        ICacheSyncService cacheSyncService)
+        : base(
+            scopeAccessor,
+            cache,
+            logger,
+            repositoryCacheVersionService,
+            cacheSyncService)
     {
     }
+
     /// <summary>
     ///     Query for user tokens
     /// </summary>
@@ -53,8 +64,26 @@ internal class ExternalLoginRepository : EntityRepositoryBase<int, IIdentityUser
     }
 
     /// <inheritdoc />
-    public void DeleteUserLogins(Guid userOrMemberKey) =>
-        Database.Delete<ExternalLoginDto>("WHERE userOrMemberKey=@userOrMemberKey", new { userOrMemberKey });
+    public void DeleteUserLogins(Guid userOrMemberKey)
+    {
+        Sql<ISqlContext> sql = SqlContext.Sql()
+            .Delete<ExternalLoginDto>()
+            .Where<ExternalLoginDto>(x => x.UserOrMemberKey == userOrMemberKey);
+        Database.Execute(sql);
+    }
+
+    /// <inheritdoc />
+    public void DeleteUserLoginsForRemovedProviders(IEnumerable<string> currentLoginProviders)
+    {
+        Sql<ISqlContext> sql = Sql()
+            .Select<ExternalLoginDto>(x => x.Id)
+            .From<ExternalLoginDto>()
+            .Where<ExternalLoginDto>(x => !x.LoginProvider.StartsWith(Constants.Security.MemberExternalAuthenticationTypePrefix)) // Only remove external logins relating to backoffice users, not members.
+            .WhereNotIn<ExternalLoginDto>(x => x.LoginProvider, currentLoginProviders);
+
+        var toDelete = Database.Query<ExternalLoginDto>(sql).Select(x => x.Id).ToList();
+        DeleteExternalLogins(toDelete);
+    }
 
     /// <inheritdoc />
     public void Save(Guid userOrMemberKey, IEnumerable<IExternalLogin> logins)
@@ -65,7 +94,7 @@ internal class ExternalLoginRepository : EntityRepositoryBase<int, IIdentityUser
             .Where<ExternalLoginDto>(x => x.UserOrMemberKey == userOrMemberKey)
             .ForUpdate();
 
-        // deduplicate the logins
+        // De-duplicate the logins.
         logins = logins.DistinctBy(x => x.ProviderKey + x.LoginProvider).ToList();
 
         var toUpdate = new Dictionary<int, IExternalLogin>();
@@ -84,7 +113,7 @@ internal class ExternalLoginRepository : EntityRepositoryBase<int, IIdentityUser
             {
                 toUpdate.Add(existing.Id, found);
 
-                // if it's an update then it's not an insert
+                // If it's an update then it's not an insert.
                 toInsert.RemoveAll(x => x.ProviderKey == found.ProviderKey && x.LoginProvider == found.LoginProvider);
             }
             else
@@ -93,22 +122,78 @@ internal class ExternalLoginRepository : EntityRepositoryBase<int, IIdentityUser
             }
         }
 
-        // do the deletes, updates and inserts
-        if (toDelete.Count > 0)
+        // Do the deletes, updates and inserts.
+        DeleteExternalLogins(toDelete);
+        UpdateExternalLogins(userOrMemberKey, toUpdate);
+        InsertExternalLogins(userOrMemberKey, toInsert);
+    }
+
+    private void DeleteExternalLogins(List<int> externalLoginIds)
+    {
+        if (externalLoginIds.Count == 0)
         {
-            // Before we can remove the external login, we must remove the external login tokens associated with that external login,
-            // otherwise we'll get foreign key constraint errors
-            Database.DeleteMany<ExternalLoginTokenDto>().Where(x => toDelete.Contains(x.ExternalLoginId)).Execute();
-            Database.DeleteMany<ExternalLoginDto>().Where(x => toDelete.Contains(x.Id)).Execute();
+            return;
         }
 
+        // Before we can remove the external login, we must remove the external login tokens associated with that external login,
+        // otherwise we'll get foreign key constraint errors
+        Database.DeleteMany<ExternalLoginTokenDto>().Where(x => externalLoginIds.Contains(x.ExternalLoginId)).Execute();
+        Database.DeleteMany<ExternalLoginDto>().Where(x => externalLoginIds.Contains(x.Id)).Execute();
+    }
+
+    private void UpdateExternalLogins(Guid userOrMemberKey, Dictionary<int, IExternalLogin> toUpdate)
+    {
         foreach (KeyValuePair<int, IExternalLogin> u in toUpdate)
         {
             Database.Update(ExternalLoginFactory.BuildDto(userOrMemberKey, u.Value, u.Key));
         }
-
-        Database.InsertBulk(toInsert.Select(i => ExternalLoginFactory.BuildDto(userOrMemberKey, i)));
     }
+
+    private void InsertExternalLogins(Guid userOrMemberKey, List<IExternalLogin> toInsert)
+    {
+        if (toInsert.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            Database.InsertBulk(toInsert.Select(i => ExternalLoginFactory.BuildDto(userOrMemberKey, i)));
+        }
+        catch (DbException ex) when (IsDuplicateKeyException(ex))
+        {
+            // Race condition: another request inserted the same login concurrently.
+            // Fall back to individual inserts, updating if already exists.
+            foreach (IExternalLogin login in toInsert)
+            {
+                ExternalLoginDto dto = ExternalLoginFactory.BuildDto(userOrMemberKey, login);
+                try
+                {
+                    Database.Insert(dto);
+                }
+                catch (DbException inner) when (IsDuplicateKeyException(inner))
+                {
+                    // Already exists - find the existing record and update it
+                    var existingId = Database.ExecuteScalar<int>(
+                        Sql().Select<ExternalLoginDto>(x => x.Id)
+                            .From<ExternalLoginDto>()
+                            .Where<ExternalLoginDto>(x =>
+                                x.UserOrMemberKey == userOrMemberKey
+                                && x.LoginProvider == login.LoginProvider));
+                    dto.Id = existingId;
+                    Database.Update(dto);
+                }
+            }
+        }
+    }
+
+    private static bool IsDuplicateKeyException(DbException ex) =>
+
+        // SQL Server error 2601 = unique index violation
+        // SQL Server error 2627 = unique constraint violation
+        // SQLite: UNIQUE constraint failed
+        ex.Message.Contains("duplicate key", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase);
 
     /// <inheritdoc />
     public void Save(Guid userOrMemberKey, IEnumerable<IExternalLoginToken> tokens)
@@ -185,7 +270,7 @@ internal class ExternalLoginRepository : EntityRepositoryBase<int, IIdentityUser
         Sql<ISqlContext> sql = GetBaseQuery(false);
         sql.Where(GetBaseWhereClause(), new { id });
 
-        ExternalLoginDto? dto = Database.Fetch<ExternalLoginDto>(SqlSyntax.SelectTop(sql, 1)).FirstOrDefault();
+        ExternalLoginDto? dto = Database.FirstOrDefault<ExternalLoginDto>(sql);
         if (dto == null)
         {
             return null;
@@ -243,7 +328,7 @@ internal class ExternalLoginRepository : EntityRepositoryBase<int, IIdentityUser
         }
     }
 
-    private IEnumerable<IIdentityUserLogin> ConvertFromDtos(IEnumerable<ExternalLoginDto> dtos)
+    private static IEnumerable<IIdentityUserLogin> ConvertFromDtos(IEnumerable<ExternalLoginDto> dtos)
     {
         foreach (IIdentityUserLogin entity in dtos.Select(ExternalLoginFactory.BuildEntity))
         {
@@ -270,11 +355,13 @@ internal class ExternalLoginRepository : EntityRepositoryBase<int, IIdentityUser
         return sql;
     }
 
-    protected override string GetBaseWhereClause() => $"{Constants.DatabaseSchema.Tables.ExternalLogin}.id = @id";
+    private string QuotedTableName => QuoteTableName(ExternalLoginDto.TableName);
+
+    protected override string GetBaseWhereClause() => $"{QuotedTableName}.id = @id";
 
     protected override IEnumerable<string> GetDeleteClauses()
     {
-        var list = new List<string> { "DELETE FROM umbracoExternalLogin WHERE id = @id" };
+        var list = new List<string> { $"DELETE FROM {QuotedTableName} WHERE id = @id" };
         return list;
     }
 

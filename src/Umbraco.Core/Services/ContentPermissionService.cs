@@ -1,8 +1,8 @@
-using System.Globalization;
 using Umbraco.Cms.Core.Cache;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Models.Entities;
 using Umbraco.Cms.Core.Models.Membership;
+using Umbraco.Cms.Core.Security;
 using Umbraco.Cms.Core.Services.AuthorizationStatus;
 using Umbraco.Extensions;
 
@@ -17,6 +17,14 @@ internal sealed class ContentPermissionService : IContentPermissionService
     private readonly AppCaches _appCaches;
     private readonly ILanguageService _languageService;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ContentPermissionService"/> class.
+    /// </summary>
+    /// <param name="contentService">The content service.</param>
+    /// <param name="entityService">The entity service.</param>
+    /// <param name="userService">The user service.</param>
+    /// <param name="appCaches">The application caches.</param>
+    /// <param name="languageService">The language service.</param>
     public ContentPermissionService(
         IContentService contentService,
         IEntityService entityService,
@@ -32,30 +40,43 @@ internal sealed class ContentPermissionService : IContentPermissionService
     }
 
     /// <inheritdoc/>
-    public async Task<ContentAuthorizationStatus> AuthorizeAccessAsync(
+    public Task<ContentAuthorizationStatus> AuthorizeAccessAsync(
         IUser user,
         IEnumerable<Guid> contentKeys,
         ISet<string> permissionsToCheck)
     {
-        var contentItems = _contentService.GetByIds(contentKeys).ToArray();
+        Guid[] keysArray = contentKeys.ToArray();
 
-        if (contentItems.Length == 0)
+        if (keysArray.Length == 0)
         {
-            return ContentAuthorizationStatus.NotFound;
+            return Task.FromResult(ContentAuthorizationStatus.Success);
         }
 
-        if (contentItems.Any(contentItem => user.HasPathAccess(contentItem, _entityService, _appCaches) == false))
+        // Use GetAllPaths instead of loading full content items - we only need paths for authorization
+        TreeEntityPath[] entityPaths = _entityService.GetAllPaths(UmbracoObjectTypes.Document, keysArray).ToArray();
+
+        if (entityPaths.Length == 0)
         {
-            return ContentAuthorizationStatus.UnauthorizedMissingPathAccess;
+            return Task.FromResult(ContentAuthorizationStatus.NotFound);
         }
 
-        return HasPermissionAccess(user, contentItems.Select(c => c.Path), permissionsToCheck)
+        // Check path access using the paths directly
+        int[]? startNodeIds = user.CalculateContentStartNodeIds(_entityService, _appCaches);
+        foreach (TreeEntityPath entityPath in entityPaths)
+        {
+            if (ContentPermissions.HasPathAccess(entityPath.Path, startNodeIds, Constants.System.RecycleBinContent) == false)
+            {
+                return Task.FromResult(ContentAuthorizationStatus.UnauthorizedMissingPathAccess);
+            }
+        }
+
+        return Task.FromResult(HasPermissionAccess(user, entityPaths.Select(p => p.Path), permissionsToCheck)
             ? ContentAuthorizationStatus.Success
-            : ContentAuthorizationStatus.UnauthorizedMissingPermissionAccess;
+            : ContentAuthorizationStatus.UnauthorizedMissingPermissionAccess);
     }
 
     /// <inheritdoc/>
-    public async Task<ContentAuthorizationStatus> AuthorizeDescendantsAccessAsync(
+    public Task<ContentAuthorizationStatus> AuthorizeDescendantsAccessAsync(
         IUser user,
         Guid parentKey,
         ISet<string> permissionsToCheck)
@@ -69,7 +90,7 @@ internal sealed class ContentPermissionService : IContentPermissionService
 
         if (contentItem is null)
         {
-            return ContentAuthorizationStatus.NotFound;
+            return Task.FromResult(ContentAuthorizationStatus.NotFound);
         }
 
         while (page * pageSize < total)
@@ -97,41 +118,41 @@ internal sealed class ContentPermissionService : IContentPermissionService
             }
         }
 
-        return denied.Count == 0
+        return Task.FromResult(denied.Count == 0
             ? ContentAuthorizationStatus.Success
-            : ContentAuthorizationStatus.UnauthorizedMissingDescendantAccess;
+            : ContentAuthorizationStatus.UnauthorizedMissingDescendantAccess);
     }
 
     /// <inheritdoc/>
-    public async Task<ContentAuthorizationStatus> AuthorizeRootAccessAsync(IUser user, ISet<string> permissionsToCheck)
+    public Task<ContentAuthorizationStatus> AuthorizeRootAccessAsync(IUser user, ISet<string> permissionsToCheck)
     {
         var hasAccess = user.HasContentRootAccess(_entityService, _appCaches);
 
         if (hasAccess == false)
         {
-            return ContentAuthorizationStatus.UnauthorizedMissingRootAccess;
+            return Task.FromResult(ContentAuthorizationStatus.UnauthorizedMissingRootAccess);
         }
 
         // In this case, we have to use the Root id as path (i.e. -1) since we don't have a content item
-        return HasPermissionAccess(user, new[] { Constants.System.RootString }, permissionsToCheck)
+        return Task.FromResult(HasPermissionAccess(user, new[] { Constants.System.RootString }, permissionsToCheck)
             ? ContentAuthorizationStatus.Success
-            : ContentAuthorizationStatus.UnauthorizedMissingPermissionAccess;
+            : ContentAuthorizationStatus.UnauthorizedMissingPermissionAccess);
     }
 
     /// <inheritdoc/>
-    public async Task<ContentAuthorizationStatus> AuthorizeBinAccessAsync(IUser user, ISet<string> permissionsToCheck)
+    public Task<ContentAuthorizationStatus> AuthorizeBinAccessAsync(IUser user, ISet<string> permissionsToCheck)
     {
         var hasAccess = user.HasContentBinAccess(_entityService, _appCaches);
 
         if (hasAccess == false)
         {
-            return ContentAuthorizationStatus.UnauthorizedMissingBinAccess;
+            return Task.FromResult(ContentAuthorizationStatus.UnauthorizedMissingBinAccess);
         }
 
         // In this case, we have to use the Recycle Bin id as path (i.e. -20) since we don't have a content item
-        return HasPermissionAccess(user, new[] { Constants.System.RecycleBinContentString }, permissionsToCheck)
+        return Task.FromResult(HasPermissionAccess(user, new[] { Constants.System.RecycleBinContentString }, permissionsToCheck)
             ? ContentAuthorizationStatus.Success
-            : ContentAuthorizationStatus.UnauthorizedMissingPermissionAccess;
+            : ContentAuthorizationStatus.UnauthorizedMissingPermissionAccess);
     }
 
     /// <inheritdoc/>
@@ -148,6 +169,50 @@ internal sealed class ContentPermissionService : IContentPermissionService
         return culturesToCheck.All(culture => allowedLanguageIsoCodes.InvariantContains(culture))
             ? ContentAuthorizationStatus.Success
             : ContentAuthorizationStatus.UnauthorizedMissingCulture;
+    }
+
+    /// <inheritdoc/>
+    public Task<ISet<Guid>> FilterAuthorizedAccessAsync(
+        IUser user,
+        IEnumerable<Guid> contentKeys,
+        ISet<string> permissionsToCheck)
+    {
+        Guid[] keysArray = [.. contentKeys];
+
+        if (keysArray.Length == 0)
+        {
+            return Task.FromResult<ISet<Guid>>(new HashSet<Guid>());
+        }
+
+        // Retrieve paths in a single database query for all keys.
+        TreeEntityPath[] entityPaths = [.. _entityService.GetAllPaths(UmbracoObjectTypes.Document, keysArray)];
+
+        if (entityPaths.Length == 0)
+        {
+            return Task.FromResult<ISet<Guid>>(new HashSet<Guid>());
+        }
+
+        var authorizedKeys = new HashSet<Guid>();
+        int[]? startNodeIds = user.CalculateContentStartNodeIds(_entityService, _appCaches);
+
+        foreach (TreeEntityPath entityPath in entityPaths)
+        {
+            // Check path access
+            if (ContentPermissions.HasPathAccess(entityPath.Path, startNodeIds, Constants.System.RecycleBinContent) == false)
+            {
+                continue;
+            }
+
+            // Check permission access
+            EntityPermissionSet permissionSet = _userService.GetPermissionsForPath(user, entityPath.Path);
+            ISet<string> permissionSetPermissions = permissionSet.GetAllPermissions();
+            if (permissionsToCheck.All(p => permissionSetPermissions.Contains(p)))
+            {
+                authorizedKeys.Add(entityPath.Key);
+            }
+        }
+
+        return Task.FromResult<ISet<Guid>>(authorizedKeys);
     }
 
     /// <summary>

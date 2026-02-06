@@ -4,21 +4,26 @@ using Umbraco.Cms.Infrastructure.Persistence.DatabaseAnnotations;
 
 namespace Umbraco.Cms.Infrastructure.Persistence.Dtos;
 
-[TableName(Constants.DatabaseSchema.Tables.UserGroup2GranularPermission)]
+[TableName(TableName)]
+[PrimaryKey(PrimaryKeyColumnName, AutoIncrement = true)]
 [ExplicitColumns]
 public class UserGroup2GranularPermissionDto
 {
-    [Column("id")]
+    public const string TableName = Constants.DatabaseSchema.Tables.UserGroup2GranularPermission;
+    public const string PrimaryKeyColumnName = Constants.DatabaseSchema.Columns.PrimaryKeyNameId;
+    public const string UniqueIdColumnName = Constants.DatabaseSchema.Columns.UniqueIdName;
+
+    [Column(PrimaryKeyColumnName)]
     [PrimaryKeyColumn(Name = "PK_umbracoUserGroup2GranularPermissionDto", AutoIncrement = true)]
     public int Id { get; set; }
 
     [Column("userGroupKey")]
-    [Index(IndexTypes.NonClustered, Name = "IX_umbracoUserGroup2GranularPermissionDto_UserGroupKey_UniqueId", IncludeColumns = "uniqueId")]
-    [ForeignKey(typeof(UserGroupDto), Column = "key")]
+    [Index(IndexTypes.NonClustered, Name = "IX_umbracoUserGroup2GranularPermissionDto_UserGroupKey_UniqueId", IncludeColumns = UniqueIdColumnName)]
+    [ForeignKey(typeof(UserGroupDto), Column = UserGroupDto.KeyColumnName)]
     public Guid UserGroupKey { get; set; }
 
-    [Column("uniqueId")]
-    [ForeignKey(typeof(NodeDto), Column = "uniqueId")]
+    [Column(UniqueIdColumnName)]
+    [ForeignKey(typeof(NodeDto), Column = UniqueIdColumnName)]
     [NullSetting(NullSetting = NullSettings.Null)]
     [Index(IndexTypes.NonClustered, Name = "IX_umbracoUserGroup2GranularPermissionDto_UniqueId")]
     public Guid? UniqueId { get; set; }
@@ -35,7 +40,7 @@ public class UserGroup2GranularPermissionDto
 
 // this is UserGroup2GranularPermissionDto + int ids
 // it is used for handling legacy cases where we use int Ids
-internal class UserGroup2GranularPermissionWithIdsDto : UserGroup2GranularPermissionDto
+internal sealed class UserGroup2GranularPermissionWithIdsDto : UserGroup2GranularPermissionDto
 {
     [Column("entityId")]
     public int EntityId { get; set; }

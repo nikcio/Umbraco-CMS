@@ -10,50 +10,106 @@ namespace Umbraco.Cms.Core.Services;
 public interface IDataTypeService : IService
 {
     /// <summary>
-    ///     Returns a dictionary of content type <see cref="Udi" />s and the property type aliases that use a
-    ///     <see cref="IDataType" />
+    ///     Gets a paged result of items which are in relation with the current data type.
     /// </summary>
-    /// <param name="id"></param>
-    /// <returns></returns>
-    [Obsolete("Please use GetReferencesAsync. Will be deleted in V15.")]
-    IReadOnlyDictionary<Udi, IEnumerable<string>> GetReferences(int id);
-
-    IReadOnlyDictionary<Udi, IEnumerable<string>> GetListViewReferences(int id) => throw new NotImplementedException();
+    /// <param name="key">The identifier of the data type to retrieve relations for.</param>
+    /// <param name="skip">The amount of items to skip</param>
+    /// <param name="take">The amount of items to take.</param>
+    /// <returns>A paged result of <see cref="RelationItemModel" /> objects.</returns>
+    /// <remarks>
+    /// Note that the model and method signature here aligns with with how we handle retrieval of concrete Umbraco
+    /// relations based on documents, media and members in <see cref="ITrackedReferencesService"/>.
+    /// The intention is that we align data type relations with these so they can be handled polymorphically at the management API
+    /// and backoffice UI level.
+    /// </remarks>
+    Task<PagedModel<RelationItemModel>> GetPagedRelationsAsync(Guid key, int skip, int take)
+        => Task.FromResult(new PagedModel<RelationItemModel>());
 
     /// <summary>
-    ///     Returns a dictionary of content type <see cref="Udi" />s and the property type aliases that use a <see cref="IDataType" />
+    ///     Creates a container for organizing data types.
     /// </summary>
-    /// <param name="id">The guid Id of the <see cref="IDataType" /></param>
-    /// <returns></returns>
-    Task<Attempt<IReadOnlyDictionary<Udi, IEnumerable<string>>, DataTypeOperationStatus>> GetReferencesAsync(Guid id);
-
+    /// <param name="parentId">The parent container ID, or -1 for root.</param>
+    /// <param name="key">The unique key for the new container.</param>
+    /// <param name="name">The name of the container.</param>
+    /// <param name="userId">The ID of the user performing the action.</param>
+    /// <returns>An operation result containing the created container.</returns>
     [Obsolete("Please use IDataTypeContainerService for all data type container operations. Will be removed in V15.")]
-    Attempt<OperationResult<OperationResultType, EntityContainer>?> CreateContainer(int parentId, Guid key, string name,
+    Attempt<OperationResult<OperationResultType, EntityContainer>?> CreateContainer(
+        int parentId,
+        Guid key,
+        string name,
         int userId = Constants.Security.SuperUserId);
 
+    /// <summary>
+    ///     Saves a container.
+    /// </summary>
+    /// <param name="container">The container to save.</param>
+    /// <param name="userId">The ID of the user performing the action.</param>
+    /// <returns>An operation result indicating success or failure.</returns>
     [Obsolete("Please use IDataTypeContainerService for all data type container operations. Will be removed in V15.")]
     Attempt<OperationResult?> SaveContainer(EntityContainer container, int userId = Constants.Security.SuperUserId);
 
+    /// <summary>
+    ///     Gets a container by its ID.
+    /// </summary>
+    /// <param name="containerId">The container ID.</param>
+    /// <returns>The container, or null if not found.</returns>
     [Obsolete("Please use IDataTypeContainerService for all data type container operations. Will be removed in V15.")]
     EntityContainer? GetContainer(int containerId);
 
+    /// <summary>
+    ///     Gets a container by its unique key.
+    /// </summary>
+    /// <param name="containerId">The container unique key.</param>
+    /// <returns>The container, or null if not found.</returns>
     [Obsolete("Please use IDataTypeContainerService for all data type container operations. Will be removed in V15.")]
     EntityContainer? GetContainer(Guid containerId);
 
+    /// <summary>
+    ///     Gets containers by name and level.
+    /// </summary>
+    /// <param name="folderName">The container name.</param>
+    /// <param name="level">The container level.</param>
+    /// <returns>A collection of matching containers.</returns>
     [Obsolete("Please use IDataTypeContainerService for all data type container operations. Will be removed in V15.")]
     IEnumerable<EntityContainer> GetContainers(string folderName, int level);
 
+    /// <summary>
+    ///     Gets all ancestor containers for a data type.
+    /// </summary>
+    /// <param name="dataType">The data type.</param>
+    /// <returns>A collection of ancestor containers.</returns>
     [Obsolete("Please use IDataTypeContainerService for all data type container operations. Will be removed in V15.")]
     IEnumerable<EntityContainer> GetContainers(IDataType dataType);
 
+    /// <summary>
+    ///     Gets containers by their IDs.
+    /// </summary>
+    /// <param name="containerIds">The container IDs.</param>
+    /// <returns>A collection of containers.</returns>
     [Obsolete("Please use IDataTypeContainerService for all data type container operations. Will be removed in V15.")]
     IEnumerable<EntityContainer> GetContainers(int[] containerIds);
 
+    /// <summary>
+    ///     Deletes a container.
+    /// </summary>
+    /// <param name="containerId">The ID of the container to delete.</param>
+    /// <param name="userId">The ID of the user performing the action.</param>
+    /// <returns>An operation result indicating success or failure.</returns>
     [Obsolete("Please use IDataTypeContainerService for all data type container operations. Will be removed in V15.")]
     Attempt<OperationResult?> DeleteContainer(int containerId, int userId = Constants.Security.SuperUserId);
 
+    /// <summary>
+    ///     Renames a container.
+    /// </summary>
+    /// <param name="id">The ID of the container to rename.</param>
+    /// <param name="name">The new name for the container.</param>
+    /// <param name="userId">The ID of the user performing the action.</param>
+    /// <returns>An operation result containing the renamed container.</returns>
     [Obsolete("Please use IDataTypeContainerService for all data type container operations. Will be removed in V15.")]
-    Attempt<OperationResult<OperationResultType, EntityContainer>?> RenameContainer(int id, string name,
+    Attempt<OperationResult<OperationResultType, EntityContainer>?> RenameContainer(
+        int id,
+        string name,
         int userId = Constants.Security.SuperUserId);
 
     /// <summary>
@@ -75,16 +131,6 @@ public interface IDataTypeService : IService
     /// </returns>
     [Obsolete("Please use GetAsync. Will be removed in V15.")]
     IDataType? GetDataType(int id);
-
-    /// <summary>
-    ///     Gets a <see cref="IDataType" /> by its unique guid Id
-    /// </summary>
-    /// <param name="id">Unique guid Id of the DataType</param>
-    /// <returns>
-    ///     <see cref="IDataType" />
-    /// </returns>
-    [Obsolete("Please use GetAsync. Will be removed in V15.")]
-    IDataType? GetDataType(Guid id);
 
     /// <summary>
     ///     Gets an <see cref="IDataType" /> by its Name
@@ -192,19 +238,25 @@ public interface IDataTypeService : IService
     IEnumerable<IDataType> GetByEditorAlias(string propertyEditorAlias);
 
     /// <summary>
-    ///     Gets all <see cref="IDataType" /> for a given property editor
+    ///     Gets all <see cref="IDataType" /> for a given property editor.
     /// </summary>
-    /// <param name="propertyEditorAlias">Alias of the property editor</param>
-    /// <returns>Collection of <see cref="IDataType" /> configured for the property editor</returns>
+    /// <param name="propertyEditorAlias">Alias of the property editor.</param>
+    /// <returns>Collection of <see cref="IDataType" /> configured for the property editor.</returns>
     Task<IEnumerable<IDataType>> GetByEditorAliasAsync(string propertyEditorAlias) => Task.FromResult(GetByEditorAlias(propertyEditorAlias));
 
     /// <summary>
-    ///     Gets all <see cref="IDataType" /> for a given editor UI alias
+    ///     Gets all <see cref="IDataType" /> for a given editor UI alias.
     /// </summary>
     /// <param name="editorUiAlias">The UI Alias to query by.</param>
     /// <returns>Collection of <see cref="IDataType" /> which has the UI alias.</returns>
     Task<IEnumerable<IDataType>> GetByEditorUiAlias(string editorUiAlias);
 
+    /// <summary>
+    ///     Moves a <see cref="IDataType" /> to a given container.
+    /// </summary>
+    /// <param name="toMove">The data type that will be moved.</param>
+    /// <param name="parentId">The ID of the parent container to move to.</param>
+    /// <returns>An operation result indicating the move status.</returns>
     [Obsolete("Please use MoveAsync instead. Will be removed in V15")]
     Attempt<OperationResult<MoveOperationStatusType>?> Move(IDataType toMove, int parentId);
 
@@ -214,15 +266,30 @@ public interface IDataTypeService : IService
     /// <param name="toMove">The data type that will be moved</param>
     /// <param name="containerKey">The container key where the data type will be moved to.</param>
     /// <param name="userKey">The user that did the Move action</param>
-    /// <returns></returns>
+    /// <returns>An attempt result with the moved data type and operation status.</returns>
     Task<Attempt<IDataType, DataTypeOperationStatus>> MoveAsync(IDataType toMove, Guid? containerKey, Guid userKey);
 
+    /// <summary>
+    ///     Copies a <see cref="IDataType" /> to a given container.
+    /// </summary>
+    /// <param name="copying">The data type to copy.</param>
+    /// <param name="containerId">The ID of the target container.</param>
+    /// <returns>An operation result containing the copied data type.</returns>
     [Obsolete("Please use CopyASync instead. Will be removed in V15")]
     Attempt<OperationResult<MoveOperationStatusType, IDataType>?> Copy(IDataType copying, int containerId) =>
         Copy(copying, containerId, Constants.Security.SuperUserId);
 
+    /// <summary>
+    ///     Copies a <see cref="IDataType" /> to a given container.
+    /// </summary>
+    /// <param name="copying">The data type to copy.</param>
+    /// <param name="containerId">The ID of the target container.</param>
+    /// <param name="userId">The ID of the user performing the action.</param>
+    /// <returns>An operation result containing the copied data type.</returns>
     [Obsolete("Please use CopyASync instead. Will be removed in V15")]
-    Attempt<OperationResult<MoveOperationStatusType, IDataType>?> Copy(IDataType copying, int containerId,
+    Attempt<OperationResult<MoveOperationStatusType, IDataType>?> Copy(
+        IDataType copying,
+        int containerId,
         int userId = Constants.Security.SuperUserId) => throw new NotImplementedException();
 
     /// <summary>
@@ -231,7 +298,7 @@ public interface IDataTypeService : IService
     /// <param name="toCopy">The data type that will be copied</param>
     /// <param name="containerKey">The container key where the data type will be copied to.</param>
     /// <param name="userKey">The user that did the Copy action</param>
-    /// <returns></returns>
+    /// <returns>An attempt result with the copied data type and operation status.</returns>
     Task<Attempt<IDataType, DataTypeOperationStatus>> CopyAsync(IDataType toCopy, Guid? containerKey, Guid userKey);
 
     /// <summary>
@@ -242,9 +309,9 @@ public interface IDataTypeService : IService
     IEnumerable<ValidationResult> ValidateConfigurationData(IDataType dataType);
 
     /// <summary>
-    ///     Gets all <see cref="IDataType" /> for a set of property editors
+    ///     Gets all <see cref="IDataType" /> for a set of property editors.
     /// </summary>
-    /// <param name="propertyEditorAlias">Aliases of the property editors</param>
-    /// <returns>Collection of <see cref="IDataType" /> configured for the property editors</returns>
+    /// <param name="propertyEditorAlias">Aliases of the property editors.</param>
+    /// <returns>Collection of <see cref="IDataType" /> configured for the property editors.</returns>
     Task<IEnumerable<IDataType>> GetByEditorAliasAsync(string[] propertyEditorAlias) => Task.FromResult(propertyEditorAlias.SelectMany(x=>GetByEditorAlias(x)));
 }

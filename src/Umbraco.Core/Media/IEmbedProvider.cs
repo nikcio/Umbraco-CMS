@@ -1,5 +1,8 @@
 namespace Umbraco.Cms.Core.Media;
 
+/// <summary>
+///     Defines a provider for embedding media content from external sources using OEmbed protocol.
+/// </summary>
 public interface IEmbedProvider
 {
     /// <summary>
@@ -18,7 +21,13 @@ public interface IEmbedProvider
     /// <example>?key=value&amp;key2=value2</example>
     Dictionary<string, string> RequestParams { get; }
 
-    [Obsolete("Use GetMarkupAsync instead. This will be removed in Umbraco 15.")]
-    string? GetMarkup(string url, int maxWidth = 0, int maxHeight = 0);
-    Task<string?> GetMarkupAsync(string url, int? maxWidth, int? maxHeight, CancellationToken cancellationToken) => Task.FromResult(GetMarkup(url, maxWidth ?? 0, maxHeight ?? 0));
+    /// <summary>
+    ///     Gets the HTML markup for embedding the media content from the specified URL.
+    /// </summary>
+    /// <param name="url">The URL of the media to embed.</param>
+    /// <param name="maxWidth">The maximum width of the embedded content, or <c>null</c> for no constraint.</param>
+    /// <param name="maxHeight">The maximum height of the embedded content, or <c>null</c> for no constraint.</param>
+    /// <param name="cancellationToken">A cancellation token to observe while waiting for the task to complete.</param>
+    /// <returns>A task that represents the asynchronous operation, containing the HTML markup or <c>null</c> if unavailable.</returns>
+    Task<string?> GetMarkupAsync(string url, int? maxWidth, int? maxHeight, CancellationToken cancellationToken);
 }

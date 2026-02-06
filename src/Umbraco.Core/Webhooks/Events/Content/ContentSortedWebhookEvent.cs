@@ -10,12 +10,24 @@ using Umbraco.Cms.Core.Sync;
 
 namespace Umbraco.Cms.Core.Webhooks.Events;
 
+/// <summary>
+/// Webhook event that fires when content is sorted.
+/// </summary>
 [WebhookEvent("Content Sorted", Constants.WebhookEvents.Types.Content)]
 public class ContentSortedWebhookEvent : WebhookEventBase<ContentSortedNotification>
 {
     private readonly IPublishedContentCache _contentCache;
     private readonly IApiContentBuilder _apiContentBuilder;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ContentSortedWebhookEvent"/> class.
+    /// </summary>
+    /// <param name="webhookFiringService">The webhook firing service.</param>
+    /// <param name="webhookService">The webhook service.</param>
+    /// <param name="webhookSettings">The webhook settings.</param>
+    /// <param name="serverRoleAccessor">The server role accessor.</param>
+    /// <param name="contentCache">The published content cache.</param>
+    /// <param name="apiContentBuilder">The API content builder.</param>
     public ContentSortedWebhookEvent(
         IWebhookFiringService webhookFiringService,
         IWebhookService webhookService,
@@ -33,17 +45,16 @@ public class ContentSortedWebhookEvent : WebhookEventBase<ContentSortedNotificat
         _apiContentBuilder = apiContentBuilder;
     }
 
+    /// <inheritdoc />
     public override string Alias => Constants.WebhookEvents.Aliases.ContentSorted;
 
-    public override object? ConvertNotificationToRequestPayload(ContentSortedNotification notification)
-    {
-        var sortedEntities = new List<object?>();
-        foreach (var entity in notification.SortedEntities)
-        {
-            IPublishedContent? publishedContent = _contentCache.GetById(entity.Key);
-            object? payload = publishedContent is null ? null : _apiContentBuilder.Build(publishedContent);
-            sortedEntities.Add(payload);
-        }
-        return sortedEntities;
-    }
+    /// <inheritdoc />
+    public override object ConvertNotificationToRequestPayload(ContentSortedNotification notification)
+        => notification.SortedEntities
+            .OrderBy(entity => entity.SortOrder)
+            .Select(entity => new
+            {
+                Id = entity.Key,
+                entity.SortOrder,
+            });
 }

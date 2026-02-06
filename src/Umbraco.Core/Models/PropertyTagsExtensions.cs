@@ -12,8 +12,13 @@ namespace Umbraco.Extensions;
 /// </summary>
 public static class PropertyTagsExtensions
 {
-    // gets the tag configuration for a property
-    // from the datatype configuration, and the editor tag configuration attribute
+    /// <summary>
+    ///     Gets the tag configuration for a property from the datatype configuration and editor tag configuration attribute.
+    /// </summary>
+    /// <param name="property">The property.</param>
+    /// <param name="propertyEditors">The property editors collection.</param>
+    /// <param name="dataTypeService">The data type service.</param>
+    /// <returns>The tag configuration if available; otherwise, <c>null</c>.</returns>
     public static TagConfiguration? GetTagConfiguration(this IProperty property, PropertyEditorCollection propertyEditors, IDataTypeService dataTypeService)
     {
         if (property == null)
@@ -22,7 +27,7 @@ public static class PropertyTagsExtensions
         }
 
         IDataEditor? editor = propertyEditors[property.PropertyType?.PropertyEditorAlias];
-        TagsPropertyEditorAttribute? tagAttribute = editor?.GetTagAttribute();
+        TagsPropertyEditorAttribute? tagAttribute = GetTagAttribute(editor);
 
         var configurationObject = property.PropertyType is null
             ? null
@@ -36,6 +41,12 @@ public static class PropertyTagsExtensions
 
         return configuration;
     }
+
+    /// <summary>
+    ///     Gets the tags property editor attribute from the data editor.
+    /// </summary>
+    private static TagsPropertyEditorAttribute? GetTagAttribute(IDataEditor? editor)
+        => editor?.GetType().GetCustomAttribute<TagsPropertyEditorAttribute>(false);
 
     /// <summary>
     ///     Assign tags.
@@ -88,7 +99,15 @@ public static class PropertyTagsExtensions
         property.RemoveTags(tags, configuration.StorageType, serializer, configuration.Delimiter, culture);
     }
 
-    // used by ContentRepositoryBase
+    /// <summary>
+    ///     Gets the tags value from a property. Used by ContentRepositoryBase.
+    /// </summary>
+    /// <param name="property">The property.</param>
+    /// <param name="propertyEditors">The property editors collection.</param>
+    /// <param name="dataTypeService">The data type service.</param>
+    /// <param name="serializer">The JSON serializer.</param>
+    /// <param name="culture">A culture, for multi-lingual properties.</param>
+    /// <returns>An enumeration of tag values.</returns>
     public static IEnumerable<string> GetTagsValue(this IProperty property, PropertyEditorCollection propertyEditors, IDataTypeService dataTypeService, IJsonSerializer serializer, string? culture = null)
     {
         if (property == null)
@@ -226,12 +245,12 @@ public static class PropertyTagsExtensions
         switch (storageType)
         {
             case TagsStorageType.Csv:
-                return value.Split(new[] { delimiter }, StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim());
+                return value.Split([delimiter], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
             case TagsStorageType.Json:
                 try
                 {
-                    return serializer.Deserialize<string[]>(value)?.Select(x => x.Trim()) ?? Enumerable.Empty<string>();
+                    return serializer.Deserialize<string[]>(value)?.Select(x => x.Trim()) ?? [];
                 }
                 catch (Exception)
                 {

@@ -1,5 +1,3 @@
-using Microsoft.Extensions.DependencyInjection;
-using Umbraco.Cms.Core.DependencyInjection;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Persistence.Repositories;
 using Umbraco.Cms.Core.Scoping;
@@ -7,21 +5,21 @@ using Umbraco.Cms.Core.Services.OperationStatus;
 
 namespace Umbraco.Cms.Core.Services;
 
+/// <summary>
+/// Provides services for checking data type usage information.
+/// </summary>
 public class DataTypeUsageService : IDataTypeUsageService
 {
     private readonly IDataTypeUsageRepository _dataTypeUsageRepository;
     private readonly IDataTypeService _dataTypeService;
     private readonly ICoreScopeProvider _scopeProvider;
 
-
-    [Obsolete("Use non-obsolete constructor. This will be removed in Umbraco 15.")]
-    public DataTypeUsageService(
-        IDataTypeUsageRepository dataTypeUsageRepository,
-        ICoreScopeProvider scopeProvider)
-        : this(dataTypeUsageRepository, StaticServiceProvider.Instance.GetRequiredService<IDataTypeService>(), scopeProvider)
-    {
-    }
-
+    /// <summary>
+    /// Initializes a new instance of the <see cref="DataTypeUsageService"/> class.
+    /// </summary>
+    /// <param name="dataTypeUsageRepository">The data type usage repository.</param>
+    /// <param name="dataTypeService">The data type service.</param>
+    /// <param name="scopeProvider">The scope provider.</param>
     public DataTypeUsageService(
         IDataTypeUsageRepository dataTypeUsageRepository,
         IDataTypeService dataTypeService,
@@ -30,15 +28,6 @@ public class DataTypeUsageService : IDataTypeUsageService
         _dataTypeUsageRepository = dataTypeUsageRepository;
         _dataTypeService = dataTypeService;
         _scopeProvider = scopeProvider;
-    }
-
-    /// <inheritdoc/>
-    [Obsolete("Please use HasSavedValuesAsync. Scheduled for removable in Umbraco 15.")]
-    public bool HasSavedValues(int dataTypeId)
-    {
-        using ICoreScope scope = _scopeProvider.CreateCoreScope(autoComplete: true);
-
-        return _dataTypeUsageRepository.HasSavedValues(dataTypeId);
     }
 
     /// <inheritdoc/>

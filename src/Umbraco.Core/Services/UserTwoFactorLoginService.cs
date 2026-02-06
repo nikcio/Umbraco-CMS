@@ -7,10 +7,17 @@ using Umbraco.Cms.Core.Services.OperationStatus;
 namespace Umbraco.Cms.Core.Services;
 
 /// <inheritdoc cref="Umbraco.Cms.Core.Services.IUserTwoFactorLoginService" />
-internal class UserTwoFactorLoginService : TwoFactorLoginServiceBase, IUserTwoFactorLoginService
+internal sealed class UserTwoFactorLoginService : TwoFactorLoginServiceBase, IUserTwoFactorLoginService
 {
     private readonly IUserService _userService;
 
+    /// <summary>
+    ///     Initializes a new instance of the <see cref="UserTwoFactorLoginService" /> class.
+    /// </summary>
+    /// <param name="twoFactorLoginService">The two-factor login service.</param>
+    /// <param name="twoFactorSetupGenerators">The two-factor setup generators.</param>
+    /// <param name="userService">The user service.</param>
+    /// <param name="scopeProvider">The scope provider.</param>
     public UserTwoFactorLoginService(
         ITwoFactorLoginService twoFactorLoginService,
         IEnumerable<ITwoFactorProvider> twoFactorSetupGenerators,
@@ -32,7 +39,7 @@ internal class UserTwoFactorLoginService : TwoFactorLoginServiceBase, IUserTwoFa
         return await base.DisableAsync(userKey, providerName);
     }
 
-    /// <inheritdoc cref="IUserTwoFactorLoginService.DisableAsync" />
+    /// <inheritdoc cref="IUserTwoFactorLoginService.GetProviderNamesAsync" />
     public override async Task<Attempt<IEnumerable<UserTwoFactorProviderModel>, TwoFactorOperationStatus>> GetProviderNamesAsync(Guid userKey)
     {
         IUser? user = await _userService.GetAsync(userKey);
@@ -45,7 +52,7 @@ internal class UserTwoFactorLoginService : TwoFactorLoginServiceBase, IUserTwoFa
         return await base.GetProviderNamesAsync(userKey);
     }
 
-    /// <inheritdoc cref="IUserTwoFactorLoginService.DisableAsync" />
+    /// <inheritdoc cref="IUserTwoFactorLoginService.GetSetupInfoAsync" />
     public override async Task<Attempt<ISetupTwoFactorModel, TwoFactorOperationStatus>> GetSetupInfoAsync(Guid userKey, string providerName)
     {
         IUser? user = await _userService.GetAsync(userKey);
@@ -58,7 +65,7 @@ internal class UserTwoFactorLoginService : TwoFactorLoginServiceBase, IUserTwoFa
         return await base.GetSetupInfoAsync(userKey, providerName);
     }
 
-    /// <inheritdoc cref="IUserTwoFactorLoginService.DisableAsync" />
+    /// <inheritdoc cref="IUserTwoFactorLoginService.ValidateAndSaveAsync" />
     public override async Task<Attempt<TwoFactorOperationStatus>> ValidateAndSaveAsync(string providerName, Guid userKey, string secret, string code)
     {
         IUser? user = await _userService.GetAsync(userKey);

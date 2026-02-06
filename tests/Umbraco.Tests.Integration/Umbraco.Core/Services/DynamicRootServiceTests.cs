@@ -19,7 +19,7 @@ namespace Umbraco.Cms.Tests.Integration.Umbraco.Core.Services;
 [TestFixture]
 [UmbracoTest(Database = UmbracoTestOptions.Database.NewSchemaPerTest)]
 [SuppressMessage("ReSharper", "NotNullOrRequiredMemberIsNotInitialized")]
-public class DynamicRootServiceTests : UmbracoIntegrationTest
+internal sealed class DynamicRootServiceTests : UmbracoIntegrationTest
 {
     public enum DynamicRootOrigin
     {
@@ -27,7 +27,8 @@ public class DynamicRootServiceTests : UmbracoIntegrationTest
         Parent,
         Current,
         Site,
-        ByKey
+        ByKey,
+        ContentRoot
     }
 
     public enum DynamicRootStepAlias
@@ -37,11 +38,11 @@ public class DynamicRootServiceTests : UmbracoIntegrationTest
         FurthestDescendantOrSelf,
     }
 
-    protected IContentTypeService ContentTypeService => GetRequiredService<IContentTypeService>();
+    private IContentTypeService ContentTypeService => GetRequiredService<IContentTypeService>();
 
-    protected IFileService FileService => GetRequiredService<IFileService>();
+    private IFileService FileService => GetRequiredService<IFileService>();
 
-    protected ContentService ContentService => (ContentService)GetRequiredService<IContentService>();
+    private ContentService ContentService => (ContentService)GetRequiredService<IContentService>();
 
     private DynamicRootService DynamicRootService => (GetRequiredService<IDynamicRootService>() as DynamicRootService)!;
 
@@ -532,6 +533,28 @@ public class DynamicRootServiceTests : UmbracoIntegrationTest
 
         // Assert
         Assert.AreEqual(ContentYears.Key, result);
+    }
+
+    [Test]
+    public void CalculateOriginKey__ContentRoot_should_return_the_system_root_key()
+    {
+        // Arrange
+        var selector = new DynamicRootNodeQuery()
+        {
+            OriginAlias = DynamicRootOrigin.ContentRoot.ToString(),
+            OriginKey = null,
+            Context = new DynamicRootContext()
+            {
+                CurrentKey = ContentAct2022RanD.Key,
+                ParentKey = ContentActs2022.Key,
+            },
+        };
+
+        // Act
+        var result = DynamicRootService.FindOriginKey(selector);
+
+        // Assert
+        Assert.AreEqual(global::Umbraco.Cms.Core.Constants.System.RootSystemKey, result);
     }
 
     [Test]

@@ -4,6 +4,9 @@ using Umbraco.Cms.Core.Persistence.Querying;
 
 namespace Umbraco.Cms.Core.Services;
 
+/// <summary>
+///     Provides methods for working with entities across Umbraco, including content, media, members, and other entity types.
+/// </summary>
 public interface IEntityService
 {
     /// <summary>
@@ -171,6 +174,60 @@ public interface IEntityService
     IEntitySlim? GetParent(int id, UmbracoObjectTypes objectType);
 
     /// <summary>
+    /// Gets non-trashed sibling entities of a specified target entity, within a given range before and after the target, ordered as specified.
+    /// </summary>
+    /// <param name="key">The key of the target entity whose siblings are to be retrieved.</param>
+    /// <param name="objectTypes">The object types of the entities.</param>
+    /// <param name="before">The number of siblings to retrieve before the target entity. Needs to be greater or equal to 0.</param>
+    /// <param name="after">The number of siblings to retrieve after the target entity. Needs to be greater or equal to 0.</param>
+    /// <param name="filter">An optional filter to apply to the result set.</param>
+    /// <param name="ordering">The ordering to apply to the siblings.</param>
+    /// <param name="totalBefore">Outputs the total number of siblings before the target entity.</param>
+    /// <param name="totalAfter">Outputs the total number of siblings after the target entity.</param>
+    /// <returns>Enumerable of non-trashed sibling entities.</returns>
+    IEnumerable<IEntitySlim> GetSiblings(
+        Guid key,
+        IEnumerable<UmbracoObjectTypes> objectTypes,
+        int before,
+        int after,
+        out long totalBefore,
+        out long totalAfter,
+        IQuery<IUmbracoEntity>? filter = null,
+        Ordering? ordering = null)
+    {
+        totalBefore = 0;
+        totalAfter = 0;
+        return [];
+    }
+
+    /// <summary>
+    /// Gets trashed sibling entities of a specified target entity, within a given range before and after the target, ordered as specified.
+    /// </summary>
+    /// <param name="key">The key of the target entity whose siblings are to be retrieved.</param>
+    /// <param name="objectTypes">The object types of the entities.</param>
+    /// <param name="before">The number of siblings to retrieve before the target entity. Needs to be greater or equal to 0.</param>
+    /// <param name="after">The number of siblings to retrieve after the target entity. Needs to be greater or equal to 0.</param>
+    /// <param name="filter">An optional filter to apply to the result set.</param>
+    /// <param name="ordering">The ordering to apply to the siblings.</param>
+    /// <param name="totalBefore">Outputs the total number of siblings before the target entity.</param>
+    /// <param name="totalAfter">Outputs the total number of siblings after the target entity.</param>
+    /// <returns>Enumerable of trashed sibling entities.</returns>
+    IEnumerable<IEntitySlim> GetTrashedSiblings(
+        Guid key,
+        IEnumerable<UmbracoObjectTypes> objectTypes,
+        int before,
+        int after,
+        out long totalBefore,
+        out long totalAfter,
+        IQuery<IUmbracoEntity>? filter = null,
+        Ordering? ordering = null)
+    {
+        totalBefore = 0;
+        totalAfter = 0;
+        return [];
+    }
+
+    /// <summary>
     ///     Gets the children of an entity.
     /// </summary>
     /// <param name="id">The identifier of the entity.</param>
@@ -183,6 +240,12 @@ public interface IEntityService
     /// <param name="objectType">The object type of the children.</param>
     IEnumerable<IEntitySlim> GetChildren(int id, UmbracoObjectTypes objectType);
 
+    /// <summary>
+    ///     Gets the children of an entity.
+    /// </summary>
+    /// <param name="key">The unique key of the parent entity, or null for root level entities.</param>
+    /// <param name="objectType">The object type of the children.</param>
+    /// <returns>An enumerable collection of child entities.</returns>
     IEnumerable<IEntitySlim> GetChildren(Guid? key, UmbracoObjectTypes objectType)
     {
         return Array.Empty<IEntitySlim>();
@@ -201,6 +264,17 @@ public interface IEntityService
     /// <param name="objectType">The object type of the descendants.</param>
     IEnumerable<IEntitySlim> GetDescendants(int id, UmbracoObjectTypes objectType);
 
+    /// <summary>
+    ///     Gets children of an entity with paging support.
+    /// </summary>
+    /// <param name="parentKey">The unique key of the parent entity, or null for root level entities.</param>
+    /// <param name="childObjectType">The object type of the children.</param>
+    /// <param name="skip">The number of items to skip.</param>
+    /// <param name="take">The number of items to take.</param>
+    /// <param name="totalRecords">Outputs the total number of records.</param>
+    /// <param name="filter">An optional filter to apply to the result set.</param>
+    /// <param name="ordering">The ordering to apply to the children.</param>
+    /// <returns>An enumerable collection of child entities.</returns>
     IEnumerable<IEntitySlim> GetPagedChildren(
         Guid? parentKey,
         UmbracoObjectTypes childObjectType,
@@ -219,6 +293,18 @@ public interface IEntityService
             filter,
             ordering);
 
+    /// <summary>
+    ///     Gets children of an entity with paging support, filtering by parent object types.
+    /// </summary>
+    /// <param name="parentKey">The unique key of the parent entity, or null for root level entities.</param>
+    /// <param name="parentObjectTypes">The object types of the parent entities.</param>
+    /// <param name="childObjectType">The object type of the children.</param>
+    /// <param name="skip">The number of items to skip.</param>
+    /// <param name="take">The number of items to take.</param>
+    /// <param name="totalRecords">Outputs the total number of records.</param>
+    /// <param name="filter">An optional filter to apply to the result set.</param>
+    /// <param name="ordering">The ordering to apply to the children.</param>
+    /// <returns>An enumerable collection of child entities.</returns>
     IEnumerable<IEntitySlim> GetPagedChildren(
         Guid? parentKey,
         IEnumerable<UmbracoObjectTypes> parentObjectTypes,
@@ -233,6 +319,19 @@ public interface IEntityService
         return Array.Empty<IEntitySlim>();
     }
 
+    /// <summary>
+    ///     Gets children of an entity with paging support, filtering by parent and child object types and trashed state.
+    /// </summary>
+    /// <param name="parentKey">The unique key of the parent entity, or null for root level entities.</param>
+    /// <param name="parentObjectTypes">The object types of the parent entities.</param>
+    /// <param name="childObjectTypes">The object types of the children.</param>
+    /// <param name="skip">The number of items to skip.</param>
+    /// <param name="take">The number of items to take.</param>
+    /// <param name="trashed">A value indicating whether to include trashed entities.</param>
+    /// <param name="totalRecords">Outputs the total number of records.</param>
+    /// <param name="filter">An optional filter to apply to the result set.</param>
+    /// <param name="ordering">The ordering to apply to the children.</param>
+    /// <returns>An enumerable collection of child entities.</returns>
     IEnumerable<IEntitySlim> GetPagedChildren(
         Guid? parentKey,
         IEnumerable<UmbracoObjectTypes> parentObjectTypes,
@@ -382,4 +481,12 @@ public interface IEntityService
     /// <returns>The identifier.</returns>
     /// <remarks>When a new content or a media is saved with the key, it will have the reserved identifier.</remarks>
     int ReserveId(Guid key);
+
+    /// <summary>
+    /// Gets the GUID keys for an entity's path (provided as a comma separated list of integer Ids).
+    /// </summary>
+    /// <param name="entity">The entity.</param>
+    /// <param name="omitSelf">A value indicating whether to omit the entity's own key from the result.</param>
+    /// <returns>The path with each ID converted to a GUID.</returns>
+    Guid[] GetPathKeys(ITreeEntity entity, bool omitSelf = false) => [];
 }

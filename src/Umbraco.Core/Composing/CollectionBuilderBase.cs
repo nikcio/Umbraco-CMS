@@ -13,7 +13,7 @@ public abstract class CollectionBuilderBase<TBuilder, TCollection, TItem> : ICol
     where TBuilder : CollectionBuilderBase<TBuilder, TCollection, TItem>
     where TCollection : class, IBuilderCollection<TItem>
 {
-    private readonly object _locker = new();
+    private readonly Lock _locker = new();
     private readonly List<Type> _types = new();
     private Type[]? _registeredTypes;
 
@@ -128,6 +128,13 @@ public abstract class CollectionBuilderBase<TBuilder, TCollection, TItem> : ICol
     protected virtual TItem CreateItem(IServiceProvider factory, Type itemType)
         => (TItem)factory.GetRequiredService(itemType);
 
+    /// <summary>
+    /// Ensures that the specified type is valid for the collection.
+    /// </summary>
+    /// <param name="type">The type to validate.</param>
+    /// <param name="action">The action being performed (used in error messages).</param>
+    /// <returns>The validated type.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when the type does not inherit from or implement <typeparamref name="TItem" />.</exception>
     protected Type EnsureType(Type type, string action)
     {
         if (typeof(TItem).IsAssignableFrom(type) == false)

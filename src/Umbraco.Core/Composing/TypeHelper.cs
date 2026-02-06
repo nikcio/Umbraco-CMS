@@ -17,7 +17,7 @@ public static class TypeHelper
 
     private static readonly ConcurrentDictionary<Type, FieldInfo[]> GetFieldsCache = new();
 
-    private static readonly Assembly[] EmptyAssemblies = new Assembly[0];
+    private static readonly Assembly[] EmptyAssemblies = [];
 
     /// <summary>
     ///     Based on a type we'll check if it is IEnumerable{T} (or similar) and if so we'll return a List{T}, this will also
@@ -283,6 +283,12 @@ public static class TypeHelper
                             && (includeIndexed || y.GetIndexParameters().Any() == false))
                 .ToArray());
 
+    /// <summary>
+    ///     Determines whether an implementation type matches a contract type, supporting generic types and variance.
+    /// </summary>
+    /// <param name="implementation">The implementation type to check.</param>
+    /// <param name="contract">The contract type to match against.</param>
+    /// <returns><c>true</c> if the implementation matches the contract; otherwise, <c>false</c>.</returns>
     public static bool MatchType(Type implementation, Type contract) =>
         MatchType(implementation, contract, new Dictionary<string, Type>());
 
@@ -337,6 +343,14 @@ public static class TypeHelper
         return true;
     }
 
+    /// <summary>
+    ///     Determines whether an implementation type matches a contract type, supporting generic types and variance.
+    /// </summary>
+    /// <param name="implementation">The implementation type to check.</param>
+    /// <param name="contract">The contract type to match against.</param>
+    /// <param name="bindings">A dictionary to track generic parameter bindings during matching.</param>
+    /// <param name="variance">If <c>true</c>, allows variance (inheritance/interface matching); otherwise, requires exact type matching.</param>
+    /// <returns><c>true</c> if the implementation matches the contract; otherwise, <c>false</c>.</returns>
     public static bool MatchType(Type implementation, Type contract, IDictionary<string, Type> bindings, bool variance = true)
     {
         if (contract.IsGenericType)
@@ -376,10 +390,10 @@ public static class TypeHelper
         if (contract.IsGenericParameter)
         {
             // eg <T>
-            if (bindings.ContainsKey(contract.Name))
+            if (bindings.TryGetValue(contract.Name, out Type? binding))
             {
                 // already bound: ensure it's compatible
-                return bindings[contract.Name] == implementation;
+                return binding == implementation;
             }
 
             // not already bound: bind

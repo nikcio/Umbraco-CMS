@@ -37,7 +37,11 @@ public class ContentErrorPage : ValidatableEntryBase
     [Required]
     public string Culture { get; set; } = null!;
 
-    internal override bool IsValid() =>
+    /// <summary>
+    ///     Validates the content error page configuration.
+    /// </summary>
+    /// <returns><c>true</c> if the entry is valid and either <see cref="ContentId"/> or <see cref="ContentKey"/> is set; otherwise, <c>false</c>.</returns>
+    internal sealed override bool IsValid() =>
         base.IsValid() &&
         (HasContentId ^ HasContentKey);
 }

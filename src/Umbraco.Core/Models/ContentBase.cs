@@ -1,5 +1,7 @@
-﻿using System.Collections.Specialized;
+using System.Collections.Specialized;
 using System.Diagnostics;
+using System.Globalization;
+using System.Runtime.ConstrainedExecution;
 using System.Runtime.Serialization;
 using Umbraco.Cms.Core.Models.Entities;
 using Umbraco.Extensions;
@@ -62,11 +64,14 @@ public abstract class ContentBase : TreeEntityBase, IContentBase
         _properties.EnsurePropertyTypes(contentType.CompositionPropertyTypes);
     }
 
+    /// <summary>
+    ///     Gets the simple content type information for this content.
+    /// </summary>
     [IgnoreDataMember]
     public ISimpleContentType ContentType { get; private set; }
 
     /// <summary>
-    ///     Id of the user who wrote/updated this entity
+    ///     Gets or sets the identifier of the user who wrote/updated this entity.
     /// </summary>
     [DataMember]
     public int WriterId
@@ -75,6 +80,9 @@ public abstract class ContentBase : TreeEntityBase, IContentBase
         set => SetPropertyValueAndDetectChanges(value, ref _writerId, nameof(WriterId));
     }
 
+    /// <summary>
+    ///     Gets or sets the version identifier.
+    /// </summary>
     [IgnoreDataMember]
     public int VersionId { get; set; }
 
@@ -121,12 +129,21 @@ public abstract class ContentBase : TreeEntityBase, IContentBase
         }
     }
 
+    /// <summary>
+    ///     Changes the content type of this content.
+    /// </summary>
+    /// <param name="contentType">The new content type.</param>
     public void ChangeContentType(ISimpleContentType contentType)
     {
         ContentType = contentType;
         ContentTypeId = contentType.Id;
     }
 
+    /// <summary>
+    ///     Handles changes to the properties collection.
+    /// </summary>
+    /// <param name="sender">The source of the event.</param>
+    /// <param name="e">The event arguments.</param>
     protected void PropertiesChanged(object? sender, NotifyCollectionChangedEventArgs e) =>
         OnPropertyChanged(nameof(Properties));
 
@@ -181,13 +198,39 @@ public abstract class ContentBase : TreeEntityBase, IContentBase
     private (HashSet<string>? addedCultures, HashSet<string>? removedCultures, HashSet<string>? updatedCultures)
         _previousCultureChanges;
 
+    /// <summary>
+    ///     Contains prefix constants used for culture change tracking.
+    /// </summary>
     public static class ChangeTrackingPrefix
     {
+        /// <summary>
+        ///     Prefix for tracking updated cultures.
+        /// </summary>
         public const string UpdatedCulture = "_updatedCulture_";
+
+        /// <summary>
+        ///     Prefix for tracking changed cultures.
+        /// </summary>
         public const string ChangedCulture = "_changedCulture_";
+
+        /// <summary>
+        ///     Prefix for tracking published cultures.
+        /// </summary>
         public const string PublishedCulture = "_publishedCulture_";
+
+        /// <summary>
+        ///     Prefix for tracking unpublished cultures.
+        /// </summary>
         public const string UnpublishedCulture = "_unpublishedCulture_";
+
+        /// <summary>
+        ///     Prefix for tracking added cultures.
+        /// </summary>
         public const string AddedCulture = "_addedCulture_";
+
+        /// <summary>
+        ///     Prefix for tracking removed cultures.
+        /// </summary>
         public const string RemovedCulture = "_removedCulture_";
     }
 
@@ -288,6 +331,8 @@ public abstract class ContentBase : TreeEntityBase, IContentBase
         // set on variant content type
         if (ContentType.VariesByCulture())
         {
+            culture = culture.EnsureCultureCode();
+
             // invariant is ok
             if (culture.IsNullOrWhiteSpace())
             {
@@ -297,13 +342,13 @@ public abstract class ContentBase : TreeEntityBase, IContentBase
             // clear
             else if (name.IsNullOrWhiteSpace())
             {
-                ClearCultureInfo(culture!);
+                ClearCultureInfo(culture);
             }
 
             // set
-            else
+            else if (GetCultureName(culture) != name)
             {
-                this.SetCultureInfo(culture!, name, DateTime.Now);
+                this.SetCultureInfo(culture!, name, DateTime.UtcNow);
             }
         }
 
@@ -322,11 +367,6 @@ public abstract class ContentBase : TreeEntityBase, IContentBase
 
     private void ClearCultureInfo(string culture)
     {
-        if (culture == null)
-        {
-            throw new ArgumentNullException(nameof(culture));
-        }
-
         if (string.IsNullOrWhiteSpace(culture))
         {
             throw new ArgumentException("Value can't be empty or consist only of white-space characters.", nameof(culture));
@@ -455,10 +495,13 @@ public abstract class ContentBase : TreeEntityBase, IContentBase
                 $"No PropertyType exists with the supplied alias \"{propertyTypeAlias}\".");
         }
 
-        property?.SetValue(value, culture, segment);
-
-        // bump the culture to be flagged for updating
-        this.TouchCulture(culture);
+        culture = culture.EnsureCultureCode();
+        var updated = property.SetValue(value, culture, segment);
+        if (updated)
+        {
+            // bump the culture to be flagged for updating
+            this.TouchCulture(culture);
+        }
     }
 
     /// <inheritdoc />
@@ -484,6 +527,7 @@ public abstract class ContentBase : TreeEntityBase, IContentBase
 
     #region Dirty
 
+    /// <inheritdoc />
     public override void ResetWereDirtyProperties()
     {
         base.ResetWereDirtyProperties();
@@ -578,19 +622,19 @@ public abstract class ContentBase : TreeEntityBase, IContentBase
         // Special check here since we want to check if the request is for changed cultures
         if (propertyName.StartsWith(ChangeTrackingPrefix.AddedCulture))
         {
-            var culture = propertyName.TrimStartExact(ChangeTrackingPrefix.AddedCulture);
+            var culture = propertyName.TrimStart(ChangeTrackingPrefix.AddedCulture);
             return _currentCultureChanges.addedCultures?.Contains(culture) ?? false;
         }
 
         if (propertyName.StartsWith(ChangeTrackingPrefix.RemovedCulture))
         {
-            var culture = propertyName.TrimStartExact(ChangeTrackingPrefix.RemovedCulture);
+            var culture = propertyName.TrimStart(ChangeTrackingPrefix.RemovedCulture);
             return _currentCultureChanges.removedCultures?.Contains(culture) ?? false;
         }
 
         if (propertyName.StartsWith(ChangeTrackingPrefix.UpdatedCulture))
         {
-            var culture = propertyName.TrimStartExact(ChangeTrackingPrefix.UpdatedCulture);
+            var culture = propertyName.TrimStart(ChangeTrackingPrefix.UpdatedCulture);
             return _currentCultureChanges.updatedCultures?.Contains(culture) ?? false;
         }
 
@@ -609,19 +653,19 @@ public abstract class ContentBase : TreeEntityBase, IContentBase
         // Special check here since we want to check if the request is for changed cultures
         if (propertyName.StartsWith(ChangeTrackingPrefix.AddedCulture))
         {
-            var culture = propertyName.TrimStartExact(ChangeTrackingPrefix.AddedCulture);
+            var culture = propertyName.TrimStart(ChangeTrackingPrefix.AddedCulture);
             return _previousCultureChanges.addedCultures?.Contains(culture) ?? false;
         }
 
         if (propertyName.StartsWith(ChangeTrackingPrefix.RemovedCulture))
         {
-            var culture = propertyName.TrimStartExact(ChangeTrackingPrefix.RemovedCulture);
+            var culture = propertyName.TrimStart(ChangeTrackingPrefix.RemovedCulture);
             return _previousCultureChanges.removedCultures?.Contains(culture) ?? false;
         }
 
         if (propertyName.StartsWith(ChangeTrackingPrefix.UpdatedCulture))
         {
-            var culture = propertyName.TrimStartExact(ChangeTrackingPrefix.UpdatedCulture);
+            var culture = propertyName.TrimStart(ChangeTrackingPrefix.UpdatedCulture);
             return _previousCultureChanges.updatedCultures?.Contains(culture) ?? false;
         }
 

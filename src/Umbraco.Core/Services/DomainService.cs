@@ -1,40 +1,33 @@
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Umbraco.Cms.Core.DependencyInjection;
 using Umbraco.Cms.Core.Events;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Models.ContentEditing;
 using Umbraco.Cms.Core.Notifications;
 using Umbraco.Cms.Core.Persistence.Repositories;
-using Umbraco.Cms.Core.Routing;
 using Umbraco.Cms.Core.Scoping;
 using Umbraco.Cms.Core.Services.OperationStatus;
 using Umbraco.Extensions;
 
 namespace Umbraco.Cms.Core.Services;
 
+/// <summary>
+/// Provides services for managing domains (hostnames and culture assignments for content).
+/// </summary>
 public class DomainService : RepositoryService, IDomainService
 {
     private readonly IDomainRepository _domainRepository;
     private readonly ILanguageService _languageService;
     private readonly IContentService _contentService;
 
-    [Obsolete("Please use the constructor that accepts ILanguageService and IContentService. Will be removed in V15.")]
-    public DomainService(
-        ICoreScopeProvider provider,
-        ILoggerFactory loggerFactory,
-        IEventMessagesFactory eventMessagesFactory,
-        IDomainRepository domainRepository)
-        : this(
-            provider,
-            loggerFactory,
-            eventMessagesFactory,
-            domainRepository,
-            StaticServiceProvider.Instance.GetRequiredService<ILanguageService>(),
-            StaticServiceProvider.Instance.GetRequiredService<IContentService>())
-    {
-    }
-
+    /// <summary>
+    /// Initializes a new instance of the <see cref="DomainService"/> class.
+    /// </summary>
+    /// <param name="provider">The core scope provider.</param>
+    /// <param name="loggerFactory">The logger factory.</param>
+    /// <param name="eventMessagesFactory">The event messages factory.</param>
+    /// <param name="domainRepository">The domain repository.</param>
+    /// <param name="languageService">The language service.</param>
+    /// <param name="contentService">The content service.</param>
     public DomainService(
         ICoreScopeProvider provider,
         ILoggerFactory loggerFactory,
@@ -49,6 +42,7 @@ public class DomainService : RepositoryService, IDomainService
         _contentService = contentService;
     }
 
+    /// <inheritdoc />
     public bool Exists(string domainName)
     {
         using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
@@ -57,6 +51,11 @@ public class DomainService : RepositoryService, IDomainService
         }
     }
 
+    /// <summary>
+    /// Deletes a domain.
+    /// </summary>
+    /// <param name="domain">The domain to delete.</param>
+    /// <returns>An attempt result indicating the success or failure of the operation.</returns>
     [Obsolete($"Please use {nameof(UpdateDomainsAsync)}. Will be removed in V15")]
     public Attempt<OperationResult?> Delete(IDomain domain)
     {
@@ -69,6 +68,7 @@ public class DomainService : RepositoryService, IDomainService
         return result ? OperationResult.Attempt.Succeed(eventMessages) : OperationResult.Attempt.Cancel(eventMessages);
     }
 
+    /// <inheritdoc />
     public IDomain? GetByName(string name)
     {
         using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
@@ -77,6 +77,7 @@ public class DomainService : RepositoryService, IDomainService
         }
     }
 
+    /// <inheritdoc />
     public IDomain? GetById(int id)
     {
         using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
@@ -85,6 +86,11 @@ public class DomainService : RepositoryService, IDomainService
         }
     }
 
+    /// <summary>
+    /// Gets all domains.
+    /// </summary>
+    /// <param name="includeWildcards">A value indicating whether to include wildcard domains.</param>
+    /// <returns>A collection of all domains.</returns>
     [Obsolete($"Please use {nameof(GetAllAsync)}. Will be removed in V15")]
     public IEnumerable<IDomain> GetAll(bool includeWildcards)
     {
@@ -94,6 +100,12 @@ public class DomainService : RepositoryService, IDomainService
         }
     }
 
+    /// <summary>
+    /// Gets the domains assigned to a specific content item.
+    /// </summary>
+    /// <param name="contentId">The identifier of the content item.</param>
+    /// <param name="includeWildcards">A value indicating whether to include wildcard domains.</param>
+    /// <returns>A collection of domains assigned to the content item.</returns>
     [Obsolete($"Please use {nameof(GetAssignedDomainsAsync)}. Will be removed in V15")]
     public IEnumerable<IDomain> GetAssignedDomains(int contentId, bool includeWildcards)
     {
@@ -103,6 +115,11 @@ public class DomainService : RepositoryService, IDomainService
         }
     }
 
+    /// <summary>
+    /// Saves a domain.
+    /// </summary>
+    /// <param name="domainEntity">The domain entity to save.</param>
+    /// <returns>An attempt result indicating the success or failure of the operation.</returns>
     [Obsolete($"Please use {nameof(UpdateDomainsAsync)}. Will be removed in V15")]
     public Attempt<OperationResult?> Save(IDomain domainEntity)
     {
@@ -115,6 +132,11 @@ public class DomainService : RepositoryService, IDomainService
         return result ? OperationResult.Attempt.Succeed(eventMessages) : OperationResult.Attempt.Cancel(eventMessages);
     }
 
+    /// <summary>
+    /// Sorts domains.
+    /// </summary>
+    /// <param name="items">The domains to sort.</param>
+    /// <returns>An attempt result indicating the success or failure of the operation.</returns>
     [Obsolete($"Please use {nameof(UpdateDomainsAsync)}. Will be removed in V15")]
     public Attempt<OperationResult?> Sort(IEnumerable<IDomain> items)
     {
@@ -159,23 +181,23 @@ public class DomainService : RepositoryService, IDomainService
     }
 
     /// <inheritdoc />
-    public async Task<IEnumerable<IDomain>> GetAssignedDomainsAsync(Guid contentKey, bool includeWildcards)
+    public Task<IEnumerable<IDomain>> GetAssignedDomainsAsync(Guid contentKey, bool includeWildcards)
     {
         IContent? content = _contentService.GetById(contentKey);
         if (content == null)
         {
-            return await Task.FromResult(Enumerable.Empty<IDomain>());
+            return Task.FromResult(Enumerable.Empty<IDomain>());
         }
 
         using ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true);
-        return _domainRepository.GetAssignedDomains(content.Id, includeWildcards);
+        return Task.FromResult(_domainRepository.GetAssignedDomains(content.Id, includeWildcards));
     }
 
     /// <inheritdoc />
-    public async Task<IEnumerable<IDomain>> GetAllAsync(bool includeWildcards)
+    public Task<IEnumerable<IDomain>> GetAllAsync(bool includeWildcards)
     {
         using ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true);
-        return await Task.FromResult(_domainRepository.GetAll(includeWildcards));
+        return Task.FromResult(_domainRepository.GetAll(includeWildcards));
     }
 
     /// <inheritdoc />
@@ -311,12 +333,17 @@ public class DomainService : RepositoryService, IDomainService
         var sortOrder = 0;
         foreach (DomainModel domainModel in updateModel.Domains)
         {
-            IDomain assignedDomain = currentlyAssignedDomains.FirstOrDefault(domain => domainModel.DomainName.InvariantEquals(domain.DomainName))
-                                     ?? new UmbracoDomain(domainModel.DomainName)
-                                     {
-                                         LanguageId = languageIdByIsoCode[domainModel.IsoCode],
-                                         RootContentId = contentId
-                                     };
+            IDomain? assignedDomain = currentlyAssignedDomains.FirstOrDefault(domain => domainModel.DomainName.InvariantEquals(domain.DomainName));
+
+            // If we do not have an assigned domain, or the domain-language has been changed, create new domain.
+            if (assignedDomain is null || assignedDomain.LanguageId != languageIdByIsoCode[domainModel.IsoCode])
+            {
+                assignedDomain = new UmbracoDomain(domainModel.DomainName)
+                {
+                    LanguageId = languageIdByIsoCode[domainModel.IsoCode],
+                    RootContentId = contentId
+                };
+            }
 
             assignedDomain.SortOrder = sortOrder++;
             newAssignedDomains.Add(assignedDomain);

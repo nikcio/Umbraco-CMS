@@ -12,8 +12,13 @@ public class TypeFinderConfig : ITypeFinderConfig
     private readonly TypeFinderSettings _settings;
     private IEnumerable<string>? _assembliesAcceptingLoadExceptions;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="TypeFinderConfig" /> class.
+    /// </summary>
+    /// <param name="settings">The type finder settings options.</param>
     public TypeFinderConfig(IOptions<TypeFinderSettings> settings) => _settings = settings.Value;
 
+    /// <inheritdoc />
     public IEnumerable<string> AssembliesAcceptingLoadExceptions
     {
         get
@@ -25,8 +30,8 @@ public class TypeFinderConfig : ITypeFinderConfig
 
             var s = _settings.AssembliesAcceptingLoadExceptions;
             return _assembliesAcceptingLoadExceptions = string.IsNullOrWhiteSpace(s)
-                ? Array.Empty<string>()
-                : s.Split(',').Select(x => x.Trim()).ToArray();
+                ? []
+                : s.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         }
     }
 }

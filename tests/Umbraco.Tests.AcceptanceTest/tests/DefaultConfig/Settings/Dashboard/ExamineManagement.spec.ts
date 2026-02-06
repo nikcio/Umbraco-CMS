@@ -7,7 +7,7 @@ test.beforeEach(async ({umbracoUi}) => {
   await umbracoUi.examineManagement.clickExamineManagementTab();
 });
 
-test.skip('can view indexers information', async ({umbracoApi, umbracoUi}) => {
+test('can view indexers information', async ({umbracoApi, umbracoUi}) => {
   // Arrange
   const allIndexersData = await umbracoApi.indexer.getAll();
   const indexerCount = allIndexersData.total;
@@ -36,7 +36,6 @@ test('can view the details of an index', async ({umbracoApi, umbracoUi}) => {
     await umbracoUi.examineManagement.doesIndexPropertyHaveValue('CommitCount', indexData.providerProperties.CommitCount.toString());
     await umbracoUi.examineManagement.doesIndexPropertyHaveValue('DefaultAnalyzer', indexData.providerProperties.DefaultAnalyzer);
     await umbracoUi.examineManagement.doesIndexPropertyHaveValue('LuceneDirectory', indexData.providerProperties.LuceneDirectory);
-    await umbracoUi.examineManagement.doesIndexPropertyHaveValue('LuceneIndexFolder', indexData.providerProperties.LuceneIndexFolder);
     await umbracoUi.examineManagement.doesIndexPropertyHaveValue('DirectoryFactory', indexData.providerProperties.DirectoryFactory);
     await umbracoUi.examineManagement.doesIndexPropertyHaveValue('EnableDefaultEventHandler', indexData.providerProperties.EnableDefaultEventHandler.toString());
     await umbracoUi.examineManagement.doesIndexPropertyHaveValue('PublishedValuesOnly', indexData.providerProperties.PublishedValuesOnly.toString());

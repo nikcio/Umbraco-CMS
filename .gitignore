@@ -47,12 +47,13 @@ NDependOut/
 QueryResult.htm
 tools/docfx/
 
-# Ignore rule for clearing out Belle (avoid rebuilding all the time)
-preserve.belle
-
 # csharp-docs
 /build/csharp-docs/api/
 /build/csharp-docs/_site/
+
+# Local config
+.claude/settings.local.json
+.env.local
 
 # Build
 /build.out/
@@ -73,10 +74,6 @@ preserve.belle
 /src/Umbraco.Cms.StaticAssets/wwwroot/umbraco/login
 
 # Environment specific data
-/src/Umbraco.Web.UI.Client/[Bb]uild/
-/src/Umbraco.Web.UI.Client/[Bb]uild/[Bb]elle/
-/src/Umbraco.Web.UI.Client/src/[Ll]ess/*.css
-/src/Umbraco.Web.UI.Client/TESTS-*.xml
 /src/Umbraco.Web.UI/wwwroot/[Mm]edia/
 /src/Umbraco.Web.UI/App_Code/
 /src/Umbraco.Web.UI/App_Plugins/
@@ -102,6 +99,10 @@ preserve.belle
 /tests/Umbraco.Tests.Integration/[Uu]mbraco/[Ll]ogs/
 /tests/Umbraco.Tests.Integration/Views/
 /tests/Umbraco.Tests.UnitTests/[Uu]mbraco/[Dd]ata/TEMP/
+/BenchmarkDotNet.Artifacts/
+playwright-report
+trace.zip
+/tests/Umbraco.Tests.AcceptanceTest/results
 
 # Ignore auto-generated schema
 /src/Umbraco.Cms.Targets/tasks/
@@ -110,9 +111,8 @@ preserve.belle
 /src/Umbraco.Web.UI/appsettings-schema.json
 /src/Umbraco.Web.UI/appsettings-schema.*.json
 /src/Umbraco.Web.UI/umbraco-package-schema.json
+/src/Umbraco.Web.UI.Client/umbraco-package-schema.json
 /tests/Umbraco.Tests.Integration/appsettings-schema.json
 /tests/Umbraco.Tests.Integration/appsettings-schema.*.json
 /tests/Umbraco.Tests.Integration/umbraco-package-schema.json
 /src/Umbraco.Cms/appsettings-schema.json
-playwright-report
-trace.zip

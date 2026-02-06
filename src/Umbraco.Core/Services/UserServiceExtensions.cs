@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Globalization;
 using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Models.Membership;
@@ -6,13 +5,31 @@ using Umbraco.Cms.Core.Services;
 
 namespace Umbraco.Extensions;
 
+/// <summary>
+///     Provides extension methods for <see cref="IUserService" />.
+/// </summary>
 public static class UserServiceExtensions
 {
+    /// <summary>
+    ///     Gets the first permission for a user at the specified path.
+    /// </summary>
+    /// <param name="userService">The user service.</param>
+    /// <param name="user">The user to get permissions for.</param>
+    /// <param name="path">The path to check permissions for.</param>
+    /// <returns>The first <see cref="EntityPermission" /> found, or <c>null</c> if none exists.</returns>
     public static EntityPermission? GetPermissions(this IUserService userService, IUser? user, string path)
     {
        return userService.GetAllPermissions(user, path).FirstOrDefault();
     }
 
+    /// <summary>
+    ///     Gets all permissions for a user at the specified path.
+    /// </summary>
+    /// <param name="userService">The user service.</param>
+    /// <param name="user">The user to get permissions for.</param>
+    /// <param name="path">The path to check permissions for.</param>
+    /// <returns>A collection of <see cref="EntityPermission" /> for the specified path.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when the path cannot be parsed into an array of integers or is empty.</exception>
     public static EntityPermissionCollection GetAllPermissions(this IUserService userService, IUser? user, string path)
     {
         var ids = path.Split(Constants.CharArrays.Comma, StringSplitOptions.RemoveEmptyEntries)
@@ -76,6 +93,12 @@ public static class UserServiceExtensions
     public static void RemoveUserGroupPermissions(this IUserService userService, int groupId) =>
         userService.ReplaceUserGroupPermissions(groupId, new HashSet<string>());
 
+    /// <summary>
+    ///     Gets user profiles by their identifiers.
+    /// </summary>
+    /// <param name="userService">The user service.</param>
+    /// <param name="ids">The user identifiers to retrieve profiles for.</param>
+    /// <returns>An enumerable collection of <see cref="IProfile" /> instances.</returns>
     public static IEnumerable<IProfile> GetProfilesById(this IUserService userService, params int[] ids)
     {
         IEnumerable<IUser> fullUsers = userService.GetUsersById(ids);
@@ -86,7 +109,4 @@ public static class UserServiceExtensions
             return asProfile ?? new UserProfile(user.Id, user.Name);
         });
     }
-
-    [Obsolete("Use IUserService.Get that takes a Guid instead. Scheduled for removal in V15.")]
-    public static IUser? GetByKey(this IUserService userService, Guid key) => userService.GetAsync(key).GetAwaiter().GetResult();
 }

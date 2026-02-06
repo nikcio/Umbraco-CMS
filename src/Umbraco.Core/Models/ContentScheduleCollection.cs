@@ -2,12 +2,20 @@ using System.Collections.Specialized;
 
 namespace Umbraco.Cms.Core.Models;
 
+/// <summary>
+///     Represents a collection of content schedules for publishing and unpublishing content.
+/// </summary>
+/// <remarks>
+///     The underlying storage is backed by a sorted list so that the schedule is always in order of date
+///     and duplicate dates per culture are not allowed.
+/// </remarks>
 public class ContentScheduleCollection : INotifyCollectionChanged, IDeepCloneable, IEquatable<ContentScheduleCollection>
 {
     // underlying storage for the collection backed by a sorted list so that the schedule is always in order of date and that duplicate dates per culture are not allowed
     private readonly Dictionary<string, SortedList<DateTime, ContentSchedule>> _schedule
         = new(StringComparer.InvariantCultureIgnoreCase);
 
+    /// <inheritdoc />
     public event NotifyCollectionChangedEventHandler? CollectionChanged;
 
     /// <summary>
@@ -16,6 +24,7 @@ public class ContentScheduleCollection : INotifyCollectionChanged, IDeepCloneabl
     /// <returns></returns>
     public IReadOnlyList<ContentSchedule> FullSchedule => _schedule.SelectMany(x => x.Value.Values).ToList();
 
+    /// <inheritdoc />
     public object DeepClone()
     {
         var clone = new ContentScheduleCollection();
@@ -33,6 +42,7 @@ public class ContentScheduleCollection : INotifyCollectionChanged, IDeepCloneabl
         return clone;
     }
 
+    /// <inheritdoc />
     public bool Equals(ContentScheduleCollection? other)
     {
         if (other == null)
@@ -61,10 +71,16 @@ public class ContentScheduleCollection : INotifyCollectionChanged, IDeepCloneabl
         return true;
     }
 
+    /// <summary>
+    ///     Creates a new <see cref="ContentScheduleCollection" /> with a schedule entry for invariant content.
+    /// </summary>
+    /// <param name="release">The release date, or null if no release is scheduled.</param>
+    /// <param name="expire">The expiration date, or null if no expiration is scheduled.</param>
+    /// <returns>A new content schedule collection with the specified entry.</returns>
     public static ContentScheduleCollection CreateWithEntry(DateTime? release, DateTime? expire)
     {
         var schedule = new ContentScheduleCollection();
-        schedule.Add(string.Empty, release, expire);
+        schedule.Add(Constants.System.InvariantCulture, release, expire);
         return schedule;
     }
 
@@ -98,7 +114,7 @@ public class ContentScheduleCollection : INotifyCollectionChanged, IDeepCloneabl
     /// </summary>
     /// <param name="releaseDate"></param>
     /// <param name="expireDate"></param>
-    public bool Add(DateTime? releaseDate, DateTime? expireDate) => Add(string.Empty, releaseDate, expireDate);
+    public bool Add(DateTime? releaseDate, DateTime? expireDate) => Add(Constants.System.InvariantCulture, releaseDate, expireDate);
 
     /// <summary>
     ///     Adds a new schedule for a culture
@@ -171,12 +187,49 @@ public class ContentScheduleCollection : INotifyCollectionChanged, IDeepCloneabl
     }
 
     /// <summary>
+    ///     Removes a schedule entry for the specified culture and action if it exists.
+    /// </summary>
+    /// <param name="culture">The culture of the schedule to remove.</param>
+    /// <param name="action">The action type (release or expire) to remove.</param>
+    public void RemoveIfExists(string culture, ContentScheduleAction action)
+    {
+        ContentSchedule? changeToRemove = FullSchedule.FirstOrDefault(change =>
+            change.Culture == culture
+            && change.Action == action);
+        if (changeToRemove is not null)
+        {
+            Remove(changeToRemove);
+        }
+    }
+
+    /// <summary>
+    ///     Adds or updates a schedule entry for the specified culture and action.
+    /// </summary>
+    /// <param name="culture">The culture for the schedule.</param>
+    /// <param name="dateTime">The date and time for the scheduled action.</param>
+    /// <param name="action">The action type (release or expire).</param>
+    public void AddOrUpdate(string culture, DateTime dateTime, ContentScheduleAction action)
+    {
+        // we need to remove the old one as ContentSchedule.Date is immutable
+        ContentSchedule? changeToRemove = FullSchedule.FirstOrDefault(change =>
+            change.Culture == culture
+            && change.Action == action);
+
+        if (changeToRemove is not null)
+        {
+            Remove(changeToRemove);
+        }
+
+        Add(new ContentSchedule(culture, dateTime, action));
+    }
+
+    /// <summary>
     ///     Clear all of the scheduled change type for invariant content
     /// </summary>
     /// <param name="action"></param>
     /// <param name="changeDate">If specified, will clear all entries with dates less than or equal to the value</param>
     public void Clear(ContentScheduleAction action, DateTime? changeDate = null) =>
-        Clear(string.Empty, action, changeDate);
+        Clear(Constants.System.InvariantCulture, action, changeDate);
 
     /// <summary>
     ///     Clear all of the scheduled change type for the culture
@@ -226,7 +279,7 @@ public class ContentScheduleCollection : INotifyCollectionChanged, IDeepCloneabl
     /// </summary>
     /// <returns></returns>
     public IEnumerable<ContentSchedule> GetSchedule(ContentScheduleAction? action = null) =>
-        GetSchedule(string.Empty, action);
+        GetSchedule(Constants.System.InvariantCulture, action);
 
     /// <summary>
     ///     Gets the schedule for a culture
@@ -244,9 +297,17 @@ public class ContentScheduleCollection : INotifyCollectionChanged, IDeepCloneabl
         return Enumerable.Empty<ContentSchedule>();
     }
 
+    /// <inheritdoc />
     public override bool Equals(object? obj)
         => obj is ContentScheduleCollection other && Equals(other);
 
+    /// <summary>
+    ///     Creates a new <see cref="ContentScheduleCollection" /> with a schedule entry for a specific culture.
+    /// </summary>
+    /// <param name="culture">The culture for the schedule.</param>
+    /// <param name="release">The release date, or null if no release is scheduled.</param>
+    /// <param name="expire">The expiration date, or null if no expiration is scheduled.</param>
+    /// <returns>A new content schedule collection with the specified entry.</returns>
     public static ContentScheduleCollection CreateWithEntry(string culture, DateTime? release, DateTime? expire)
     {
         var schedule = new ContentScheduleCollection();
@@ -254,6 +315,7 @@ public class ContentScheduleCollection : INotifyCollectionChanged, IDeepCloneabl
         return schedule;
     }
 
+    /// <inheritdoc />
     public override int GetHashCode()
     {
         throw new NotImplementedException();

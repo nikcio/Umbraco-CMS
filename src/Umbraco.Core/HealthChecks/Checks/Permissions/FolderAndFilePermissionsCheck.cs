@@ -32,10 +32,8 @@ public class FolderAndFilePermissionsCheck : HealthCheck
         _filePermissionHelper = filePermissionHelper;
     }
 
-    /// <summary>
-    ///     Get the status for this health check
-    /// </summary>
-    public override Task<IEnumerable<HealthCheckStatus>> GetStatus()
+    /// <inheritdoc />
+    public override Task<IEnumerable<HealthCheckStatus>> GetStatusAsync()
     {
         _filePermissionHelper.RunFilePermissionTestSuite(
             out Dictionary<FilePermissionTest, IEnumerable<string>> errors);
@@ -48,9 +46,7 @@ public class FolderAndFilePermissionsCheck : HealthCheck
         }));
     }
 
-    /// <summary>
-    ///     Executes the action and returns it's status
-    /// </summary>
+    /// <inheritdoc />
     public override HealthCheckStatus ExecuteAction(HealthCheckAction action) =>
         throw new InvalidOperationException("FolderAndFilePermissionsCheck has no executable actions");
 

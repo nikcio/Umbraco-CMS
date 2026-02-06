@@ -6,12 +6,18 @@ using Umbraco.Cms.Core.Configuration.Models;
 namespace Umbraco.Cms.Core.Telemetry;
 
 /// <inheritdoc />
-internal class SiteIdentifierService : ISiteIdentifierService
+internal sealed class SiteIdentifierService : ISiteIdentifierService
 {
     private readonly IConfigManipulator _configManipulator;
     private readonly ILogger<SiteIdentifierService> _logger;
     private GlobalSettings _globalSettings;
 
+    /// <summary>
+    ///     Initializes a new instance of the <see cref="SiteIdentifierService" /> class.
+    /// </summary>
+    /// <param name="optionsMonitor">The options monitor for global settings.</param>
+    /// <param name="configManipulator">The configuration manipulator.</param>
+    /// <param name="logger">The logger.</param>
     public SiteIdentifierService(
         IOptionsMonitor<GlobalSettings> optionsMonitor,
         IConfigManipulator configManipulator,

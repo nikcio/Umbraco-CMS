@@ -8,38 +8,45 @@ using Umbraco.Extensions;
 
 namespace Umbraco.Cms.Api.Common.OpenApi;
 
+/// <summary>
+///     Selects sub-types for polymorphic OpenAPI schemas using registered handlers.
+/// </summary>
 public class SubTypesSelector : ISubTypesSelector
 {
-    private readonly IOptions<GlobalSettings> _settings;
     private readonly IHostingEnvironment _hostingEnvironment;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IEnumerable<ISubTypesHandler> _subTypeHandlers;
     private readonly IUmbracoJsonTypeInfoResolver _umbracoJsonTypeInfoResolver;
 
+    /// <summary>
+    ///     Initializes a new instance of the <see cref="SubTypesSelector"/> class.
+    /// </summary>
+    /// <param name="hostingEnvironment">The hosting environment.</param>
+    /// <param name="httpContextAccessor">The HTTP context accessor.</param>
+    /// <param name="subTypeHandlers">The registered sub-type handlers.</param>
+    /// <param name="umbracoJsonTypeInfoResolver">The JSON type info resolver for finding sub-types.</param>
     public SubTypesSelector(
-        IOptions<GlobalSettings> settings,
         IHostingEnvironment hostingEnvironment,
         IHttpContextAccessor httpContextAccessor,
         IEnumerable<ISubTypesHandler> subTypeHandlers,
         IUmbracoJsonTypeInfoResolver umbracoJsonTypeInfoResolver)
     {
-        _settings = settings;
         _hostingEnvironment = hostingEnvironment;
         _httpContextAccessor = httpContextAccessor;
         _subTypeHandlers = subTypeHandlers;
         _umbracoJsonTypeInfoResolver = umbracoJsonTypeInfoResolver;
     }
 
+    /// <inheritdoc/>
     public IEnumerable<Type> SubTypes(Type type)
     {
-        var backOfficePath =  _settings.Value.GetBackOfficePath(_hostingEnvironment);
+        var backOfficePath = _hostingEnvironment.GetBackOfficePath();
         var swaggerPath = $"{backOfficePath}/swagger";
 
         if (_httpContextAccessor.HttpContext?.Request.Path.StartsWithSegments(swaggerPath) ?? false)
         {
             // Split the path into segments
-            var segments = _httpContextAccessor.HttpContext.Request.Path.Value!
-                .Substring(swaggerPath.Length)
+            var segments = _httpContextAccessor.HttpContext.Request.Path.Value![swaggerPath.Length..]
                 .TrimStart(Constants.CharArrays.ForwardSlash)
                 .Split(Constants.CharArrays.ForwardSlash);
 

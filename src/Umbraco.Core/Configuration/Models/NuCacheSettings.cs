@@ -11,15 +11,20 @@ namespace Umbraco.Cms.Core.Configuration.Models;
 [UmbracoOptions(Constants.Configuration.ConfigNuCache)]
 public class NuCacheSettings
 {
+    /// <summary>
+    ///     The default serializer type for NuCache.
+    /// </summary>
     internal const string StaticNuCacheSerializerType = "MessagePack";
-    internal const int StaticSqlPageSize = 1000;
-    internal const int StaticKitBatchSize = 1;
-    internal const bool StaticUsePagedSqlQuery = true;
 
     /// <summary>
-    ///     Gets or sets a value defining the BTree block size.
+    ///     The default SQL page size for NuCache queries.
     /// </summary>
-    public int? BTreeBlockSize { get; set; }
+    internal const int StaticSqlPageSize = 1000;
+
+    /// <summary>
+    ///     The default value for using paged SQL queries.
+    /// </summary>
+    internal const bool StaticUsePagedSqlQuery = true;
 
     /// <summary>
     ///     The serializer type that nucache uses to persist documents in the database.
@@ -34,13 +39,8 @@ public class NuCacheSettings
     public int SqlPageSize { get; set; } = StaticSqlPageSize;
 
     /// <summary>
-    ///     The size to use for nucache Kit batches.  Higher value means more content loaded into memory at a time.
+    ///     Gets or sets a value indicating whether to use paged SQL queries for nucache.
     /// </summary>
-    [DefaultValue(StaticKitBatchSize)]
-    public int KitBatchSize { get; set; } = StaticKitBatchSize;
-
-    public bool UnPublishedContentCompression { get; set; } = false;
-
     [DefaultValue(StaticUsePagedSqlQuery)]
     public bool UsePagedSqlQuery { get; set; } = true;
 }

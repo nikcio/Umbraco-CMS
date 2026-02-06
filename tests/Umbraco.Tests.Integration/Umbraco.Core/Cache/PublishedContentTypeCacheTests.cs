@@ -1,4 +1,4 @@
-﻿using NUnit.Framework;
+using NUnit.Framework;
 using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Models.ContentTypeEditing;
 using Umbraco.Cms.Core.Models.PublishedContent;
@@ -12,7 +12,7 @@ namespace Umbraco.Cms.Tests.Integration.Umbraco.Core.Cache;
 
 [TestFixture]
 [UmbracoTest(Database = UmbracoTestOptions.Database.NewSchemaPerTest)]
-public class PublishedContentTypeCacheTests : UmbracoIntegrationTestWithContentEditing
+internal sealed class PublishedContentTypeCacheTests : UmbracoIntegrationTestWithContentEditing
 {
     protected override void CustomTestSetup(IUmbracoBuilder builder) => builder.AddUmbracoHybridCache();
 
@@ -37,8 +37,7 @@ public class PublishedContentTypeCacheTests : UmbracoIntegrationTestWithContentE
         Assert.IsNotNull(contentType);
         Assert.AreEqual(1, ContentType.PropertyTypes.Count());
         // Update the content type
-        ContentTypeUpdateHelper contentTypeUpdateHelper = new ContentTypeUpdateHelper();
-        var updateModel = contentTypeUpdateHelper.CreateContentTypeUpdateModel(ContentType);
+        var updateModel = ContentTypeUpdateHelper.CreateContentTypeUpdateModel(ContentType);
         updateModel.Properties = new List<ContentTypePropertyTypeModel>();
         await ContentTypeEditingService.UpdateAsync(ContentType, updateModel, Constants.Security.SuperUserKey);
 

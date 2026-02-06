@@ -46,17 +46,20 @@ public class HttpsCheck : HealthCheck
         _hostingEnvironment = hostingEnvironment;
     }
     /// <inheritdoc />
-    public override async Task<IEnumerable<HealthCheckStatus>> GetStatus() =>
-        await Task.WhenAll(
-            CheckIfCurrentSchemeIsHttps(),
-            CheckHttpsConfigurationSetting(),
-            CheckForValidCertificate());
+    public override async Task<IEnumerable<HealthCheckStatus>> GetStatusAsync()
+        => [
+            await CheckIfCurrentSchemeIsHttps(),
+            await CheckHttpsConfigurationSetting(),
+            await CheckForValidCertificate()
+        ];
 
     /// <inheritdoc />
     public override HealthCheckStatus ExecuteAction(HealthCheckAction action)
-        => throw new InvalidOperationException(
-            "HttpsCheck action requested is either not executable or does not exist");
+        => throw new InvalidOperationException("HttpsCheck action requested is either not executable or does not exist");
 
+    /// <summary>
+    ///     Custom certificate validation callback that stores the certificate expiry information.
+    /// </summary>
     private static bool ServerCertificateCustomValidation(
         HttpRequestMessage requestMessage,
         X509Certificate2? certificate,

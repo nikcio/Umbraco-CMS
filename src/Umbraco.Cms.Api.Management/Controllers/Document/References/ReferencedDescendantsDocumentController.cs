@@ -1,11 +1,13 @@
-﻿using Asp.Versioning;
+using Asp.Versioning;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Umbraco.Cms.Api.Common.ViewModels.Pagination;
 using Umbraco.Cms.Api.Management.ViewModels;
+using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Mapping;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Services;
+using Umbraco.Cms.Core.Services.OperationStatus;
 
 namespace Umbraco.Cms.Api.Management.Controllers.Document.References;
 
@@ -15,14 +17,34 @@ public class ReferencedDescendantsDocumentController : DocumentControllerBase
     private readonly ITrackedReferencesService _trackedReferencesSkipTakeService;
     private readonly IUmbracoMapper _umbracoMapper;
 
-    public ReferencedDescendantsDocumentController(ITrackedReferencesService trackedReferencesSkipTakeService, IUmbracoMapper umbracoMapper)
+    public ReferencedDescendantsDocumentController(
+        ITrackedReferencesService trackedReferencesSkipTakeService,
+        IUmbracoMapper umbracoMapper)
     {
         _trackedReferencesSkipTakeService = trackedReferencesSkipTakeService;
         _umbracoMapper = umbracoMapper;
     }
 
+    [Obsolete("Use the ReferencedDescendants2 action method instead. Scheduled for removal in Umbraco 19, when ReferencedDescendants2 will be renamed back to ReferencedDescendants.")]
+    [NonAction]
+    public async Task<ActionResult<PagedViewModel<ReferenceByIdModel>>> ReferencedDescendants(
+    CancellationToken cancellationToken,
+    Guid id,
+    int skip = 0,
+    int take = 20)
+    {
+        PagedModel<RelationItemModel> relationItems = await _trackedReferencesSkipTakeService.GetPagedDescendantsInReferencesAsync(id, skip, take, true);
+        var pagedViewModel = new PagedViewModel<ReferenceByIdModel>
+        {
+            Total = relationItems.Total,
+            Items = _umbracoMapper.MapEnumerable<RelationItemModel, ReferenceByIdModel>(relationItems.Items),
+        };
+
+        return pagedViewModel;
+    }
+
     /// <summary>
-    ///     Gets a page list of the child nodes of the current item used in any kind of relation.
+    ///     Gets a paged list of the descendant nodes of the current item used in any kind of relation.
     /// </summary>
     /// <remarks>
     ///     Used when deleting and unpublishing a single item to check if this item has any descending items that are in any
@@ -32,19 +54,26 @@ public class ReferencedDescendantsDocumentController : DocumentControllerBase
     [HttpGet("{id:guid}/referenced-descendants")]
     [MapToApiVersion("1.0")]
     [ProducesResponseType(typeof(PagedViewModel<ReferenceByIdModel>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<PagedViewModel<ReferenceByIdModel>>> ReferencedDescendants(
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ReferencedDescendants2(
         CancellationToken cancellationToken,
         Guid id,
         int skip = 0,
         int take = 20)
     {
-        PagedModel<RelationItemModel> relationItems = await _trackedReferencesSkipTakeService.GetPagedDescendantsInReferencesAsync(id, skip, take, true);
+        Attempt<PagedModel<RelationItemModel>, GetReferencesOperationStatus> relationItemsAttempt = await _trackedReferencesSkipTakeService.GetPagedDescendantsInReferencesAsync(id, UmbracoObjectTypes.Document, skip, take, true);
+
+        if (relationItemsAttempt.Success is false)
+        {
+            return GetReferencesOperationStatusResult(relationItemsAttempt.Status);
+        }
+
         var pagedViewModel = new PagedViewModel<ReferenceByIdModel>
         {
-            Total = relationItems.Total,
-            Items = _umbracoMapper.MapEnumerable<RelationItemModel, ReferenceByIdModel>(relationItems.Items),
+            Total = relationItemsAttempt.Result.Total,
+            Items = _umbracoMapper.MapEnumerable<RelationItemModel, ReferenceByIdModel>(relationItemsAttempt.Result.Items),
         };
 
-        return await Task.FromResult(pagedViewModel);
+        return Ok(pagedViewModel);
     }
 }

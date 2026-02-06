@@ -2,6 +2,9 @@ using Umbraco.Cms.Core.Models.Membership;
 
 namespace Umbraco.Cms.Core.Security;
 
+/// <summary>
+///     Provides methods for backoffice security operations including authentication and authorization.
+/// </summary>
 public interface IBackOfficeSecurity
 {
     /// <summary>
@@ -14,15 +17,6 @@ public interface IBackOfficeSecurity
     // an IUserService, like HttpContext.User.GetUmbracoUser(_userService);
     // This one isn't as easy to remove as the others below.
     IUser? CurrentUser { get; }
-
-    /// <summary>
-    ///     Gets the current user's id.
-    /// </summary>
-    /// <returns>The current user's Id that has been authenticated for the request.</returns>
-    /// <remarks>If authentication hasn't taken place this will be unsuccessful.</remarks>
-    // TODO: This should just be an extension method on ClaimsIdentity
-    [Obsolete("Scheduled for removal in V15")]
-    Attempt<int> GetUserId();
 
     /// <summary>
     ///     Checks if the specified user as access to the app

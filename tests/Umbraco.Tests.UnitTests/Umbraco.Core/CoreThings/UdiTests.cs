@@ -49,7 +49,9 @@ public class UdiTests
 
         Assert.AreEqual("/this is a test", Uri.UnescapeDataString(uri.AbsolutePath));
         Assert.AreEqual("%2Fthis%20is%20a%20test", Uri.EscapeDataString("/this is a test"));
+#pragma warning disable SYSLIB0013 // Uri.EscapeUriString is obsolete - testing legacy Uri escaping behavior
         Assert.AreEqual("/this%20is%20a%20test", Uri.EscapeUriString("/this is a test"));
+#pragma warning restore SYSLIB0013
 
         var udi = UdiParser.Parse("umb://" + Constants.UdiEntityType.AnyString + "/this%20is%20a%20test");
         Assert.AreEqual(Constants.UdiEntityType.AnyString, udi.EntityType);
@@ -72,7 +74,9 @@ public class UdiTests
         // reserved = : / ? # [ ] @ ! $ & ' ( ) * + , ; =
         // unreserved = alpha digit - . _ ~
         Assert.AreEqual("%3A%2F%3F%23%5B%5D%40%21%24%26%27%28%29%2B%2C%3B%3D.-_~%25", Uri.EscapeDataString(":/?#[]@!$&'()+,;=.-_~%"));
+#pragma warning disable SYSLIB0013 // Uri.EscapeUriString is obsolete - testing legacy Uri escaping behavior
         Assert.AreEqual(":/?#[]@!$&'()+,;=.-_~%25", Uri.EscapeUriString(":/?#[]@!$&'()+,;=.-_~%"));
+#pragma warning restore SYSLIB0013
 
         // we cannot have reserved chars at random places
         // we want to keep the / in string udis
@@ -293,44 +297,5 @@ public class UdiTests
         Assert.IsFalse(UdiParser.TryParse("umb://foo/A87F65C8D6B94E868F6949BA92C93045", true, out udi));
         Assert.AreEqual(Constants.UdiEntityType.Unknown, udi.EntityType);
         Assert.AreEqual("Umbraco.Cms.Core.UnknownTypeUdi", udi.GetType().FullName);
-
-        // scanned
-        UdiParserServiceConnectors
-            .RegisterServiceConnector<
-                FooConnector>(); // this is the equivalent of scanning but we'll just manually register this one
-        Assert.IsTrue(UdiParser.TryParse("umb://foo/A87F65C8D6B94E868F6949BA92C93045", out udi));
-        Assert.IsInstanceOf<GuidUdi>(udi);
-
-        // known
-        Assert.IsTrue(UdiParser.TryParse("umb://foo/A87F65C8D6B94E868F6949BA92C93045", true, out udi));
-        Assert.IsInstanceOf<GuidUdi>(udi);
-
-        // can get method for Deploy compatibility
-        var method = typeof(UdiParser).GetMethod("Parse", BindingFlags.Static | BindingFlags.Public, null, new[] { typeof(string), typeof(bool) }, null);
-        Assert.IsNotNull(method);
-    }
-
-    [UdiDefinition("foo", UdiType.GuidUdi)]
-    public class FooConnector : IServiceConnector
-    {
-        public IArtifact GetArtifact(Udi udi, IContextCache contextCache) => throw new NotImplementedException();
-
-        public IArtifact GetArtifact(object entity, IContextCache contextCache) => throw new NotImplementedException();
-
-        public ArtifactDeployState ProcessInit(IArtifact art, IDeployContext context) =>
-            throw new NotImplementedException();
-
-        public void Process(ArtifactDeployState dart, IDeployContext context, int pass) =>
-            throw new NotImplementedException();
-
-        public void Explode(UdiRange range, List<Udi> udis) => throw new NotImplementedException();
-
-        public NamedUdiRange GetRange(Udi udi, string selector) => throw new NotImplementedException();
-
-        public NamedUdiRange GetRange(string entityType, string sid, string selector) =>
-            throw new NotImplementedException();
-
-        public bool Compare(IArtifact art1, IArtifact art2, ICollection<Difference> differences = null) =>
-            throw new NotImplementedException();
     }
 }

@@ -5,12 +5,15 @@ using Umbraco.Cms.Infrastructure.Persistence.DatabaseModelDefinitions;
 
 namespace Umbraco.Cms.Infrastructure.Persistence.Dtos;
 
-[TableName(Constants.DatabaseSchema.Tables.Consent)]
-[PrimaryKey("id")]
+[TableName(TableName)]
+[PrimaryKey(PrimaryKeyColumnName)]
 [ExplicitColumns]
 public class ConsentDto
 {
-    [Column("id")]
+    public const string TableName = Constants.DatabaseSchema.Tables.Consent;
+    public const string PrimaryKeyColumnName = Constants.DatabaseSchema.Columns.PrimaryKeyNameId;
+
+    [Column(PrimaryKeyColumnName)]
     [PrimaryKeyColumn]
     public int Id { get; set; }
 
@@ -30,7 +33,7 @@ public class ConsentDto
     public string? Action { get; set; }
 
     [Column("createDate")]
-    [Constraint(Default = SystemMethods.CurrentDateTime)]
+    [Constraint(Default = SystemMethods.CurrentUTCDateTime)]
     public DateTime CreateDate { get; set; }
 
     [Column("state")]

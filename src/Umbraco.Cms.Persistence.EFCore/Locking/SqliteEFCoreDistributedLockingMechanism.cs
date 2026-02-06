@@ -13,14 +13,25 @@ using Umbraco.Extensions;
 
 namespace Umbraco.Cms.Persistence.EFCore.Locking;
 
-internal class SqliteEFCoreDistributedLockingMechanism<T> : IDistributedLockingMechanism
+/// <summary>
+/// Implements distributed locking for SQLite databases using EF Core.
+/// </summary>
+/// <typeparam name="T">The type of DbContext.</typeparam>
+internal sealed class SqliteEFCoreDistributedLockingMechanism<T> : IDistributedLockingMechanism
     where T : DbContext
 {
-    private ConnectionStrings _connectionStrings;
-    private GlobalSettings _globalSettings;
     private readonly ILogger<SqliteEFCoreDistributedLockingMechanism<T>> _logger;
     private readonly Lazy<IEFCoreScopeAccessor<T>> _efCoreScopeAccessor;
+    private GlobalSettings _globalSettings;
+    private ConnectionStrings _connectionStrings;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="SqliteEFCoreDistributedLockingMechanism{T}"/> class.
+    /// </summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="efCoreScopeAccessor">The EF Core scope accessor.</param>
+    /// <param name="globalSettings">The global settings monitor.</param>
+    /// <param name="connectionStrings">The connection strings monitor.</param>
     public SqliteEFCoreDistributedLockingMechanism(
         ILogger<SqliteEFCoreDistributedLockingMechanism<T>> logger,
         Lazy<IEFCoreScopeAccessor<T>> efCoreScopeAccessor,
@@ -31,35 +42,45 @@ internal class SqliteEFCoreDistributedLockingMechanism<T> : IDistributedLockingM
         _efCoreScopeAccessor = efCoreScopeAccessor;
         _globalSettings = globalSettings.CurrentValue;
         _connectionStrings = connectionStrings.CurrentValue;
-        globalSettings.OnChange(x=>_globalSettings = x);
-        connectionStrings.OnChange(x=>_connectionStrings = x);
+
+        globalSettings.OnChange(x => _globalSettings = x);
+        connectionStrings.OnChange(x => _connectionStrings = x);
     }
 
+    /// <inheritdoc />
     public bool HasActiveRelatedScope => _efCoreScopeAccessor.Value.AmbientScope is not null;
 
     /// <inheritdoc />
-    public bool Enabled => _connectionStrings.IsConnectionStringConfigured() &&
-                           string.Equals(_connectionStrings.ProviderName, "Microsoft.Data.Sqlite", StringComparison.InvariantCultureIgnoreCase) && _efCoreScopeAccessor.Value.AmbientScope is not null;
+    public bool Enabled
+        => _connectionStrings.IsConnectionStringConfigured() &&
+        string.Equals(_connectionStrings.ProviderName, Constants.ProviderNames.SQLLite, StringComparison.InvariantCultureIgnoreCase) &&
+        _efCoreScopeAccessor.Value.AmbientScope is not null;
 
-    // With journal_mode=wal we can always read a snapshot.
+    /// <inheritdoc />
+    /// <remarks>With journal_mode=wal we can always read a snapshot.</remarks>
     public IDistributedLock ReadLock(int lockId, TimeSpan? obtainLockTimeout = null)
-    {
-        obtainLockTimeout ??= _globalSettings.DistributedLockingReadLockDefaultTimeout;
-        return new SqliteDistributedLock(this, lockId, DistributedLockType.ReadLock, obtainLockTimeout.Value);
-    }
+        => new SqliteDistributedLock(this, lockId, DistributedLockType.ReadLock, obtainLockTimeout ?? _globalSettings.DistributedLockingReadLockDefaultTimeout);
 
-    // With journal_mode=wal only a single write transaction can exist at a time.
+    /// <inheritdoc />
+    /// <remarks>With journal_mode=wal only a single write transaction can exist at a time.</remarks>
     public IDistributedLock WriteLock(int lockId, TimeSpan? obtainLockTimeout = null)
-    {
-        obtainLockTimeout ??= _globalSettings.DistributedLockingWriteLockDefaultTimeout;
-        return new SqliteDistributedLock(this, lockId, DistributedLockType.WriteLock, obtainLockTimeout.Value);
-    }
+        => new SqliteDistributedLock(this, lockId, DistributedLockType.WriteLock, obtainLockTimeout ?? _globalSettings.DistributedLockingWriteLockDefaultTimeout);
 
-    private class SqliteDistributedLock : IDistributedLock
+    /// <summary>
+    /// Represents a distributed lock for SQLite databases.
+    /// </summary>
+    private sealed class SqliteDistributedLock : IDistributedLock
     {
         private readonly SqliteEFCoreDistributedLockingMechanism<T> _parent;
         private readonly TimeSpan _timeout;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="SqliteDistributedLock"/> class.
+        /// </summary>
+        /// <param name="parent">The parent locking mechanism.</param>
+        /// <param name="lockId">The lock identifier.</param>
+        /// <param name="lockType">The type of lock.</param>
+        /// <param name="timeout">The timeout for obtaining the lock.</param>
         public SqliteDistributedLock(
             SqliteEFCoreDistributedLockingMechanism<T> parent,
             int lockId,
@@ -100,14 +121,18 @@ internal class SqliteEFCoreDistributedLockingMechanism<T> : IDistributedLockingM
             _parent._logger.LogDebug("Acquired {lockType} for id {id}", LockType, LockId);
         }
 
+        /// <inheritdoc />
         public int LockId { get; }
 
+        /// <inheritdoc />
         public DistributedLockType LockType { get; }
 
-        public void Dispose() =>
-            // Mostly no op, cleaned up by completing transaction in scope.
-            _parent._logger.LogDebug("Dropped {lockType} for id {id}", LockType, LockId);
+        /// <inheritdoc />
+        /// <remarks>Mostly no-op, cleaned up by completing transaction in scope.</remarks>
+        public void Dispose()
+            => _parent._logger.LogDebug("Dropped {lockType} for id {id}", LockType, LockId);
 
+        /// <inheritdoc />
         public override string ToString()
             => $"SqliteDistributedLock({LockId})";
 
@@ -115,15 +140,17 @@ internal class SqliteEFCoreDistributedLockingMechanism<T> : IDistributedLockingM
         // Mostly no-op just check that we didn't end up ReadUncommitted for real.
         private void ObtainReadLock()
         {
-            IEfCoreScope<T>? efCoreScope = _parent._efCoreScopeAccessor.Value.AmbientScope ?? throw new PanicException("No current ambient scope");
+            IEfCoreScope<T>? efCoreScope = _parent._efCoreScopeAccessor.Value.AmbientScope
+                ?? throw new PanicException("No current ambient scope");
 
-            efCoreScope.ExecuteWithContextAsync<Task>(async database =>
+            efCoreScope.ExecuteWithContextAsync<Task>(database =>
             {
                 if (database.Database.CurrentTransaction is null)
                 {
-                    throw new InvalidOperationException(
-                        "SqliteDistributedLockingMechanism requires a transaction to function.");
+                    throw new InvalidOperationException("SqliteDistributedLockingMechanism requires a transaction to function.");
                 }
+
+                return Task.CompletedTask;
             });
         }
 
@@ -131,14 +158,14 @@ internal class SqliteEFCoreDistributedLockingMechanism<T> : IDistributedLockingM
         // lock occurs for entire database as opposed to row/table.
         private void ObtainWriteLock()
         {
-            IEfCoreScope<T>? efCoreScope = _parent._efCoreScopeAccessor.Value.AmbientScope ?? throw new PanicException("No ambient scope");
+            IEfCoreScope<T>? efCoreScope = _parent._efCoreScopeAccessor.Value.AmbientScope
+                ?? throw new PanicException("No ambient scope");
 
             efCoreScope.ExecuteWithContextAsync<Task>(async database =>
             {
                 if (database.Database.CurrentTransaction is null)
                 {
-                    throw new InvalidOperationException(
-                        "SqliteDistributedLockingMechanism requires a transaction to function.");
+                    throw new InvalidOperationException("SqliteDistributedLockingMechanism requires a transaction to function.");
                 }
 
                 var query = @$"UPDATE umbracoLock SET value = (CASE WHEN (value=1) THEN -1 ELSE 1 END) WHERE id = {LockId.ToString(CultureInfo.InvariantCulture)}";
@@ -164,7 +191,7 @@ internal class SqliteEFCoreDistributedLockingMechanism<T> : IDistributedLockingM
             });
         }
 
-        private bool IsBusyOrLocked(SqliteException ex) =>
+        private static bool IsBusyOrLocked(SqliteException ex) =>
             ex.SqliteErrorCode
                 is raw.SQLITE_BUSY
                 or raw.SQLITE_LOCKED

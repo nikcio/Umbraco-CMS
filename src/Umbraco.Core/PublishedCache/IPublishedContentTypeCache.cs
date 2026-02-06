@@ -1,7 +1,14 @@
-﻿using Umbraco.Cms.Core.Models.PublishedContent;
+using Umbraco.Cms.Core.Models.PublishedContent;
 
 namespace Umbraco.Cms.Core.PublishedCache;
 
+/// <summary>
+/// Provides caching for published content types.
+/// </summary>
+/// <remarks>
+/// This interface defines operations for caching and retrieving <see cref="IPublishedContentType"/> instances,
+/// including methods for clearing cached types when content types or data types are modified.
+/// </remarks>
 public interface IPublishedContentTypeCache
 {
     /// <summary>
@@ -16,10 +23,33 @@ public interface IPublishedContentTypeCache
     public void ClearContentType(int id);
 
     /// <summary>
+    ///     Clears cached content types.
+    /// </summary>
+    /// <param name="ids">ContentType IDs to clear</param>
+    public void ClearContentTypes(IEnumerable<int> ids)
+    {
+        foreach (var id in ids)
+        {
+            ClearContentType(id);
+        }
+    }
+
+    /// <summary>
     ///     Clears all cached content types referencing a data type.
     /// </summary>
     /// <param name="id">A data type identifier.</param>
     public void ClearDataType(int id);
+
+    /// <summary>
+    /// Clears all cached content types referencing a data type.
+    /// </summary>
+    /// <param name="id">The data type id to remove content types by</param>
+    /// <returns>The removed content types</returns>
+    public IEnumerable<IPublishedContentType> ClearByDataTypeId(int id)
+    {
+        ClearDataType(id);
+        return [];
+    }
 
     /// <summary>
     ///     Gets a published content type.

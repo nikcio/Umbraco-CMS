@@ -11,7 +11,7 @@ namespace Umbraco.Cms.Core.Composing;
 ///     borrowed and modified from here
 ///     https://github.com/dotnet/aspnetcore-tooling/blob/master/src/Razor/src/Microsoft.NET.Sdk.Razor/FindAssembliesWithReferencesTo.cs
 /// </remarkes>
-internal class FindAssembliesWithReferencesTo
+internal sealed class FindAssembliesWithReferencesTo
 {
     private readonly bool _includeTargets;
     private readonly ILogger<FindAssembliesWithReferencesTo> _logger;
@@ -38,6 +38,10 @@ internal class FindAssembliesWithReferencesTo
         _logger = _loggerFactory.CreateLogger<FindAssembliesWithReferencesTo>();
     }
 
+    /// <summary>
+    /// Finds all assemblies that reference the target assemblies.
+    /// </summary>
+    /// <returns>A collection of assemblies that reference the target assemblies.</returns>
     public IEnumerable<Assembly> Find()
     {
         var referenceItems = new List<Assembly>();

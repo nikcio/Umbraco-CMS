@@ -1,6 +1,5 @@
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Umbraco.Cms.Core.Configuration.Models;
@@ -19,13 +18,18 @@ using File = System.IO.File;
 namespace Umbraco.Cms.Core.Services;
 
 /// <summary>
-///     Represents the File Service, which is an easy access to operations involving <see cref="IFile" /> objects like
-///     Scripts, Stylesheets and Templates
+///     Represents the File Service, which provides access to operations involving <see cref="IFile" /> objects like
+///     Scripts, Stylesheets, Templates, and Partial Views.
 /// </summary>
+/// <remarks>
+///     Many methods in this service are marked as obsolete. For new implementations, use the specific
+///     services: <see cref="IStylesheetService" />, <see cref="IScriptService" />, <see cref="ITemplateService" />,
+///     <see cref="IPartialViewService" />, and their corresponding folder services.
+/// </remarks>
 public class FileService : RepositoryService, IFileService
 {
     private const string PartialViewHeader = "@inherits Umbraco.Cms.Web.Common.Views.UmbracoViewPage";
-    private readonly IAuditRepository _auditRepository;
+    private readonly IAuditService _auditService;
     private readonly IHostingEnvironment _hostingEnvironment;
     private readonly IPartialViewRepository _partialViewRepository;
     private readonly IScriptRepository _scriptRepository;
@@ -34,37 +38,61 @@ public class FileService : RepositoryService, IFileService
     private readonly ITemplateRepository _templateRepository;
     private readonly IUserIdKeyResolver _userIdKeyResolver;
 
-    [Obsolete("Use other ctor - will be removed in Umbraco 15")]
+    /// <summary>
+    ///     Initializes a new instance of the <see cref="FileService" /> class.
+    /// </summary>
+    /// <param name="uowProvider">The core scope provider for database operations.</param>
+    /// <param name="loggerFactory">The logger factory for creating loggers.</param>
+    /// <param name="eventMessagesFactory">The factory for creating event messages.</param>
+    /// <param name="stylesheetRepository">The repository for stylesheet operations.</param>
+    /// <param name="scriptRepository">The repository for script operations.</param>
+    /// <param name="partialViewRepository">The repository for partial view operations.</param>
+    /// <param name="auditService">The audit service for logging operations.</param>
+    /// <param name="hostingEnvironment">The hosting environment for path resolution.</param>
+    /// <param name="templateService">The template service for template operations.</param>
+    /// <param name="templateRepository">The template repository for direct template access.</param>
+    /// <param name="userIdKeyResolver">The resolver for converting user IDs to keys.</param>
     public FileService(
         ICoreScopeProvider uowProvider,
         ILoggerFactory loggerFactory,
         IEventMessagesFactory eventMessagesFactory,
         IStylesheetRepository stylesheetRepository,
         IScriptRepository scriptRepository,
-        ITemplateRepository templateRepository,
         IPartialViewRepository partialViewRepository,
-        IAuditRepository auditRepository,
-        IShortStringHelper shortStringHelper,
-        IOptions<GlobalSettings> globalSettings,
-        IHostingEnvironment hostingEnvironment)
-        : this(
-            uowProvider,
-            loggerFactory,
-            eventMessagesFactory,
-            stylesheetRepository,
-            scriptRepository,
-            partialViewRepository,
-            auditRepository,
-            hostingEnvironment,
-            StaticServiceProvider.Instance.GetRequiredService<ITemplateService>(),
-            templateRepository,
-            StaticServiceProvider.Instance.GetRequiredService<IUserIdKeyResolver>(),
-            shortStringHelper,
-            globalSettings)
+        IAuditService auditService,
+        IHostingEnvironment hostingEnvironment,
+        ITemplateService templateService,
+        ITemplateRepository templateRepository,
+        IUserIdKeyResolver userIdKeyResolver)
+        : base(uowProvider, loggerFactory, eventMessagesFactory)
     {
+        _stylesheetRepository = stylesheetRepository;
+        _scriptRepository = scriptRepository;
+        _partialViewRepository = partialViewRepository;
+        _auditService = auditService;
+        _hostingEnvironment = hostingEnvironment;
+        _templateService = templateService;
+        _templateRepository = templateRepository;
+        _userIdKeyResolver = userIdKeyResolver;
     }
 
-    [ActivatorUtilitiesConstructor]
+    /// <summary>
+    ///     Initializes a new instance of the <see cref="FileService" /> class.
+    /// </summary>
+    /// <param name="uowProvider">The core scope provider for database operations.</param>
+    /// <param name="loggerFactory">The logger factory for creating loggers.</param>
+    /// <param name="eventMessagesFactory">The factory for creating event messages.</param>
+    /// <param name="stylesheetRepository">The repository for stylesheet operations.</param>
+    /// <param name="scriptRepository">The repository for script operations.</param>
+    /// <param name="partialViewRepository">The repository for partial view operations.</param>
+    /// <param name="auditRepository">The audit repository (no longer used).</param>
+    /// <param name="hostingEnvironment">The hosting environment for path resolution.</param>
+    /// <param name="templateService">The template service for template operations.</param>
+    /// <param name="templateRepository">The template repository for direct template access.</param>
+    /// <param name="userIdKeyResolver">The resolver for converting user IDs to keys.</param>
+    /// <param name="shortStringHelper">The short string helper (no longer used).</param>
+    /// <param name="globalSettings">The global settings options (no longer used).</param>
+    [Obsolete("Use the non-obsolete constructor instead. Scheduled removal in v19.")]
     public FileService(
         ICoreScopeProvider uowProvider,
         ILoggerFactory loggerFactory,
@@ -77,19 +105,69 @@ public class FileService : RepositoryService, IFileService
         ITemplateService templateService,
         ITemplateRepository templateRepository,
         IUserIdKeyResolver userIdKeyResolver,
-        // We need these else it will be ambigious ctors
         IShortStringHelper shortStringHelper,
         IOptions<GlobalSettings> globalSettings)
-        : base(uowProvider, loggerFactory, eventMessagesFactory)
+        : this(
+            uowProvider,
+            loggerFactory,
+            eventMessagesFactory,
+            stylesheetRepository,
+            scriptRepository,
+            partialViewRepository,
+            StaticServiceProvider.Instance.GetRequiredService<IAuditService>(),
+            hostingEnvironment,
+            templateService,
+            templateRepository,
+            userIdKeyResolver)
     {
-        _stylesheetRepository = stylesheetRepository;
-        _scriptRepository = scriptRepository;
-        _partialViewRepository = partialViewRepository;
-        _auditRepository = auditRepository;
-        _hostingEnvironment = hostingEnvironment;
-        _templateService = templateService;
-        _templateRepository = templateRepository;
-        _userIdKeyResolver = userIdKeyResolver;
+    }
+
+    /// <summary>
+    ///     Initializes a new instance of the <see cref="FileService" /> class.
+    /// </summary>
+    /// <param name="uowProvider">The core scope provider for database operations.</param>
+    /// <param name="loggerFactory">The logger factory for creating loggers.</param>
+    /// <param name="eventMessagesFactory">The factory for creating event messages.</param>
+    /// <param name="stylesheetRepository">The repository for stylesheet operations.</param>
+    /// <param name="scriptRepository">The repository for script operations.</param>
+    /// <param name="partialViewRepository">The repository for partial view operations.</param>
+    /// <param name="auditService">The audit service for logging operations.</param>
+    /// <param name="auditRepository">The audit repository (no longer used).</param>
+    /// <param name="hostingEnvironment">The hosting environment for path resolution.</param>
+    /// <param name="templateService">The template service for template operations.</param>
+    /// <param name="templateRepository">The template repository for direct template access.</param>
+    /// <param name="userIdKeyResolver">The resolver for converting user IDs to keys.</param>
+    /// <param name="shortStringHelper">The short string helper (no longer used).</param>
+    /// <param name="globalSettings">The global settings options (no longer used).</param>
+    [Obsolete("Use the non-obsolete constructor instead. Scheduled removal in v19.")]
+    public FileService(
+        ICoreScopeProvider uowProvider,
+        ILoggerFactory loggerFactory,
+        IEventMessagesFactory eventMessagesFactory,
+        IStylesheetRepository stylesheetRepository,
+        IScriptRepository scriptRepository,
+        IPartialViewRepository partialViewRepository,
+        IAuditService auditService,
+        IAuditRepository auditRepository,
+        IHostingEnvironment hostingEnvironment,
+        ITemplateService templateService,
+        ITemplateRepository templateRepository,
+        IUserIdKeyResolver userIdKeyResolver,
+        IShortStringHelper shortStringHelper,
+        IOptions<GlobalSettings> globalSettings)
+        : this(
+            uowProvider,
+            loggerFactory,
+            eventMessagesFactory,
+            stylesheetRepository,
+            scriptRepository,
+            partialViewRepository,
+            auditService,
+            hostingEnvironment,
+            templateService,
+            templateRepository,
+            userIdKeyResolver)
+    {
     }
 
     #region Stylesheets
@@ -104,8 +182,34 @@ public class FileService : RepositoryService, IFileService
         }
     }
 
+    /// <summary>
+    ///     Records an audit entry synchronously.
+    /// </summary>
+    /// <param name="type">The type of audit action.</param>
+    /// <param name="userId">The ID of the user performing the action.</param>
+    /// <param name="objectId">The ID of the object being acted upon.</param>
+    /// <param name="entityType">The type of entity being audited.</param>
     private void Audit(AuditType type, int userId, int objectId, string? entityType) =>
-        _auditRepository.Save(new AuditItem(objectId, type, userId, entityType));
+        AuditAsync(type, userId, objectId, entityType).GetAwaiter().GetResult();
+
+    /// <summary>
+    ///     Records an audit entry asynchronously.
+    /// </summary>
+    /// <param name="type">The type of audit action.</param>
+    /// <param name="userId">The ID of the user performing the action.</param>
+    /// <param name="objectId">The ID of the object being acted upon.</param>
+    /// <param name="entityType">The type of entity being audited.</param>
+    /// <returns>A task that represents the asynchronous operation.</returns>
+    private async Task AuditAsync(AuditType type, int userId, int objectId, string? entityType)
+    {
+        Guid userKey = await _userIdKeyResolver.GetAsync(userId);
+
+        await _auditService.AddAsync(
+            type,
+            userKey,
+            objectId,
+            entityType);
+    }
 
     /// <inheritdoc />
     [Obsolete("Please use IStylesheetService for stylesheet operations - will be removed in Umbraco 15")]
@@ -581,6 +685,7 @@ public class FileService : RepositoryService, IFileService
 
     #region Partial Views
 
+    /// <inheritdoc />
     [Obsolete("Please use IPartialViewFolderService for partial view folder operations - will be removed in Umbraco 15")]
     public void DeletePartialViewFolder(string folderPath)
     {
@@ -591,6 +696,7 @@ public class FileService : RepositoryService, IFileService
         }
     }
 
+    /// <inheritdoc />
     [Obsolete("Please use IPartialViewService for partial view operations - will be removed in Umbraco 15")]
     public IEnumerable<IPartialView> GetPartialViews(params string[] names)
     {
@@ -600,6 +706,7 @@ public class FileService : RepositoryService, IFileService
         }
     }
 
+    /// <inheritdoc />
     [Obsolete("Please use IPartialViewService for partial view operations - will be removed in Umbraco 15")]
     public IPartialView? GetPartialView(string path)
     {
@@ -609,6 +716,7 @@ public class FileService : RepositoryService, IFileService
         }
     }
 
+    /// <inheritdoc />
     [Obsolete("Please use IPartialViewService for partial view operations - will be removed in Umbraco 15")]
     public Attempt<IPartialView?> CreatePartialView(IPartialView partialView, string? snippetName = null, int? userId = Constants.Security.SuperUserId)
     {
@@ -664,6 +772,7 @@ public class FileService : RepositoryService, IFileService
         return Attempt<IPartialView?>.Succeed(partialView);
     }
 
+    /// <inheritdoc />
     [Obsolete("Please use IPartialViewService for partial view operations - will be removed in Umbraco 15")]
     public Attempt<IPartialView?> SavePartialView(IPartialView partialView, int? userId = null)
     {
@@ -690,6 +799,7 @@ public class FileService : RepositoryService, IFileService
         return Attempt.Succeed(partialView);
     }
 
+    /// <inheritdoc />
     [Obsolete("Please use IPartialViewService for partial view operations - will be removed in Umbraco 15")]
     public bool DeletePartialView(string path, int? userId = null)
     {
@@ -722,6 +832,7 @@ public class FileService : RepositoryService, IFileService
         return true;
     }
 
+    /// <inheritdoc />
     [Obsolete("Please use IPartialViewFolderService for partial view folder operations - will be removed in Umbraco 15")]
     public void CreatePartialViewFolder(string folderPath)
     {
@@ -732,12 +843,22 @@ public class FileService : RepositoryService, IFileService
         }
     }
 
+    /// <summary>
+    ///     Strips the @inherits directive header from partial view contents.
+    /// </summary>
+    /// <param name="contents">The partial view content.</param>
+    /// <returns>The content with the header stripped.</returns>
     internal string StripPartialViewHeader(string contents)
     {
         var headerMatch = new Regex("^@inherits\\s+?.*$", RegexOptions.Multiline);
         return headerMatch.Replace(contents, string.Empty);
     }
 
+    /// <summary>
+    ///     Attempts to get the file system path to a snippet file.
+    /// </summary>
+    /// <param name="fileName">The name of the snippet file.</param>
+    /// <returns>An <see cref="Attempt{T}" /> containing the path if found; otherwise, a failed attempt.</returns>
     internal Attempt<string> TryGetSnippetPath(string? fileName)
     {
         if (fileName?.EndsWith(".cshtml") == false)

@@ -1,9 +1,8 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using Umbraco.Cms.Core.DependencyInjection;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Models.ContentEditing;
 using Umbraco.Cms.Core.Models.ContentTypeEditing;
-using Umbraco.Cms.Core.PropertyEditors;
 using Umbraco.Cms.Core.Services.OperationStatus;
 using Umbraco.Cms.Core.Strings;
 using Umbraco.Extensions;
@@ -12,40 +11,49 @@ namespace Umbraco.Cms.Core.Services.ContentTypeEditing;
 
 // NOTE: this is the implementation for document types. in the code we refer to document types as content types
 //       at core level, so it has to be named ContentTypeEditingService instead of DocumentTypeEditingService.
+
+/// <summary>
+///     Implementation of <see cref="IContentTypeEditingService"/> for managing document types (content types).
+/// </summary>
+/// <remarks>
+///     In Umbraco Core, document types are referred to as content types. This service handles
+///     creating and updating document types including their properties, templates, compositions,
+///     and history cleanup settings.
+/// </remarks>
 internal sealed class ContentTypeEditingService : ContentTypeEditingServiceBase<IContentType, IContentTypeService, ContentTypePropertyTypeModel, ContentTypePropertyContainerModel>, IContentTypeEditingService
 {
     private readonly ITemplateService _templateService;
     private readonly IElementSwitchValidator _elementSwitchValidator;
+    private readonly IReservedFieldNamesService _reservedFieldNamesService;
     private readonly IContentTypeService _contentTypeService;
 
+    /// <summary>
+    ///     Initializes a new instance of the <see cref="ContentTypeEditingService"/> class.
+    /// </summary>
+    /// <param name="contentTypeService">The content type service for managing content types.</param>
+    /// <param name="templateService">The template service for managing templates.</param>
+    /// <param name="dataTypeService">The data type service for validating property data types.</param>
+    /// <param name="entityService">The entity service for resolving entity relationships.</param>
+    /// <param name="shortStringHelper">The helper for generating safe aliases.</param>
+    /// <param name="elementSwitchValidator">The validator for element type switching operations.</param>
+    /// <param name="reservedFieldNamesService">The service providing reserved field names.</param>
     public ContentTypeEditingService(
         IContentTypeService contentTypeService,
         ITemplateService templateService,
         IDataTypeService dataTypeService,
         IEntityService entityService,
         IShortStringHelper shortStringHelper,
-        IElementSwitchValidator elementSwitchValidator)
+        IElementSwitchValidator elementSwitchValidator,
+        IReservedFieldNamesService reservedFieldNamesService)
         : base(contentTypeService, contentTypeService, dataTypeService, entityService, shortStringHelper)
     {
         _contentTypeService = contentTypeService;
         _templateService = templateService;
         _elementSwitchValidator = elementSwitchValidator;
+        _reservedFieldNamesService = reservedFieldNamesService;
     }
 
-    [Obsolete("Use the constructor that is not marked obsolete, will be removed in v16")]
-    public ContentTypeEditingService(
-        IContentTypeService contentTypeService,
-        ITemplateService templateService,
-        IDataTypeService dataTypeService,
-        IEntityService entityService,
-        IShortStringHelper shortStringHelper)
-        : base(contentTypeService, contentTypeService, dataTypeService, entityService, shortStringHelper)
-    {
-        _contentTypeService = contentTypeService;
-        _templateService = templateService;
-        _elementSwitchValidator = StaticServiceProvider.Instance.GetRequiredService<IElementSwitchValidator>();
-    }
-
+    /// <inheritdoc />
     public async Task<Attempt<IContentType?, ContentTypeOperationStatus>> CreateAsync(ContentTypeCreateModel model, Guid userKey)
     {
         Attempt<IContentType?, ContentTypeOperationStatus> result = await ValidateAndMapForCreationAsync(model, model.Key, model.ContainerKey);
@@ -70,6 +78,7 @@ internal sealed class ContentTypeEditingService : ContentTypeEditingServiceBase<
         return Attempt.SucceedWithStatus<IContentType?, ContentTypeOperationStatus>(ContentTypeOperationStatus.Success, contentType);
     }
 
+    /// <inheritdoc />
     public async Task<Attempt<IContentType?, ContentTypeOperationStatus>> UpdateAsync(IContentType contentType, ContentTypeUpdateModel model, Guid userKey)
     {
         // this needs to happen before the base call as that one is not a pure function
@@ -97,6 +106,7 @@ internal sealed class ContentTypeEditingService : ContentTypeEditingServiceBase<
             : Attempt.FailWithStatus<IContentType?, ContentTypeOperationStatus>(attempt.Result, null);
     }
 
+    /// <inheritdoc />
     public async Task<IEnumerable<ContentTypeAvailableCompositionsResult>> GetAvailableCompositionsAsync(
         Guid? key,
         IEnumerable<Guid> currentCompositeKeys,
@@ -104,6 +114,7 @@ internal sealed class ContentTypeEditingService : ContentTypeEditingServiceBase<
         bool isElement) =>
         await FindAvailableCompositionsAsync(key, currentCompositeKeys, currentPropertyAliases, isElement);
 
+    /// <inheritdoc />
     protected override async Task<ContentTypeOperationStatus> AdditionalCreateValidationAsync(
         ContentTypeEditingModelBase<ContentTypePropertyTypeModel, ContentTypePropertyContainerModel> model)
     {
@@ -134,6 +145,15 @@ internal sealed class ContentTypeEditingService : ContentTypeEditingServiceBase<
         contentType.SetDefaultTemplate(allowedTemplates.FirstOrDefault(t => t.Key == model.DefaultTemplateKey));
     }
 
+    /// <summary>
+    ///     Validates element status changes when updating a content type.
+    /// </summary>
+    /// <param name="contentType">The existing content type being updated.</param>
+    /// <param name="model">The update model containing the new element status.</param>
+    /// <returns>
+    ///     <see cref="ContentTypeOperationStatus.Success"/> if validation passes;
+    ///     otherwise, an error status indicating why the element status change is not allowed.
+    /// </returns>
     private async Task<ContentTypeOperationStatus> ValidateElementStatusForUpdateAsync(IContentTypeBase contentType, ContentTypeModelBase model)
     {
         // no change, ignore rest of validation
@@ -176,12 +196,19 @@ internal sealed class ContentTypeEditingService : ContentTypeEditingServiceBase<
             : ContentTypeOperationStatus.InvalidElementFlagComparedToParent;
     }
 
+    /// <inheritdoc />
     protected override IContentType CreateContentType(IShortStringHelper shortStringHelper, int parentId)
         => new ContentType(shortStringHelper, parentId);
 
+    /// <inheritdoc />
     protected override bool SupportsPublishing => true;
 
+    /// <inheritdoc />
     protected override UmbracoObjectTypes ContentTypeObjectType => UmbracoObjectTypes.DocumentType;
 
+    /// <inheritdoc />
     protected override UmbracoObjectTypes ContainerObjectType => UmbracoObjectTypes.DocumentTypeContainer;
+
+    /// <inheritdoc />
+    protected override ISet<string> GetReservedFieldNames() => _reservedFieldNamesService.GetDocumentReservedFieldNames();
 }

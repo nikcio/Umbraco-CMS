@@ -34,6 +34,7 @@ public static partial class UmbracoBuilderExtensions
         builder.Services.AddUnique<IDocumentVersionRepository, DocumentVersionRepository>();
         builder.Services.AddUnique<IDocumentTypeContainerRepository, DocumentTypeContainerRepository>();
         builder.Services.AddUnique<IDocumentUrlRepository, DocumentUrlRepository>();
+        builder.Services.AddUnique<IDocumentUrlAliasRepository, DocumentUrlAliasRepository>();
         builder.Services.AddUnique<IDomainRepository, DomainRepository>();
         builder.Services.AddMultipleUnique<IEntityRepository, IEntityRepositoryExtended, EntityRepository>();
         builder.Services.AddUnique<ITwoFactorLoginRepository, TwoFactorLoginRepository>();
@@ -81,6 +82,11 @@ public static partial class UmbracoBuilderExtensions
         builder.Services.AddUnique<ILogViewerRepository, LogViewerRepository>();
         builder.Services.AddUnique<IUserDataRepository, UserDataRepository>();
         builder.Services.AddUnique<INavigationRepository, ContentNavigationRepository>();
+        builder.Services.AddUnique<IPublishStatusRepository, PublishStatusRepository>();
+        builder.Services.AddUnique<IRepositoryCacheVersionRepository, RepositoryCacheVersionRepository>();
+        builder.Services.AddUnique<ILongRunningOperationRepository, LongRunningOperationRepository>();
+        builder.Services.AddUnique<ILastSyncedRepository, LastSyncedRepository>();
+        builder.Services.AddUnique<IDistributedJobRepository, DistributedJobRepository>();
 
         return builder;
     }

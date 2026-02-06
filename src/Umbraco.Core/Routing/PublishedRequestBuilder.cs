@@ -6,6 +6,9 @@ using Umbraco.Extensions;
 
 namespace Umbraco.Cms.Core.Routing;
 
+/// <summary>
+///     Provides a builder for constructing <see cref="IPublishedRequest" /> instances during the routing process.
+/// </summary>
 public class PublishedRequestBuilder : IPublishedRequestBuilder
 {
     private readonly IFileService _fileService;
@@ -40,6 +43,9 @@ public class PublishedRequestBuilder : IPublishedRequestBuilder
     public string? Culture { get; private set; }
 
     /// <inheritdoc />
+    public string? Segment { get; private set; }
+
+    /// <inheritdoc />
     public ITemplate? Template { get; private set; }
 
     /// <inheritdoc />
@@ -69,6 +75,7 @@ public class PublishedRequestBuilder : IPublishedRequestBuilder
         Template,
         Domain,
         Culture,
+        Segment,
         _redirectUrl,
         _responseStatus.HasValue ? (int?)_responseStatus : null,
         _cacheExtensions,
@@ -94,6 +101,13 @@ public class PublishedRequestBuilder : IPublishedRequestBuilder
     public IPublishedRequestBuilder SetCulture(string? culture)
     {
         Culture = culture;
+        return this;
+    }
+
+    /// <inheritdoc />
+    public IPublishedRequestBuilder SetSegment(string? segment)
+    {
+        Segment = segment;
         return this;
     }
 

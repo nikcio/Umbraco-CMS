@@ -5,15 +5,25 @@ using System.Xml.XPath;
 // source: mvpxml.codeplex.com
 namespace Umbraco.Cms.Core.Xml;
 
+/// <summary>
+///     Factory class for creating <see cref="XmlNodeList" /> instances from various sources.
+/// </summary>
+/// <remarks>
+///     This factory provides methods to create XmlNodeList implementations from XPath iterators.
+///     The class uses a private constructor to prevent direct instantiation.
+/// </remarks>
 public class XmlNodeListFactory
 {
+    /// <summary>
+    ///     Prevents a default instance of the <see cref="XmlNodeListFactory" /> class from being created.
+    /// </summary>
     private XmlNodeListFactory()
     {
     }
 
     #region XmlNodeListIterator
 
-    private class XmlNodeListIterator : XmlNodeList
+    private sealed class XmlNodeListIterator : XmlNodeList
     {
         private readonly XPathNodeIterator? _iterator;
         private readonly IList<XmlNode> _nodes = new List<XmlNode>();
@@ -108,7 +118,7 @@ public class XmlNodeListFactory
 
         #region XmlNodeListEnumerator
 
-        private class XmlNodeListEnumerator : IEnumerator
+        private sealed class XmlNodeListEnumerator : IEnumerator
         {
             private readonly XmlNodeListIterator _iterator;
             private int _position = -1;

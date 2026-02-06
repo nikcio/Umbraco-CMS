@@ -2,6 +2,9 @@ namespace Umbraco.Cms.Core;
 
 public static partial class Constants
 {
+    /// <summary>
+    ///     Contains icon name constants used throughout the Umbraco backoffice.
+    /// </summary>
     public static class Icons
     {
         /// <summary>
@@ -67,7 +70,7 @@ public static partial class Constants
         /// <summary>
         ///     System media audio icon.
         /// </summary>
-        public const string MediaAudio = "icon-sound-waves";
+        public const string MediaAudio = "icon-audio-lines";
 
         /// <summary>
         ///     System media article icon
@@ -77,7 +80,7 @@ public static partial class Constants
         /// <summary>
         ///     System media vector icon.
         /// </summary>
-        public const string MediaVectorGraphics = "icon-picture";
+        public const string MediaVectorGraphics = "icon-origami";
 
         /// <summary>
         ///     System media folder icon.
@@ -113,12 +116,6 @@ public static partial class Constants
         ///     System package icon.
         /// </summary>
         public const string Package = "icon-box";
-
-        /// <summary>
-        ///     System packages icon.
-        /// </summary>
-        [Obsolete("Use Package icon instead.")]
-        public const string Packages = "icon-box";
 
         /// <summary>
         ///     System property editor icon

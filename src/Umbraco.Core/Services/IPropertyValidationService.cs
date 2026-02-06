@@ -1,9 +1,13 @@
 using System.ComponentModel.DataAnnotations;
 using Umbraco.Cms.Core.Models;
+using Umbraco.Cms.Core.Models.Validation;
 using Umbraco.Cms.Core.PropertyEditors;
 
 namespace Umbraco.Cms.Core.Services;
 
+/// <summary>
+///     Provides validation services for content properties.
+/// </summary>
 public interface IPropertyValidationService
 {
     /// <summary>
@@ -14,7 +18,7 @@ public interface IPropertyValidationService
     /// <summary>
     ///     Gets a value indicating whether the property has valid values.
     /// </summary>
-    bool IsPropertyValid(IProperty property, string culture = "*", string segment = "*");
+    bool IsPropertyValid(IProperty property, PropertyValidationContext validationContext);
 
     /// <summary>
     ///     Validates a property value.
@@ -26,12 +30,14 @@ public interface IPropertyValidationService
         bool isRequired,
         string? validationRegExp,
         string? isRequiredMessage,
-        string? validationRegExpMessage);
+        string? validationRegExpMessage,
+        PropertyValidationContext validationContext);
 
     /// <summary>
     ///     Validates a property value.
     /// </summary>
     IEnumerable<ValidationResult> ValidatePropertyValue(
         IPropertyType propertyType,
-        object? postedValue);
+        object? postedValue,
+        PropertyValidationContext validationContext);
 }

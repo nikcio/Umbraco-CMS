@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Umbraco.Cms.Core.DependencyInjection;
 using Umbraco.Cms.Core.PublishedCache;
@@ -17,8 +17,13 @@ namespace Umbraco.Cms.Core.Models.PublishedContent
     {
         private readonly IVariationContextAccessor? _variationContextAccessor;
 
+        /// <summary>
+        ///     Initializes a new instance of the <see cref="PublishedContentBase" /> class.
+        /// </summary>
+        /// <param name="variationContextAccessor">The variation context accessor.</param>
         protected PublishedContentBase(IVariationContextAccessor? variationContextAccessor) => _variationContextAccessor = variationContextAccessor;
 
+        /// <inheritdoc />
         public abstract IPublishedContentType ContentType { get; }
 
         /// <inheritdoc />
@@ -31,6 +36,7 @@ namespace Umbraco.Cms.Core.Models.PublishedContent
         public virtual string Name => this.Name(_variationContextAccessor);
 
         /// <inheritdoc />
+        [Obsolete("Please use GetUrlSegment() on IDocumentUrlService instead. Scheduled for removal in V16.")]
         public virtual string? UrlSegment => this.UrlSegment(_variationContextAccessor);
 
         /// <inheritdoc />
@@ -75,7 +81,6 @@ namespace Umbraco.Cms.Core.Models.PublishedContent
         [Obsolete("Please use TryGetParentKey() on IDocumentNavigationQueryService or IMediaNavigationQueryService instead. Scheduled for removal in V16.")]
         public abstract IPublishedContent? Parent { get; }
 
-        // FIXME
         /// <inheritdoc />
         [Obsolete("Please use TryGetChildrenKeys() on IDocumentNavigationQueryService or IMediaNavigationQueryService instead. Scheduled for removal in V16.")]
         public virtual IEnumerable<IPublishedContent> Children => GetChildren();
@@ -87,26 +92,30 @@ namespace Umbraco.Cms.Core.Models.PublishedContent
         /// <inheritdoc cref="IPublishedElement.GetProperty(string)"/>
         public abstract IPublishedProperty? GetProperty(string alias);
 
+        /// <summary>
+        ///     Gets the children of the current content item.
+        /// </summary>
+        /// <returns>The children of the current content item.</returns>
         private IEnumerable<IPublishedContent> GetChildren()
         {
             INavigationQueryService? navigationQueryService;
-            IPublishedCache? publishedCache;
+            IPublishedStatusFilteringService? publishedStatusFilteringService;
 
             switch (ContentType.ItemType)
             {
                 case PublishedItemType.Content:
-                    publishedCache = StaticServiceProvider.Instance.GetRequiredService<IPublishedContentCache>();
                     navigationQueryService = StaticServiceProvider.Instance.GetRequiredService<IDocumentNavigationQueryService>();
+                    publishedStatusFilteringService = StaticServiceProvider.Instance.GetRequiredService<IPublishedContentStatusFilteringService>();
                     break;
                 case PublishedItemType.Media:
-                    publishedCache = StaticServiceProvider.Instance.GetRequiredService<IPublishedMediaCache>();
                     navigationQueryService = StaticServiceProvider.Instance.GetRequiredService<IMediaNavigationQueryService>();
+                    publishedStatusFilteringService = StaticServiceProvider.Instance.GetRequiredService<IPublishedMediaStatusFilteringService>();
                     break;
                 default:
                     throw new NotImplementedException("Level is not implemented for " + ContentType.ItemType);
             }
 
-            return this.Children(_variationContextAccessor, publishedCache, navigationQueryService);
+            return this.Children(navigationQueryService, publishedStatusFilteringService);
         }
     }
 }

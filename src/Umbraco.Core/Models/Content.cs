@@ -168,6 +168,7 @@ public class Content : ContentBase, IContent
         }
     }
 
+    /// <inheritdoc />
     [IgnoreDataMember]
     public bool Edited { get; set; }
 
@@ -197,7 +198,7 @@ public class Content : ContentBase, IContent
 
     /// <inheritdoc />
     [IgnoreDataMember]
-    public IEnumerable<string> PublishedCultures => _publishInfos?.Keys ?? Enumerable.Empty<string>();
+    public IEnumerable<string> PublishedCultures => _publishInfos?.Keys ?? [];
 
     /// <inheritdoc />
     public bool IsCulturePublished(string culture)
@@ -285,12 +286,15 @@ public class Content : ContentBase, IContent
         return _publishInfos.TryGetValue(culture, out ContentCultureInfos infos) ? infos.Date : null;
     }
 
+    /// <inheritdoc />
     [IgnoreDataMember]
     public int PublishedVersionId { get; set; }
 
+    /// <inheritdoc />
     [DataMember]
     public bool Blueprint { get; set; }
 
+    /// <inheritdoc />
     public override void ResetWereDirtyProperties()
     {
         base.ResetWereDirtyProperties();
@@ -299,6 +303,7 @@ public class Content : ContentBase, IContent
         _previousPublishCultureChanges.addedCultures = null;
     }
 
+    /// <inheritdoc />
     public override void ResetDirtyProperties(bool rememberDirty)
     {
         base.ResetDirtyProperties(rememberDirty);
@@ -353,19 +358,19 @@ public class Content : ContentBase, IContent
         // Special check here since we want to check if the request is for changed cultures
         if (propertyName.StartsWith(ChangeTrackingPrefix.PublishedCulture))
         {
-            var culture = propertyName.TrimStartExact(ChangeTrackingPrefix.PublishedCulture);
+            var culture = propertyName.TrimStart(ChangeTrackingPrefix.PublishedCulture);
             return _currentPublishCultureChanges.addedCultures?.Contains(culture) ?? false;
         }
 
         if (propertyName.StartsWith(ChangeTrackingPrefix.UnpublishedCulture))
         {
-            var culture = propertyName.TrimStartExact(ChangeTrackingPrefix.UnpublishedCulture);
+            var culture = propertyName.TrimStart(ChangeTrackingPrefix.UnpublishedCulture);
             return _currentPublishCultureChanges.removedCultures?.Contains(culture) ?? false;
         }
 
         if (propertyName.StartsWith(ChangeTrackingPrefix.ChangedCulture))
         {
-            var culture = propertyName.TrimStartExact(ChangeTrackingPrefix.ChangedCulture);
+            var culture = propertyName.TrimStart(ChangeTrackingPrefix.ChangedCulture);
             return _currentPublishCultureChanges.updatedCultures?.Contains(culture) ?? false;
         }
 
@@ -379,19 +384,19 @@ public class Content : ContentBase, IContent
         // Special check here since we want to check if the request is for changed cultures
         if (propertyName.StartsWith(ChangeTrackingPrefix.PublishedCulture))
         {
-            var culture = propertyName.TrimStartExact(ChangeTrackingPrefix.PublishedCulture);
+            var culture = propertyName.TrimStart(ChangeTrackingPrefix.PublishedCulture);
             return _previousPublishCultureChanges.addedCultures?.Contains(culture) ?? false;
         }
 
         if (propertyName.StartsWith(ChangeTrackingPrefix.UnpublishedCulture))
         {
-            var culture = propertyName.TrimStartExact(ChangeTrackingPrefix.UnpublishedCulture);
+            var culture = propertyName.TrimStart(ChangeTrackingPrefix.UnpublishedCulture);
             return _previousPublishCultureChanges.removedCultures?.Contains(culture) ?? false;
         }
 
         if (propertyName.StartsWith(ChangeTrackingPrefix.ChangedCulture))
         {
-            var culture = propertyName.TrimStartExact(ChangeTrackingPrefix.ChangedCulture);
+            var culture = propertyName.TrimStart(ChangeTrackingPrefix.ChangedCulture);
             return _previousPublishCultureChanges.updatedCultures?.Contains(culture) ?? false;
         }
 
@@ -523,6 +528,7 @@ public class Content : ContentBase, IContent
         Properties.CollectionChanged += PropertiesChanged;
     }
 
+    /// <inheritdoc />
     protected override void PerformDeepClone(object clone)
     {
         base.PerformDeepClone(clone);

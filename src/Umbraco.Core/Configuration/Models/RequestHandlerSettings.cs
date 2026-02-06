@@ -2,7 +2,6 @@
 // See LICENSE for more details.
 
 using System.ComponentModel;
-using Umbraco.Cms.Core.Configuration.UmbracoSettings;
 using Umbraco.Extensions;
 
 namespace Umbraco.Cms.Core.Configuration.Models;
@@ -13,10 +12,29 @@ namespace Umbraco.Cms.Core.Configuration.Models;
 [UmbracoOptions(Constants.Configuration.ConfigRequestHandler)]
 public class RequestHandlerSettings
 {
+    /// <summary>
+    ///     The default value for adding a trailing slash to URLs.
+    /// </summary>
     internal const bool StaticAddTrailingSlash = true;
+
+    /// <summary>
+    ///     The default value for converting URLs to ASCII.
+    /// </summary>
     internal const string StaticConvertUrlsToAscii = "try";
+
+    /// <summary>
+    ///     The default value for converting file names to ASCII.
+    /// </summary>
+    internal const string StaticConvertFileNamesToAscii = "false";
+
+    /// <summary>
+    ///     The default value for enabling default character replacements.
+    /// </summary>
     internal const bool StaticEnableDefaultCharReplacements = true;
 
+    /// <summary>
+    ///     The default collection of character replacements for URL generation.
+    /// </summary>
     internal static readonly CharItem[] DefaultCharCollection =
     {
         new() { Char = " ", Replacement = "-" },
@@ -74,6 +92,22 @@ public class RequestHandlerSettings
     public bool ShouldTryConvertUrlsToAscii => ConvertUrlsToAscii.InvariantEquals("try");
 
     /// <summary>
+    ///     Gets or sets a value indicating whether to convert file names to ASCII (valid values: "true", "try" or "false").
+    /// </summary>
+    [DefaultValue(StaticConvertFileNamesToAscii)]
+    public string ConvertFileNamesToAscii { get; set; } = StaticConvertFileNamesToAscii;
+
+    /// <summary>
+    ///     Gets a value indicating whether URLs should be converted to ASCII.
+    /// </summary>
+    public bool ShouldConvertFileNamesToAscii => ConvertFileNamesToAscii.InvariantEquals("true");
+
+    /// <summary>
+    ///     Gets a value indicating whether URLs should be tried to be converted to ASCII.
+    /// </summary>
+    public bool ShouldTryConvertFileNamesToAscii => ConvertFileNamesToAscii.InvariantEquals("try");
+
+    /// <summary>
     ///     Disable all default character replacements
     /// </summary>
     [DefaultValue(StaticEnableDefaultCharReplacements)]
@@ -82,5 +116,5 @@ public class RequestHandlerSettings
     /// <summary>
     ///     Add additional character replacements, or override defaults
     /// </summary>
-    public IEnumerable<CharItem>? UserDefinedCharCollection { get; set; }
+    public IEnumerable<CharItem> UserDefinedCharCollection { get; set; } = [];
 }

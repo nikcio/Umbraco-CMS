@@ -2,36 +2,36 @@
 // See LICENSE for more details.
 
 using System.Diagnostics.CodeAnalysis;
-using Microsoft.Extensions.DependencyInjection;
-using Umbraco.Cms.Core.DependencyInjection;
 using Umbraco.Cms.Core.Serialization;
 
 namespace Umbraco.Cms.Core.Models.Blocks;
 
 /// <summary>
-///     Converts the block json data into objects
+///     Converts the block JSON data into objects.
 /// </summary>
+/// <typeparam name="TValue">The type of the block value.</typeparam>
+/// <typeparam name="TLayout">The type of the layout item.</typeparam>
 public abstract class BlockEditorDataConverter<TValue, TLayout>
     where TValue : BlockValue<TLayout>, new()
     where TLayout : IBlockLayoutItem
 {
     private readonly IJsonSerializer _jsonSerializer;
 
-    [Obsolete("Use the non-obsolete constructor. Will be removed in V15.")]
-    protected BlockEditorDataConverter(string propertyEditorAlias)
-        : this(propertyEditorAlias, StaticServiceProvider.Instance.GetRequiredService<IJsonSerializer>())
-    {
-    }
-
-    [Obsolete("Use the non-obsolete constructor. Will be removed in V15.")]
-    protected BlockEditorDataConverter(string propertyEditorAlias, IJsonSerializer jsonSerializer)
-        : this(jsonSerializer)
-    {
-    }
-
+    /// <summary>
+    ///     Initializes a new instance of the <see cref="BlockEditorDataConverter{TValue, TLayout}" /> class.
+    /// </summary>
+    /// <param name="jsonSerializer">The JSON serializer.</param>
     protected BlockEditorDataConverter(IJsonSerializer jsonSerializer)
         => _jsonSerializer = jsonSerializer;
 
+    /// <summary>
+    ///     Tries to deserialize the specified JSON into block editor data.
+    /// </summary>
+    /// <param name="json">The JSON string to deserialize.</param>
+    /// <param name="blockEditorData">When this method returns, contains the block editor data if deserialization succeeded, or null if it failed.</param>
+    /// <returns>
+    ///     <c>true</c> if deserialization succeeded; otherwise, <c>false</c>.
+    /// </returns>
     public bool TryDeserialize(string json, [MaybeNullWhen(false)] out BlockEditorData<TValue, TLayout> blockEditorData)
     {
         try
@@ -47,6 +47,11 @@ public abstract class BlockEditorDataConverter<TValue, TLayout>
         }
     }
 
+    /// <summary>
+    ///     Deserializes the specified JSON into block editor data.
+    /// </summary>
+    /// <param name="json">The JSON string to deserialize.</param>
+    /// <returns>The deserialized block editor data.</returns>
     public BlockEditorData<TValue, TLayout> Deserialize(string json)
     {
         TValue? value = _jsonSerializer.Deserialize<TValue>(json);
@@ -60,6 +65,11 @@ public abstract class BlockEditorDataConverter<TValue, TLayout>
     /// <returns></returns>
     protected abstract IEnumerable<ContentAndSettingsReference> GetBlockReferences(IEnumerable<TLayout> layout);
 
+    /// <summary>
+    ///     Converts the specified block value into block editor data.
+    /// </summary>
+    /// <param name="value">The block value to convert.</param>
+    /// <returns>The converted block editor data.</returns>
     public BlockEditorData<TValue, TLayout> Convert(TValue? value)
     {
         if (value is not null)
@@ -85,12 +95,12 @@ public abstract class BlockEditorDataConverter<TValue, TLayout>
 
     // this method is only meant to have any effect when migrating block editor values
     // from the original format to the new, variant enabled format
-    private void AmendExpose(TValue value)
-        => value.Expose = value.ContentData.Select(cd => new BlockItemVariation(cd.Key, null, null)).ToList();
+    private static void AmendExpose(TValue value)
+        => value.Expose = value.ContentData.ConvertAll(cd => new BlockItemVariation(cd.Key, null, null));
 
     // this method is only meant to have any effect when migrating block editor values
     // from the original format to the new, variant enabled format
-    private bool ConvertOriginalBlockFormat(List<BlockItemData> blockItemDatas)
+    private static bool ConvertOriginalBlockFormat(List<BlockItemData> blockItemDatas)
     {
         var converted = false;
         foreach (BlockItemData blockItemData in blockItemDatas)

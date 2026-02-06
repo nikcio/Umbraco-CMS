@@ -5,10 +5,18 @@ using Umbraco.Cms.Core.Serialization;
 
 namespace Umbraco.Cms.Core.PropertyEditors;
 
+/// <summary>
+/// Provides index value factory for tag properties.
+/// </summary>
 public class TagPropertyIndexValueFactory : JsonPropertyIndexValueFactoryBase<string[]>, ITagPropertyIndexValueFactory
 {
     private IndexingSettings _indexingSettings;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="TagPropertyIndexValueFactory"/> class.
+    /// </summary>
+    /// <param name="jsonSerializer">The JSON serializer.</param>
+    /// <param name="indexingSettings">The indexing settings.</param>
     public TagPropertyIndexValueFactory(
         IJsonSerializer jsonSerializer,
         IOptionsMonitor<IndexingSettings> indexingSettings)
@@ -19,17 +27,8 @@ public class TagPropertyIndexValueFactory : JsonPropertyIndexValueFactoryBase<st
         indexingSettings.OnChange(newValue => _indexingSettings = newValue);
     }
 
-    [Obsolete("Use the overload with the 'contentTypeDictionary' parameter instead, scheduled for removal in v15")]
-    protected IEnumerable<KeyValuePair<string, IEnumerable<object?>>> Handle(
-        string[] deserializedPropertyValue,
-        IProperty property,
-        string? culture,
-        string? segment,
-        bool published,
-        IEnumerable<string> availableCultures)
-        => Handle(deserializedPropertyValue, property, culture, segment, published, availableCultures, new Dictionary<Guid, IContentType>());
-
-    protected override IEnumerable<KeyValuePair<string, IEnumerable<object?>>> Handle(
+    /// <inheritdoc />
+    protected override IEnumerable<IndexValue> Handle(
         string[] deserializedPropertyValue,
         IProperty property,
         string? culture,
@@ -37,11 +36,18 @@ public class TagPropertyIndexValueFactory : JsonPropertyIndexValueFactoryBase<st
         bool published,
         IEnumerable<string> availableCultures,
         IDictionary<Guid, IContentType> contentTypeDictionary)
-    {
-        yield return new KeyValuePair<string, IEnumerable<object?>>(property.Alias, deserializedPropertyValue);
-    }
+        =>
+        [
+            new IndexValue
+            {
+                Culture = culture,
+                FieldName = property.Alias,
+                Values = deserializedPropertyValue
+            }
+        ];
 
-    public override IEnumerable<KeyValuePair<string, IEnumerable<object?>>> GetIndexValues(
+    /// <inheritdoc />
+    public override IEnumerable<IndexValue> GetIndexValues(
         IProperty property,
         string? culture,
         string? segment,
@@ -49,13 +55,13 @@ public class TagPropertyIndexValueFactory : JsonPropertyIndexValueFactoryBase<st
         IEnumerable<string> availableCultures,
         IDictionary<Guid, IContentType> contentTypeDictionary)
     {
-        IEnumerable<KeyValuePair<string, IEnumerable<object?>>> jsonValues = base.GetIndexValues(property, culture, segment, published, availableCultures, contentTypeDictionary);
+        IEnumerable<IndexValue> jsonValues = base.GetIndexValues(property, culture, segment, published, availableCultures, contentTypeDictionary);
         if (jsonValues?.Any() is true)
         {
             return jsonValues;
         }
 
-        var result = new List<KeyValuePair<string, IEnumerable<object?>>>();
+        var result = new List<IndexValue>();
 
         var propertyValue = property.GetValue(culture, segment, published);
 
@@ -67,7 +73,7 @@ public class TagPropertyIndexValueFactory : JsonPropertyIndexValueFactoryBase<st
             result.AddRange(Handle(values, property, culture, segment, published, availableCultures, contentTypeDictionary));
         }
 
-        IEnumerable<KeyValuePair<string, IEnumerable<object?>>> summary = HandleResume(result, property, culture, segment, published);
+        IEnumerable<IndexValue> summary = HandleResume(result, property, culture, segment, published);
         if (_indexingSettings.ExplicitlyIndexEachNestedProperty || ForceExplicitlyIndexEachNestedProperty)
         {
             result.AddRange(summary);

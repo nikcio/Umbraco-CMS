@@ -10,7 +10,14 @@ namespace Umbraco.Cms.Core.Configuration.Models;
 /// </summary>
 public class HealthChecksNotificationSettings
 {
+    /// <summary>
+    ///     The default value for whether health check notifications are enabled.
+    /// </summary>
     internal const bool StaticEnabled = false;
+
+    /// <summary>
+    ///     The default period between health check notifications.
+    /// </summary>
     internal const string StaticPeriod = "1.00:00:00"; // TimeSpan.FromHours(24);
 
     /// <summary>
@@ -33,12 +40,10 @@ public class HealthChecksNotificationSettings
     /// <summary>
     ///     Gets or sets a value for the collection of health check notification methods.
     /// </summary>
-    public IDictionary<string, HealthChecksNotificationMethodSettings> NotificationMethods { get; set; } =
-        new Dictionary<string, HealthChecksNotificationMethodSettings>();
+    public IDictionary<string, HealthChecksNotificationMethodSettings> NotificationMethods { get; set; } = new Dictionary<string, HealthChecksNotificationMethodSettings>();
 
     /// <summary>
     ///     Gets or sets a value for the collection of health checks that are disabled for notifications.
     /// </summary>
-    public List<DisabledHealthCheckSettings> DisabledChecks { get; set; } =
-        new List<DisabledHealthCheckSettings>();
+    public IList<DisabledHealthCheckSettings> DisabledChecks { get; set; } = new List<DisabledHealthCheckSettings>();
 }

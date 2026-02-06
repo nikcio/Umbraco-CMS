@@ -35,10 +35,8 @@ public class DatabaseIntegrityCheck : HealthCheck
         _mediaService = mediaService;
     }
 
-    /// <summary>
-    ///     Get the status for this health check
-    /// </summary>
-    public override Task<IEnumerable<HealthCheckStatus>> GetStatus() =>
+    /// <inheritdoc />
+    public override Task<IEnumerable<HealthCheckStatus>> GetStatusAsync() =>
         Task.FromResult((IEnumerable<HealthCheckStatus>)new[] { CheckDocuments(false), CheckMedia(false) });
 
     /// <inheritdoc />

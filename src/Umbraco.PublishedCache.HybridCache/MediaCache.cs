@@ -1,19 +1,21 @@
-﻿using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Models.PublishedContent;
 using Umbraco.Cms.Core.PublishedCache;
-using Umbraco.Cms.Infrastructure.HybridCache.Services;
+using Umbraco.Cms.Core.Services.Navigation;
+using Umbraco.Extensions;
 
 namespace Umbraco.Cms.Infrastructure.HybridCache;
 
-public class MediaCache : IPublishedMediaCache
+public sealed class MediaCache : IPublishedMediaCache
 {
     private readonly IMediaCacheService _mediaCacheService;
     private readonly IPublishedContentTypeCache _publishedContentTypeCache;
+    private readonly IMediaNavigationQueryService _mediaNavigationQueryService;
 
-    public MediaCache(IMediaCacheService mediaCacheService, IPublishedContentTypeCache publishedContentTypeCache)
+    public MediaCache(IMediaCacheService mediaCacheService, IPublishedContentTypeCache publishedContentTypeCache, IMediaNavigationQueryService mediaNavigationQueryService)
     {
         _mediaCacheService = mediaCacheService;
         _publishedContentTypeCache = publishedContentTypeCache;
+        _mediaNavigationQueryService = mediaNavigationQueryService;
     }
 
     public async Task<IPublishedContent?> GetByIdAsync(int id) => await _mediaCacheService.GetByIdAsync(id);
@@ -30,27 +32,14 @@ public class MediaCache : IPublishedMediaCache
 
     public IPublishedContent? GetById(Guid contentId) => GetByIdAsync(contentId).GetAwaiter().GetResult();
 
+    public IEnumerable<IPublishedContent> GetAtRoot(bool preview, string? culture = null)
+    {
+        if (_mediaNavigationQueryService.TryGetRootKeys(out IEnumerable<Guid> rootKeys) is false)
+        {
+            return [];
+        }
 
-    public IPublishedContentType? GetContentType(Guid key) => _publishedContentTypeCache.Get(PublishedItemType.Media, key);
-
-    public IPublishedContentType GetContentType(int id) => _publishedContentTypeCache.Get(PublishedItemType.Media, id);
-
-    public IPublishedContentType GetContentType(string alias) => _publishedContentTypeCache.Get(PublishedItemType.Media, alias);
-
-    // FIXME - these need to be removed when removing nucache
-    public IPublishedContent? GetById(bool preview, Udi contentId) => throw new NotImplementedException();
-
-    public IPublishedContent? GetById(Udi contentId) => throw new NotImplementedException();
-
-    public IEnumerable<IPublishedContent> GetAtRoot(bool preview, string? culture = null) => throw new NotImplementedException();
-
-    public IEnumerable<IPublishedContent> GetAtRoot(string? culture = null) => throw new NotImplementedException();
-
-    public bool HasContent(bool preview) => throw new NotImplementedException();
-
-    public bool HasContent() => throw new NotImplementedException();
-
-
-    public IEnumerable<IPublishedContent> GetByContentType(IPublishedContentType contentType) =>
-        throw new NotImplementedException();
+        IEnumerable<IPublishedContent> rootContent = rootKeys.Select(key => GetById(preview, key)).WhereNotNull();
+        return culture is null ? rootContent : rootContent.Where(x => x.IsInvariantOrHasCulture(culture));
+    }
 }

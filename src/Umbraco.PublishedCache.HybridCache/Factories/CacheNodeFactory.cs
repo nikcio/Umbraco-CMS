@@ -1,12 +1,10 @@
-﻿using StackExchange.Profiling.Internal;
-using Umbraco.Cms.Core.Media.EmbedProviders;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Strings;
 using Umbraco.Extensions;
 
 namespace Umbraco.Cms.Infrastructure.HybridCache.Factories;
 
-internal class CacheNodeFactory : ICacheNodeFactory
+internal sealed class CacheNodeFactory : ICacheNodeFactory
 {
     private readonly IShortStringHelper _shortStringHelper;
     private readonly UrlSegmentProviderCollection _urlSegmentProviders;
@@ -23,10 +21,9 @@ internal class CacheNodeFactory : ICacheNodeFactory
 
         ContentData contentData = GetContentData(
             content,
-              GetPublishedValue(content, preview),
-              GetTemplateId(content, preview),
-              content.PublishCultureInfos!.Values.Select(x=>x.Culture).ToHashSet()
-            );
+            GetPublishedValue(content, preview),
+            GetTemplateId(content, preview),
+            content.PublishCultureInfos!.Values.Select(x => x.Culture).ToHashSet());
         return new ContentCacheNode
         {
             Id = content.Id,
@@ -40,7 +37,7 @@ internal class CacheNodeFactory : ICacheNodeFactory
         };
     }
 
-    private bool GetPublishedValue(IContent content, bool preview)
+    private static bool GetPublishedValue(IContent content, bool preview)
     {
         switch (content.PublishedState)
         {
@@ -55,7 +52,7 @@ internal class CacheNodeFactory : ICacheNodeFactory
         }
     }
 
-    private int? GetTemplateId(IContent content, bool preview)
+    private static int? GetTemplateId(IContent content, bool preview)
     {
         switch (content.PublishedState)
         {
@@ -126,6 +123,7 @@ internal class CacheNodeFactory : ICacheNodeFactory
         }
 
         var cultureData = new Dictionary<string, CultureVariation>();
+        string? urlSegment = null;
 
         // sanitize - names should be ok but ... never knows
         if (content.ContentType.VariesByCulture())
@@ -153,10 +151,14 @@ internal class CacheNodeFactory : ICacheNodeFactory
                 }
             }
         }
+        else
+        {
+            urlSegment = content.GetUrlSegment(_shortStringHelper, _urlSegmentProviders);
+        }
 
         return new ContentData(
             content.Name,
-            null,
+            urlSegment,
             content.VersionId,
             content.UpdateDate,
             content.CreatorId,

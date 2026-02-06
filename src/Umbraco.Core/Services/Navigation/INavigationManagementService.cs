@@ -4,12 +4,17 @@ namespace Umbraco.Cms.Core.Services.Navigation;
 ///     Placeholder for sharing logic between the document and media navigation services
 ///     for managing the navigation structure.
 /// </summary>
+/// <remarks>
+///     This interface defines methods for managing the main navigation structure,
+///     including rebuilding, adding, moving, and managing content nodes.
+/// </remarks>
 public interface INavigationManagementService
 {
     /// <summary>
     ///     Rebuilds the entire navigation structure by refreshing the navigation tree based
     ///     on the current state of the underlying repository.
     /// </summary>
+    /// <returns>A task representing the asynchronous rebuild operation.</returns>
     Task RebuildAsync();
 
     /// <summary>
@@ -29,15 +34,25 @@ public interface INavigationManagementService
     ///     provided, the new node is added at the root level.
     /// </summary>
     /// <param name="key">The unique identifier of the new node to add.</param>
+    /// <param name="contentTypeKey">The unique identifier of the node's content type.</param>
     /// <param name="parentKey">
     ///     The unique identifier of the parent node. If <c>null</c>, the new node will be added to
     ///     the root level.
     /// </param>
+    /// <param name="sortOrder">
+    ///     Optional value to define the node's position among its siblings when
+    ///     adding node at root level.</param>
     /// <returns>
     ///     <c>true</c> if the node was successfully added to the main navigation structure;
     ///     otherwise, <c>false</c>.
     /// </returns>
-    bool Add(Guid key, Guid? parentKey = null);
+    /// <remarks>
+    ///     The sort order is particularly important when adding nodes at the root level. For child nodes,
+    ///     it can usually be determined by the number of existing children under the parent. However,
+    ///     when adding nodes directly to the root (where parentKey is null), a sort order must be provided
+    ///     to ensure the item appears in the correct position among other root-level items.
+    /// </remarks>
+    bool Add(Guid key, Guid contentTypeKey, Guid? parentKey = null, int? sortOrder = null);
 
     /// <summary>
     ///     Moves an existing node to a new parent in the main navigation structure. If a
@@ -54,4 +69,15 @@ public interface INavigationManagementService
     ///     in the main navigation structure; otherwise, <c>false</c>.
     /// </returns>
     bool Move(Guid key, Guid? targetParentKey = null);
+
+    /// <summary>
+    ///     Updates the sort order of a node in the main navigation structure.
+    ///     The sort order of other nodes in the same level will be adjusted accordingly.
+    /// </summary>
+    /// <param name="key">The unique identifier of the node to update.</param>
+    /// <param name="newSortOrder">The new sort order for the node.</param>
+    /// <returns>
+    ///     <c>true</c> if the node's sort order was successfully updated; otherwise, <c>false</c>.
+    /// </returns>
+    bool UpdateSortOrder(Guid key, int newSortOrder);
 }

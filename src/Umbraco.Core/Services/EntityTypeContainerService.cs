@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using Umbraco.Cms.Core.Events;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Models.Entities;
@@ -9,54 +9,101 @@ using Umbraco.Cms.Core.Services.OperationStatus;
 
 namespace Umbraco.Cms.Core.Services;
 
+/// <summary>
+///     Provides base functionality for entity type container services that manage folder hierarchies for content types.
+/// </summary>
+/// <typeparam name="TTreeEntity">The type of tree entity contained within the containers.</typeparam>
+/// <typeparam name="TEntityContainerRepository">The type of repository used for container operations.</typeparam>
+/// <remarks>
+///     Containers (folders) are used to organize content types, media types, data types, and other entities
+///     in a hierarchical structure within the Umbraco backoffice.
+/// </remarks>
 internal abstract class EntityTypeContainerService<TTreeEntity, TEntityContainerRepository> : RepositoryService, IEntityTypeContainerService<TTreeEntity>
     where TTreeEntity : ITreeEntity
     where TEntityContainerRepository : IEntityContainerRepository
 {
     private readonly TEntityContainerRepository _entityContainerRepository;
-    private readonly IAuditRepository _auditRepository;
+    private readonly IAuditService _auditService;
     private readonly IEntityRepository _entityRepository;
     private readonly IUserIdKeyResolver _userIdKeyResolver;
 
+    /// <summary>
+    ///     Gets the GUID identifying the type of objects contained within these containers.
+    /// </summary>
     protected abstract Guid ContainedObjectType { get; }
 
+    /// <summary>
+    ///     Gets the Umbraco object type for the container itself.
+    /// </summary>
     protected abstract UmbracoObjectTypes ContainerObjectType { get; }
 
+    /// <summary>
+    ///     Gets the lock identifiers required for read operations.
+    /// </summary>
     protected abstract int[] ReadLockIds { get; }
 
+    /// <summary>
+    ///     Gets the lock identifiers required for write operations.
+    /// </summary>
     protected abstract int[] WriteLockIds { get; }
 
+    /// <summary>
+    ///     Initializes a new instance of the <see cref="EntityTypeContainerService{TTreeEntity, TEntityContainerRepository}" /> class.
+    /// </summary>
+    /// <param name="provider">The core scope provider for database operations.</param>
+    /// <param name="loggerFactory">The logger factory for creating loggers.</param>
+    /// <param name="eventMessagesFactory">The factory for creating event messages.</param>
+    /// <param name="entityContainerRepository">The repository for container data access.</param>
+    /// <param name="auditService">The audit service for logging operations.</param>
+    /// <param name="entityRepository">The entity repository for general entity operations.</param>
+    /// <param name="userIdKeyResolver">The resolver for converting user IDs to keys.</param>
     protected EntityTypeContainerService(
         ICoreScopeProvider provider,
         ILoggerFactory loggerFactory,
         IEventMessagesFactory eventMessagesFactory,
         TEntityContainerRepository entityContainerRepository,
-        IAuditRepository auditRepository,
+        IAuditService auditService,
         IEntityRepository entityRepository,
         IUserIdKeyResolver userIdKeyResolver)
         : base(provider, loggerFactory, eventMessagesFactory)
     {
         _entityContainerRepository = entityContainerRepository;
-        _auditRepository = auditRepository;
+        _auditService = auditService;
         _entityRepository = entityRepository;
         _userIdKeyResolver = userIdKeyResolver;
     }
 
     /// <inheritdoc />
-    public async Task<EntityContainer?> GetAsync(Guid id)
+    public Task<EntityContainer?> GetAsync(Guid id)
     {
         using ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true);
         ReadLock(scope);
-        return await Task.FromResult(_entityContainerRepository.Get(id));
+        return Task.FromResult(_entityContainerRepository.Get(id));
+    }
+
+
+    /// <inheritdoc />
+    public Task<IEnumerable<EntityContainer>> GetAsync(string name, int level)
+    {
+        using ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true);
+        ReadLock(scope);
+        return Task.FromResult(_entityContainerRepository.Get(name, level));
+    }
+    /// <inheritdoc />
+    public Task<IEnumerable<EntityContainer>> GetAllAsync()
+    {
+        using ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true);
+        ReadLock(scope);
+        return Task.FromResult(_entityContainerRepository.GetMany());
     }
 
     /// <inheritdoc />
-    public async Task<EntityContainer?> GetParentAsync(EntityContainer container)
-        => await Task.FromResult(GetParent(container));
+    public Task<EntityContainer?> GetParentAsync(EntityContainer container)
+        => Task.FromResult(GetParent(container));
 
     /// <inheritdoc />
-    public async Task<EntityContainer?> GetParentAsync(TTreeEntity entity)
-        => await Task.FromResult(GetParent(entity));
+    public Task<EntityContainer?> GetParentAsync(TTreeEntity entity)
+        => Task.FromResult(GetParent(entity));
 
     /// <inheritdoc />
     public async Task<Attempt<EntityContainer?, EntityContainerOperationStatus>> CreateAsync(Guid? key, string name, Guid? parentKey, Guid userKey)
@@ -91,7 +138,7 @@ internal abstract class EntityTypeContainerService<TTreeEntity, TEntityContainer
                     return EntityContainerOperationStatus.ParentNotFound;
                 }
 
-                if (_entityContainerRepository.HasDuplicateName(container.ParentId, container.Name!))
+                if (_entityContainerRepository.HasDuplicateName(parentContainer?.Id ?? Constants.System.Root, container.Name!))
                 {
                     return EntityContainerOperationStatus.DuplicateName;
                 }
@@ -167,8 +214,7 @@ internal abstract class EntityTypeContainerService<TTreeEntity, TEntityContainer
 
         _entityContainerRepository.Delete(container);
 
-        var currentUserId = await _userIdKeyResolver.GetAsync(userKey);
-        Audit(AuditType.Delete, currentUserId, container.Id);
+        await AuditAsync(AuditType.Delete, userKey, container.Id);
         scope.Complete();
 
         scope.Notifications.Publish(new EntityContainerDeletedNotification(container, eventMessages).WithStateFrom(deletingEntityContainerNotification));
@@ -202,8 +248,7 @@ internal abstract class EntityTypeContainerService<TTreeEntity, TEntityContainer
 
         _entityContainerRepository.Save(container);
 
-        var currentUserId = await _userIdKeyResolver.GetAsync(userKey);
-        Audit(auditType, currentUserId, container.Id);
+        await AuditAsync(auditType, userKey, container.Id);
         scope.Complete();
 
         scope.Notifications.Publish(new EntityContainerSavedNotification(container, eventMessages).WithStateFrom(savingEntityContainerNotification));
@@ -223,8 +268,12 @@ internal abstract class EntityTypeContainerService<TTreeEntity, TEntityContainer
         return _entityContainerRepository.Get(treeEntity.ParentId);
     }
 
-    private void Audit(AuditType type, int userId, int objectId)
-        => _auditRepository.Save(new AuditItem(objectId, type, userId, ContainerObjectType.GetName()));
+    private async Task AuditAsync(AuditType type, Guid userKey, int objectId) =>
+        await _auditService.AddAsync(
+            type,
+            userKey,
+            objectId,
+            ContainerObjectType.GetName());
 
     private void ReadLock(ICoreScope scope)
     {

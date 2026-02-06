@@ -1,24 +1,32 @@
-﻿using NUnit.Framework;
+using NUnit.Framework;
 using Umbraco.Cms.Core;
+using Umbraco.Cms.Core.Cache;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Models.ContentEditing;
 using Umbraco.Cms.Core.Models.ContentPublishing;
 using Umbraco.Cms.Core.Models.PublishedContent;
+using Umbraco.Cms.Core.Notifications;
 using Umbraco.Cms.Core.PublishedCache;
 using Umbraco.Cms.Core.Services;
 using Umbraco.Cms.Core.Services.ContentTypeEditing;
 using Umbraco.Cms.Core.Services.OperationStatus;
+using Umbraco.Cms.Core.Sync;
 using Umbraco.Cms.Tests.Common.Builders;
 using Umbraco.Cms.Tests.Common.Testing;
 using Umbraco.Cms.Tests.Integration.Testing;
+using Umbraco.Cms.Tests.Integration.Umbraco.Infrastructure.Services;
 
 namespace Umbraco.Cms.Tests.Integration.Umbraco.PublishedCache.HybridCache;
 
 [TestFixture]
 [UmbracoTest(Database = UmbracoTestOptions.Database.NewSchemaPerTest)]
-public class DocumentHybridCachePropertyTest : UmbracoIntegrationTest
+internal sealed class DocumentHybridCachePropertyTest : UmbracoIntegrationTest
 {
-    protected override void CustomTestSetup(IUmbracoBuilder builder) => builder.AddUmbracoHybridCache();
+    protected override void CustomTestSetup(IUmbracoBuilder builder)
+    {
+        builder.AddNotificationHandler<ContentTreeChangeNotification, ContentTreeChangeDistributedCacheNotificationHandler>();
+        builder.Services.AddUnique<IServerMessenger, ContentEventsTests.LocalServerMessenger>();
+    }
 
     private ICacheManager CacheManager => GetRequiredService<ICacheManager>();
 
@@ -68,12 +76,12 @@ public class DocumentHybridCachePropertyTest : UmbracoIntegrationTest
         // Update content
         var updateModel = new ContentUpdateModel
         {
-            InvariantName = "Root Create",
-            InvariantProperties = new[]
-            {
+            Variants = [new() { Name = "Root Create" }],
+            Properties =
+            [
                 new PropertyValueModel { Alias = "title", Value = "Updated title" },
                 new PropertyValueModel { Alias = "bodyText", Value = "The body text" }
-            },
+            ],
         };
 
         var updateResult = await ContentEditingService.UpdateAsync(textPage.Key, updateModel, Constants.Security.SuperUserKey);
@@ -81,11 +89,7 @@ public class DocumentHybridCachePropertyTest : UmbracoIntegrationTest
 
         var publishResult = await ContentPublishingService.PublishAsync(
             updateResult.Result.Content!.Key,
-            new CultureAndScheduleModel()
-            {
-                CulturesToPublishImmediately = new HashSet<string> { "*" },
-                Schedules = new ContentScheduleCollection(),
-            },
+            [new CulturePublishScheduleModel { Culture = "*" }],
             Constants.Security.SuperUserKey);
 
         Assert.IsTrue(publishResult);
@@ -106,8 +110,11 @@ public class DocumentHybridCachePropertyTest : UmbracoIntegrationTest
         var pickerContentType = ContentTypeEditingBuilder.CreateContentTypeWithContentPicker(templateKey: templateKey);
         await ContentTypeEditingService.CreateAsync(pickerContentType, Constants.Security.SuperUserKey);
 
-        var createOtherModel = ContentEditingBuilder.CreateContentWithOneInvariantProperty(pickerContentType.Key.Value,
-            "Test Create", "contentPicker", textPageKey);
+        var createOtherModel = ContentEditingBuilder.CreateContentWithOneInvariantProperty(
+            pickerContentType.Key.Value,
+            "Test Create",
+            "contentPicker",
+            textPageKey);
         var result = await ContentEditingService.CreateAsync(createOtherModel, Constants.Security.SuperUserKey);
 
         Assert.IsTrue(result.Success);
@@ -115,11 +122,7 @@ public class DocumentHybridCachePropertyTest : UmbracoIntegrationTest
 
         var publishResult = await ContentPublishingService.PublishAsync(
             result.Result.Content!.Key,
-            new CultureAndScheduleModel()
-            {
-                CulturesToPublishImmediately = new HashSet<string> { "*" },
-                Schedules = new ContentScheduleCollection(),
-            },
+            [new CulturePublishScheduleModel { Culture = "*" }],
             Constants.Security.SuperUserKey);
 
         Assert.IsTrue(publishResult.Success);
@@ -132,7 +135,12 @@ public class DocumentHybridCachePropertyTest : UmbracoIntegrationTest
         await ContentTypeEditingService.CreateAsync(textContentType, Constants.Security.SuperUserKey);
 
         var contentCreateModel = ContentEditingBuilder.CreateContentWithTwoInvariantProperties(
-            textContentType.Key.Value, "Root Create", "title", "The title value", "bodyText", "The body text",
+            textContentType.Key.Value,
+            "Root Create",
+            "title",
+            "The title value",
+            "bodyText",
+            "The body text",
             Constants.System.RootKey);
 
         var createResult = await ContentEditingService.CreateAsync(contentCreateModel, Constants.Security.SuperUserKey);
@@ -140,11 +148,7 @@ public class DocumentHybridCachePropertyTest : UmbracoIntegrationTest
 
         var publishResult = await ContentPublishingService.PublishAsync(
             createResult.Result.Content!.Key,
-            new CultureAndScheduleModel()
-            {
-                CulturesToPublishImmediately = new HashSet<string> { "*" },
-                Schedules = new ContentScheduleCollection(),
-            },
+            [new CulturePublishScheduleModel { Culture = "*" }],
             Constants.Security.SuperUserKey);
 
         Assert.IsTrue(publishResult.Success);

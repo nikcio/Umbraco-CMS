@@ -1,14 +1,12 @@
 using System.ComponentModel.DataAnnotations;
-using System.Globalization;
 using System.Linq.Expressions;
-using Microsoft.Extensions.DependencyInjection;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Text.RegularExpressions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Umbraco.Cms.Core.Cache;
 using Umbraco.Cms.Core.Configuration.Models;
-using Umbraco.Cms.Core.DependencyInjection;
 using Umbraco.Cms.Core.Editors;
 using Umbraco.Cms.Core.Events;
 using Umbraco.Cms.Core.Exceptions;
@@ -35,11 +33,10 @@ namespace Umbraco.Cms.Core.Services;
 ///     Represents the UserService, which is an easy access to operations involving <see cref="IProfile" />,
 ///     <see cref="IMembershipUser" /> and eventually Backoffice Users.
 /// </summary>
-internal class UserService : RepositoryService, IUserService
+internal partial class UserService : RepositoryService, IUserService
 {
     private readonly GlobalSettings _globalSettings;
     private readonly SecuritySettings _securitySettings;
-    private readonly ILogger<UserService> _logger;
     private readonly IUserGroupRepository _userGroupRepository;
     private readonly UserEditorAuthorizationHelper _userEditorAuthorizationHelper;
     private readonly IServiceScopeFactory _serviceScopeFactory;
@@ -55,49 +52,28 @@ internal class UserService : RepositoryService, IUserService
     private readonly ContentSettings _contentSettings;
     private readonly IUserIdKeyResolver _userIdKeyResolver;
 
-    [Obsolete("Use the constructor that takes an IUserIdKeyResolver instead. Scheduled for removal in V15.")]
-    public UserService(
-        ICoreScopeProvider provider,
-        ILoggerFactory loggerFactory,
-        IEventMessagesFactory eventMessagesFactory,
-        IUserRepository userRepository,
-        IUserGroupRepository userGroupRepository,
-        IOptions<GlobalSettings> globalSettings,
-        IOptions<SecuritySettings> securitySettings,
-        UserEditorAuthorizationHelper userEditorAuthorizationHelper,
-        IServiceScopeFactory serviceScopeFactory,
-        IEntityService entityService,
-        ILocalLoginSettingProvider localLoginSettingProvider,
-        IUserInviteSender inviteSender,
-        MediaFileManager mediaFileManager,
-        ITemporaryFileService temporaryFileService,
-        IShortStringHelper shortStringHelper,
-        IOptions<ContentSettings> contentSettings,
-        IIsoCodeValidator isoCodeValidator,
-        IUserForgotPasswordSender forgotPasswordSender)
-        : this(
-            provider,
-            loggerFactory,
-            eventMessagesFactory,
-            userRepository,
-            userGroupRepository,
-            globalSettings,
-            securitySettings,
-            userEditorAuthorizationHelper,
-            serviceScopeFactory,
-            entityService,
-            localLoginSettingProvider,
-            inviteSender,
-            mediaFileManager,
-            temporaryFileService,
-            shortStringHelper,
-            contentSettings,
-            isoCodeValidator,
-            forgotPasswordSender,
-            StaticServiceProvider.Instance.GetRequiredService<IUserIdKeyResolver>())
-    {
-    }
-
+    /// <summary>
+    ///     Initializes a new instance of the <see cref="UserService" /> class.
+    /// </summary>
+    /// <param name="provider">The core scope provider for database operations.</param>
+    /// <param name="loggerFactory">The logger factory for creating loggers.</param>
+    /// <param name="eventMessagesFactory">The factory for creating event messages.</param>
+    /// <param name="userRepository">The user repository for data access.</param>
+    /// <param name="userGroupRepository">The user group repository for data access.</param>
+    /// <param name="globalSettings">The global settings configuration.</param>
+    /// <param name="securitySettings">The security settings configuration.</param>
+    /// <param name="userEditorAuthorizationHelper">The helper for user editor authorization.</param>
+    /// <param name="serviceScopeFactory">The factory for creating service scopes.</param>
+    /// <param name="entityService">The entity service for entity operations.</param>
+    /// <param name="localLoginSettingProvider">The provider for local login settings.</param>
+    /// <param name="inviteSender">The sender for user invitations.</param>
+    /// <param name="mediaFileManager">The manager for media files.</param>
+    /// <param name="temporaryFileService">The service for temporary file operations.</param>
+    /// <param name="shortStringHelper">The helper for short string operations.</param>
+    /// <param name="contentSettings">The content settings configuration.</param>
+    /// <param name="isoCodeValidator">The validator for ISO codes.</param>
+    /// <param name="forgotPasswordSender">The sender for forgot password emails.</param>
+    /// <param name="userIdKeyResolver">The resolver for user ID to key mappings.</param>
     public UserService(
         ICoreScopeProvider provider,
         ILoggerFactory loggerFactory,
@@ -136,7 +112,6 @@ internal class UserService : RepositoryService, IUserService
         _globalSettings = globalSettings.Value;
         _securitySettings = securitySettings.Value;
         _contentSettings = contentSettings.Value;
-        _logger = loggerFactory.CreateLogger<UserService>();
     }
 
     /// <summary>
@@ -173,11 +148,7 @@ internal class UserService : RepositoryService, IUserService
 
     #region Implementation of IMembershipUserService
 
-    /// <summary>
-    ///     Checks if a User with the username exists
-    /// </summary>
-    /// <param name="username">Username to check</param>
-    /// <returns><c>True</c> if the User exists otherwise <c>False</c></returns>
+    /// <inheritdoc/>
     public bool Exists(string username)
     {
         using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
@@ -186,83 +157,31 @@ internal class UserService : RepositoryService, IUserService
         }
     }
 
-    /// <summary>
-    ///     Creates a new User
-    /// </summary>
-    /// <remarks>The user will be saved in the database and returned with an Id</remarks>
-    /// <param name="username">Username of the user to create</param>
-    /// <param name="email">Email of the user to create</param>
-    /// <returns>
-    ///     <see cref="IUser" />
-    /// </returns>
+    /// <inheritdoc/>
     public IUser CreateUserWithIdentity(string username, string email) =>
         CreateUserWithIdentity(username, email, string.Empty);
 
-    /// <summary>
-    ///     Creates and persists a new <see cref="IUser" />
-    /// </summary>
-    /// <param name="username">Username of the <see cref="IUser" /> to create</param>
-    /// <param name="email">Email of the <see cref="IUser" /> to create</param>
-    /// <param name="passwordValue">
-    ///     This value should be the encoded/encrypted/hashed value for the password that will be
-    ///     stored in the database
-    /// </param>
-    /// <param name="memberTypeAlias">Not used for users</param>
-    /// <returns>
-    ///     <see cref="IUser" />
-    /// </returns>
+    /// <inheritdoc/>
     IUser IMembershipMemberService<IUser>.CreateWithIdentity(string username, string email, string passwordValue, string memberTypeAlias) => CreateUserWithIdentity(username, email, passwordValue);
 
-    /// <summary>
-    ///     Creates and persists a new <see cref="IUser" />
-    /// </summary>
-    /// <param name="username">Username of the <see cref="IUser" /> to create</param>
-    /// <param name="email">Email of the <see cref="IUser" /> to create</param>
-    /// <param name="passwordValue">
-    ///     This value should be the encoded/encrypted/hashed value for the password that will be
-    ///     stored in the database
-    /// </param>
-    /// <param name="memberTypeAlias">Alias of the Type</param>
-    /// <param name="isApproved">Is the member approved</param>
-    /// <returns>
-    ///     <see cref="IUser" />
-    /// </returns>
+    /// <inheritdoc/>
     IUser IMembershipMemberService<IUser>.CreateWithIdentity(string username, string email, string passwordValue, string memberTypeAlias, bool isApproved) => CreateUserWithIdentity(username, email, passwordValue, isApproved);
 
     /// <summary>
-    ///     Gets a User by its integer id
-    /// </summary>
-    /// <param name="id"><see cref="int" /> Id</param>
-    /// <returns>
-    ///     <see cref="IUser" />
-    /// </returns>
-    [Obsolete("Please use GetAsync instead. Scheduled for removal in V15.")]
-    public IUser? GetById(int id)
-    {
-        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
-        {
-            Guid userKey = _userIdKeyResolver.GetAsync(id).GetAwaiter().GetResult();
-            return _userRepository.Get(userKey);
-        }
-    }
-
-    /// <summary>
-    ///     Creates and persists a Member
+    ///     Creates and persists a user with identity.
     /// </summary>
     /// <remarks>
-    ///     Using this method will persist the Member object before its returned
-    ///     meaning that it will have an Id available (unlike the CreateMember method)
+    ///     Using this method will persist the user object before it's returned,
+    ///     meaning that it will have an Id available.
     /// </remarks>
-    /// <param name="username">Username of the Member to create</param>
-    /// <param name="email">Email of the Member to create</param>
+    /// <param name="username">Username of the user to create.</param>
+    /// <param name="email">Email of the user to create.</param>
     /// <param name="passwordValue">
     ///     This value should be the encoded/encrypted/hashed value for the password that will be
-    ///     stored in the database
+    ///     stored in the database.
     /// </param>
-    /// <param name="isApproved">Is the user approved</param>
-    /// <returns>
-    ///     <see cref="IUser" />
-    /// </returns>
+    /// <param name="isApproved">Indicates whether the user is approved. Defaults to <c>true</c>.</param>
+    /// <returns>The created <see cref="IUser" />.</returns>
     private IUser CreateUserWithIdentity(string username, string email, string passwordValue, bool isApproved = true)
     {
         if (username == null)
@@ -316,26 +235,32 @@ internal class UserService : RepositoryService, IUserService
         return user;
     }
 
-    /// <summary>
-    ///     Gets an <see cref="IUser" /> by its provider key
-    /// </summary>
-    /// <param name="id">Id to use for retrieval</param>
-    /// <returns>
-    ///     <see cref="IUser" />
-    /// </returns>
+    /// <inheritdoc/>
     public IUser? GetByProviderKey(object id)
     {
         Attempt<int> asInt = id.TryConvertTo<int>();
-        return asInt.Success ? GetById(asInt.Result) : null;
+        Guid? userKey = null;
+        if (asInt.Success)
+        {
+            userKey = _userIdKeyResolver.GetAsync(asInt.Result).GetAwaiter().GetResult();
+        }
+        else if (Guid.TryParse(id.ToString(), out Guid idAsGuid))
+        {
+            userKey = idAsGuid;
+        }
+
+        if (userKey.HasValue is false)
+        {
+            return null;
+        }
+
+        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
+        {
+            return _userRepository.Get(userKey.Value);
+        }
     }
 
-    /// <summary>
-    ///     Get an <see cref="IUser" /> by email
-    /// </summary>
-    /// <param name="email">Email to use for retrieval</param>
-    /// <returns>
-    ///     <see cref="IUser" />
-    /// </returns>
+    /// <inheritdoc/>
     public IUser? GetByEmail(string email)
     {
         using IServiceScope scope = _serviceScopeFactory.CreateScope();
@@ -343,13 +268,7 @@ internal class UserService : RepositoryService, IUserService
         return backOfficeUserStore.GetByEmailAsync(email).GetAwaiter().GetResult();
     }
 
-    /// <summary>
-    ///     Get an <see cref="IUser" /> by username
-    /// </summary>
-    /// <param name="username">Username to use for retrieval</param>
-    /// <returns>
-    ///     <see cref="IUser" />
-    /// </returns>
+    /// <inheritdoc/>
     public IUser? GetByUsername(string? username)
     {
         if (username is null)
@@ -362,10 +281,7 @@ internal class UserService : RepositoryService, IUserService
         return backOfficeUserStore.GetByUserNameAsync(username).GetAwaiter().GetResult();
     }
 
-    /// <summary>
-    ///     Disables an <see cref="IUser" />
-    /// </summary>
-    /// <param name="membershipUser"><see cref="IUser" /> to disable</param>
+    /// <inheritdoc/>
     public void Delete(IUser membershipUser)
     {
         using IServiceScope scope = _serviceScopeFactory.CreateScope();
@@ -374,11 +290,7 @@ internal class UserService : RepositoryService, IUserService
         backOfficeUserStore.DisableAsync(membershipUser).GetAwaiter().GetResult();
     }
 
-    /// <summary>
-    ///     Deletes or disables a User
-    /// </summary>
-    /// <param name="user"><see cref="IUser" /> to delete</param>
-    /// <param name="deletePermanently"><c>True</c> to permanently delete the user, <c>False</c> to disable the user</param>
+    /// <inheritdoc/>
     public void Delete(IUser user, bool deletePermanently)
     {
         if (deletePermanently == false)
@@ -407,10 +319,7 @@ internal class UserService : RepositoryService, IUserService
         }
     }
 
-    /// <summary>
-    /// Saves an <see cref="IUser" />
-    /// </summary>
-    /// <param name="entity"><see cref="IUser" /> to Save</param>
+    /// <inheritdoc/>
     public void Save(IUser entity)
     {
         using IServiceScope scope = _serviceScopeFactory.CreateScope();
@@ -420,9 +329,10 @@ internal class UserService : RepositoryService, IUserService
     }
 
     /// <summary>
-    /// Saves an <see cref="IUser" />
+    ///     Saves an <see cref="IUser" /> asynchronously.
     /// </summary>
-    /// <param name="entity"><see cref="IUser" /> to Save</param>
+    /// <param name="entity">The <see cref="IUser" /> to save.</param>
+    /// <returns>A task that represents the asynchronous operation, containing the <see cref="UserOperationStatus" />.</returns>
     public async Task<UserOperationStatus> SaveAsync(IUser entity)
     {
         using IServiceScope scope = _serviceScopeFactory.CreateScope();
@@ -431,10 +341,7 @@ internal class UserService : RepositoryService, IUserService
         return await backOfficeUserStore.SaveAsync(entity);
     }
 
-    /// <summary>
-    ///     Saves a list of <see cref="IUser" /> objects
-    /// </summary>
-    /// <param name="entities"><see cref="IEnumerable{IUser}" /> to save</param>
+    /// <inheritdoc/>
     public void Save(IEnumerable<IUser> entities)
     {
         EventMessages evtMsgs = EventMessagesFactory.Get();
@@ -473,26 +380,7 @@ internal class UserService : RepositoryService, IUserService
         }
     }
 
-    /// <summary>
-    ///     This is just the default user group that the membership provider will use
-    /// </summary>
-    /// <returns></returns>
-    public string GetDefaultMemberType() => Constants.Security.WriterGroupAlias;
-
-    /// <summary>
-    ///     Finds a list of <see cref="IUser" /> objects by a partial email string
-    /// </summary>
-    /// <param name="emailStringToMatch">Partial email string to match</param>
-    /// <param name="pageIndex">Current page index</param>
-    /// <param name="pageSize">Size of the page</param>
-    /// <param name="totalRecords">Total number of records found (out)</param>
-    /// <param name="matchType">
-    ///     The type of match to make as <see cref="StringPropertyMatchType" />. Default is
-    ///     <see cref="StringPropertyMatchType.StartsWith" />
-    /// </param>
-    /// <returns>
-    ///     <see cref="IEnumerable{IUser}" />
-    /// </returns>
+    /// <inheritdoc/>
     public IEnumerable<IUser> FindByEmail(string emailStringToMatch, long pageIndex, int pageSize, out long totalRecords, StringPropertyMatchType matchType = StringPropertyMatchType.StartsWith)
     {
         using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
@@ -524,20 +412,7 @@ internal class UserService : RepositoryService, IUserService
         }
     }
 
-    /// <summary>
-    ///     Finds a list of <see cref="IUser" /> objects by a partial username
-    /// </summary>
-    /// <param name="login">Partial username to match</param>
-    /// <param name="pageIndex">Current page index</param>
-    /// <param name="pageSize">Size of the page</param>
-    /// <param name="totalRecords">Total number of records found (out)</param>
-    /// <param name="matchType">
-    ///     The type of match to make as <see cref="StringPropertyMatchType" />. Default is
-    ///     <see cref="StringPropertyMatchType.StartsWith" />
-    /// </param>
-    /// <returns>
-    ///     <see cref="IEnumerable{IUser}" />
-    /// </returns>
+    /// <inheritdoc/>
     public IEnumerable<IUser> FindByUsername(string login, long pageIndex, int pageSize, out long totalRecords, StringPropertyMatchType matchType = StringPropertyMatchType.StartsWith)
     {
         using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
@@ -569,18 +444,7 @@ internal class UserService : RepositoryService, IUserService
         }
     }
 
-    /// <summary>
-    ///     Gets the total number of Users based on the count type
-    /// </summary>
-    /// <remarks>
-    ///     The way the Online count is done is the same way that it is done in the MS SqlMembershipProvider - We query for any
-    ///     members
-    ///     that have their last active date within the Membership.UserIsOnlineTimeWindow (which is in minutes). It isn't exact
-    ///     science
-    ///     but that is how MS have made theirs so we'll follow that principal.
-    /// </remarks>
-    /// <param name="countType"><see cref="MemberCountType" /> to count by</param>
-    /// <returns><see cref="int" /> with number of Users for passed in type</returns>
+    /// <inheritdoc/>
     public int GetCount(MemberCountType countType)
     {
         using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
@@ -606,6 +470,7 @@ internal class UserService : RepositoryService, IUserService
         }
     }
 
+    /// <inheritdoc/>
     public Guid CreateLoginSession(int userId, string requestingIpAddress)
     {
         using (ICoreScope scope = ScopeProvider.CreateCoreScope())
@@ -616,6 +481,7 @@ internal class UserService : RepositoryService, IUserService
         }
     }
 
+    /// <inheritdoc/>
     public int ClearLoginSessions(int userId)
     {
         using (ICoreScope scope = ScopeProvider.CreateCoreScope())
@@ -626,6 +492,7 @@ internal class UserService : RepositoryService, IUserService
         }
     }
 
+    /// <inheritdoc/>
     public void ClearLoginSession(Guid sessionId)
     {
         using (ICoreScope scope = ScopeProvider.CreateCoreScope())
@@ -635,6 +502,7 @@ internal class UserService : RepositoryService, IUserService
         }
     }
 
+    /// <inheritdoc/>
     public bool ValidateLoginSession(int userId, Guid sessionId)
     {
         using (ICoreScope scope = ScopeProvider.CreateCoreScope())
@@ -645,6 +513,7 @@ internal class UserService : RepositoryService, IUserService
         }
     }
 
+    /// <inheritdoc/>
     public IDictionary<UserState, int> GetUserStates()
     {
         using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
@@ -735,6 +604,7 @@ internal class UserService : RepositoryService, IUserService
         return Attempt.SucceedWithStatus(UserOperationStatus.Success, creationResult);
     }
 
+    /// <inheritdoc/>
     public async Task<Attempt<UserOperationStatus>> SendResetPasswordEmailAsync(string userEmail)
     {
         if (_forgotPasswordSender.CanSend() is false)
@@ -775,6 +645,8 @@ internal class UserService : RepositoryService, IUserService
 
         return Attempt.Succeed(UserOperationStatus.Success);
     }
+
+    /// <inheritdoc/>
     public async Task<Attempt<UserInvitationResult, UserOperationStatus>> InviteAsync(Guid performingUserKey, UserInviteModel model)
     {
         using ICoreScope scope = ScopeProvider.CreateCoreScope();
@@ -839,7 +711,7 @@ internal class UserService : RepositoryService, IUserService
             throw new PanicException("Was unable to get user after creating it");
         }
 
-        invitedUser.InvitedDate = DateTime.Now;
+        invitedUser.InvitedDate = DateTime.UtcNow;
         invitedUser.ClearGroups();
         foreach(IUserGroup userGroup in userGroups)
         {
@@ -855,6 +727,7 @@ internal class UserService : RepositoryService, IUserService
         return invitationAttempt;
     }
 
+    /// <inheritdoc/>
     public async Task<Attempt<UserInvitationResult, UserOperationStatus>> ResendInvitationAsync(Guid performingUserKey, UserResendInviteModel model)
     {
         using ICoreScope scope = ScopeProvider.CreateCoreScope();
@@ -879,7 +752,7 @@ internal class UserService : RepositoryService, IUserService
         }
 
         // re-inviting so update invite date
-        invitedUser.InvitedDate = DateTime.Now;
+        invitedUser.InvitedDate = DateTime.UtcNow;
         await userStore.SaveAsync(invitedUser);
 
         Attempt<UserInvitationResult, UserOperationStatus> invitationAttempt = await SendInvitationAsync(performingUser, serviceScope, invitedUser, model.Message);
@@ -888,6 +761,14 @@ internal class UserService : RepositoryService, IUserService
         return invitationAttempt;
     }
 
+    /// <summary>
+    ///     Sends an invitation to a user.
+    /// </summary>
+    /// <param name="performingUser">The user performing the invitation.</param>
+    /// <param name="serviceScope">The service scope for dependency resolution.</param>
+    /// <param name="invitedUser">The user being invited.</param>
+    /// <param name="message">An optional message to include in the invitation.</param>
+    /// <returns>An attempt containing the invitation result and operation status.</returns>
     private async Task<Attempt<UserInvitationResult, UserOperationStatus>> SendInvitationAsync(IUser performingUser, IServiceScope serviceScope, IUser invitedUser, string? message)
     {
         IInviteUriProvider inviteUriProvider = serviceScope.ServiceProvider.GetRequiredService<IInviteUriProvider>();
@@ -909,13 +790,18 @@ internal class UserService : RepositoryService, IUserService
         return Attempt.SucceedWithStatus(UserOperationStatus.Success, new UserInvitationResult { InvitedUser = invitedUser });
     }
 
+    /// <summary>
+    ///     Validates a user create model.
+    /// </summary>
+    /// <param name="model">The user create model to validate.</param>
+    /// <returns>A task that represents the asynchronous operation, containing the <see cref="UserOperationStatus" />.</returns>
     private async Task<UserOperationStatus> ValidateUserCreateModel(UserCreateModel model)
     {
         if (_securitySettings.UsernameIsEmail && model.UserName != model.Email)
         {
             return UserOperationStatus.UserNameIsNotEmail;
         }
-        if (!IsEmailValid(model.Email))
+        if (model.Email.IsEmail() is false)
         {
             return UserOperationStatus.InvalidEmail;
         }
@@ -935,7 +821,7 @@ internal class UserService : RepositoryService, IUserService
             return UserOperationStatus.DuplicateUserName;
         }
 
-        if(model.UserGroupKeys.Count == 0)
+        if (model.UserGroupKeys.Count == 0)
         {
             return UserOperationStatus.NoUserGroup;
         }
@@ -943,6 +829,7 @@ internal class UserService : RepositoryService, IUserService
         return UserOperationStatus.Success;
     }
 
+    /// <inheritdoc/>
     public async Task<Attempt<IUser?, UserOperationStatus>> UpdateAsync(Guid performingUserKey, UserUpdateModel model)
     {
         using ICoreScope scope = ScopeProvider.CreateCoreScope();
@@ -962,6 +849,22 @@ internal class UserService : RepositoryService, IUserService
         {
             scope.Complete();
             return Attempt.FailWithStatus<IUser?, UserOperationStatus>(UserOperationStatus.MissingUser, existingUser);
+        }
+
+        // A user must remain assigned to at least one group.
+        if (model.UserGroupKeys.Count == 0)
+        {
+            scope.Complete();
+            return Attempt.FailWithStatus<IUser?, UserOperationStatus>(UserOperationStatus.NoUserGroup, existingUser);
+        }
+
+        // User names can only contain the configured allowed characters. This is validated by ASP.NET Identity on create
+        // as the setting is applied to the BackOfficeIdentityOptions, but we need to check ourselves for updates.
+        var allowedUserNameCharacters = _securitySettings.AllowedUserNameCharacters;
+        if (model.UserName.Any(c => allowedUserNameCharacters.Contains(c) == false))
+        {
+            scope.Complete();
+            return Attempt.FailWithStatus<IUser?, UserOperationStatus>(UserOperationStatus.InvalidUserName, existingUser);
         }
 
         IEnumerable<IUserGroup> allUserGroups = _userGroupRepository.GetMany().ToArray();
@@ -1049,6 +952,7 @@ internal class UserService : RepositoryService, IUserService
 
     }
 
+    /// <inheritdoc/>
     public async Task<UserOperationStatus> SetAvatarAsync(Guid userKey, Guid temporaryFileKey)
     {
         using ICoreScope scope = ScopeProvider.CreateCoreScope();
@@ -1093,6 +997,15 @@ internal class UserService : RepositoryService, IUserService
         return UserOperationStatus.Success;
     }
 
+    /// <summary>
+    ///     Maps user update model properties to an existing user.
+    /// </summary>
+    /// <param name="source">The source update model.</param>
+    /// <param name="sourceUserGroups">The user groups to assign.</param>
+    /// <param name="target">The target user to update.</param>
+    /// <param name="startContentIds">The content start node IDs.</param>
+    /// <param name="startMediaIds">The media start node IDs.</param>
+    /// <returns>The updated <see cref="IUser" />.</returns>
     private IUser MapUserUpdate(
         UserUpdateModel source,
         ISet<IUserGroup> sourceUserGroups,
@@ -1116,6 +1029,12 @@ internal class UserService : RepositoryService, IUserService
         return target;
     }
 
+    /// <summary>
+    ///     Validates a user update model against an existing user.
+    /// </summary>
+    /// <param name="existingUser">The existing user being updated.</param>
+    /// <param name="model">The update model to validate.</param>
+    /// <returns>The <see cref="UserOperationStatus" /> indicating validation result.</returns>
     private UserOperationStatus ValidateUserUpdateModel(IUser existingUser, UserUpdateModel model)
     {
         if (_isoCodeValidator.IsValid(model.LanguageIsoCode) is false)
@@ -1134,7 +1053,7 @@ internal class UserService : RepositoryService, IUserService
             return UserOperationStatus.UserNameIsNotEmail;
         }
 
-        if (IsEmailValid(model.Email) is false)
+        if (model.Email.IsEmail() is false)
         {
             return UserOperationStatus.InvalidEmail;
         }
@@ -1162,8 +1081,12 @@ internal class UserService : RepositoryService, IUserService
         return UserOperationStatus.Success;
     }
 
-    private static bool IsEmailValid(string email) => new EmailAddressAttribute().IsValid(email);
-
+    /// <summary>
+    ///     Converts a collection of entity keys to their corresponding IDs.
+    /// </summary>
+    /// <param name="guids">The GUIDs to convert.</param>
+    /// <param name="type">The type of Umbraco object.</param>
+    /// <returns>A list of IDs, or <c>null</c> if any conversion failed.</returns>
     private List<int>? GetIdsFromKeys(IEnumerable<Guid>? guids, UmbracoObjectTypes type)
     {
         var keys = guids?
@@ -1175,7 +1098,27 @@ internal class UserService : RepositoryService, IUserService
         return keys;
     }
 
+    /// <inheritdoc/>
     public async Task<Attempt<PasswordChangedModel, UserOperationStatus>> ChangePasswordAsync(Guid performingUserKey, ChangeUserPasswordModel model)
+    {
+        IServiceScope serviceScope = _serviceScopeFactory.CreateScope();
+        IBackOfficeUserStore userStore = serviceScope.ServiceProvider.GetRequiredService<IBackOfficeUserStore>();
+        IUser? performingUser = await userStore.GetAsync(performingUserKey);
+        if (performingUser is null)
+        {
+            return Attempt.FailWithStatus(UserOperationStatus.MissingUser, new PasswordChangedModel());
+        }
+
+        return await ChangePasswordAsync(performingUser, model);
+    }
+
+    /// <summary>
+    ///     Changes a user's password.
+    /// </summary>
+    /// <param name="performingUser">The user performing the password change.</param>
+    /// <param name="model">The password change model.</param>
+    /// <returns>An attempt containing the password changed result and operation status.</returns>
+    private async Task<Attempt<PasswordChangedModel, UserOperationStatus>> ChangePasswordAsync(IUser performingUser, ChangeUserPasswordModel model)
     {
         IServiceScope serviceScope = _serviceScopeFactory.CreateScope();
         using ICoreScope scope = ScopeProvider.CreateCoreScope();
@@ -1190,12 +1133,6 @@ internal class UserService : RepositoryService, IUserService
         if (user.Kind != UserKind.Default)
         {
             return Attempt.FailWithStatus(UserOperationStatus.InvalidUserType, new PasswordChangedModel());
-        }
-
-        IUser? performingUser = await userStore.GetAsync(performingUserKey);
-        if (performingUser is null)
-        {
-            return Attempt.FailWithStatus(UserOperationStatus.MissingUser, new PasswordChangedModel());
         }
 
         // require old password for self change when outside of invite or resetByToken flows
@@ -1221,12 +1158,13 @@ internal class UserService : RepositoryService, IUserService
         IBackOfficePasswordChanger passwordChanger = serviceScope.ServiceProvider.GetRequiredService<IBackOfficePasswordChanger>();
         Attempt<PasswordChangedModel?> result = await passwordChanger.ChangeBackOfficePassword(
             new ChangeBackOfficeUserPasswordModel
-        {
-            NewPassword = model.NewPassword,
-            OldPassword = model.OldPassword,
-            User = user,
-            ResetPasswordToken = model.ResetPasswordToken,
-        }, performingUser);
+            {
+                NewPassword = model.NewPassword,
+                OldPassword = model.OldPassword,
+                User = user,
+                ResetPasswordToken = model.ResetPasswordToken,
+            },
+            performingUser);
 
         if (result.Success is false)
         {
@@ -1237,6 +1175,7 @@ internal class UserService : RepositoryService, IUserService
         return Attempt.SucceedWithStatus(UserOperationStatus.Success, result.Result ?? new PasswordChangedModel());
     }
 
+    /// <inheritdoc/>
     public async Task<Attempt<PagedModel<IUser>?, UserOperationStatus>> GetAllAsync(Guid performingUserKey, int skip, int take)
     {
         using ICoreScope scope = ScopeProvider.CreateCoreScope();
@@ -1283,6 +1222,7 @@ internal class UserService : RepositoryService, IUserService
         return Attempt.SucceedWithStatus<PagedModel<IUser>?, UserOperationStatus>(UserOperationStatus.Success, pagedResult);
     }
 
+    /// <inheritdoc/>
     public async Task<Attempt<PagedModel<IUser>, UserOperationStatus>> FilterAsync(
         Guid userKey,
         UserFilter filter,
@@ -1333,7 +1273,6 @@ internal class UserService : RepositoryService, IUserService
             includedUserGroupAliases = userGroupKeyConversionAttempt.Result.ToArray();
         }
 
-
         if (mergedFilter.NameFilters is not null)
         {
             foreach (var nameFilter in mergedFilter.NameFilters)
@@ -1352,16 +1291,18 @@ internal class UserService : RepositoryService, IUserService
         }
         else
         {
-            includeUserStates = new HashSet<UserState>(filter.IncludeUserStates!);
-            includeUserStates.IntersectWith(baseFilter.IncludeUserStates);
+            includeUserStates = new HashSet<UserState>(baseFilter.IncludeUserStates);
+            if (filter.IncludeUserStates is not null && filter.IncludeUserStates.Contains(UserState.All) is false)
+            {
+                includeUserStates.IntersectWith(filter.IncludeUserStates);
+            }
 
             // This means that we've only chosen to include a user state that is not allowed, so we'll return an empty result
-            if(includeUserStates.Count == 0)
+            if (includeUserStates.Count == 0)
             {
                 return Attempt.SucceedWithStatus(UserOperationStatus.Success, new PagedModel<IUser>());
             }
         }
-
 
         PaginationHelper.ConvertSkipTakeToPaging(skip, take, out long pageNumber, out int pageSize);
         Expression<Func<IUser, object?>> orderByExpression = GetOrderByExpression(orderBy);
@@ -1387,12 +1328,14 @@ internal class UserService : RepositoryService, IUserService
     }
 
     /// <summary>
-    /// Creates a base user filter which ensures our rules are followed, I.E. Only admins can se other admins.
+    ///     Creates a base user filter which ensures our rules are followed, i.e. only admins can see other admins.
     /// </summary>
     /// <remarks>
-    /// We return the query as an out parameter instead of having it in the intermediate object because a two queries cannot be merged into one.
+    ///     We return the query as an out parameter instead of having it in the intermediate object because two queries cannot be merged into one.
     /// </remarks>
-    /// <returns></returns>
+    /// <param name="performingUser">The user performing the query.</param>
+    /// <param name="baseQuery">The base query to apply filters to.</param>
+    /// <returns>A <see cref="UserFilter" /> with the base filter rules applied.</returns>
     private UserFilter CreateBaseUserFilter(IUser performingUser, out IQuery<IUser> baseQuery)
     {
         var filter = new UserFilter();
@@ -1418,6 +1361,11 @@ internal class UserService : RepositoryService, IUserService
         return filter;
     }
 
+    /// <summary>
+    ///     Gets user group aliases from their keys.
+    /// </summary>
+    /// <param name="userGroupKeys">The user group keys to convert.</param>
+    /// <returns>An attempt containing the aliases or an error status.</returns>
     private Attempt<IEnumerable<string>, UserOperationStatus> GetUserGroupAliasesFromKeys(IEnumerable<Guid> userGroupKeys)
     {
         var aliases = new List<string>();
@@ -1436,6 +1384,11 @@ internal class UserService : RepositoryService, IUserService
         return Attempt.SucceedWithStatus<IEnumerable<string>, UserOperationStatus>(UserOperationStatus.Success, aliases);
     }
 
+    /// <summary>
+    ///     Gets the order by expression for user queries.
+    /// </summary>
+    /// <param name="orderBy">The order by specification.</param>
+    /// <returns>An expression for ordering users.</returns>
     private Expression<Func<IUser, object?>> GetOrderByExpression(UserOrder orderBy)
     {
         return orderBy switch
@@ -1454,6 +1407,7 @@ internal class UserService : RepositoryService, IUserService
         };
     }
 
+    /// <inheritdoc/>
     public async Task<UserOperationStatus> DeleteAsync(Guid performingUserKey, ISet<Guid> keys)
     {
         if(keys.Any() is false)
@@ -1502,6 +1456,7 @@ internal class UserService : RepositoryService, IUserService
         return UserOperationStatus.Success;
     }
 
+    /// <inheritdoc/>
     public async Task<UserOperationStatus> DisableAsync(Guid performingUserKey, ISet<Guid> keys)
     {
         if(keys.Any() is false)
@@ -1548,6 +1503,7 @@ internal class UserService : RepositoryService, IUserService
         return UserOperationStatus.Success;
     }
 
+    /// <inheritdoc/>
     public async Task<UserOperationStatus> EnableAsync(Guid performingUserKey, ISet<Guid> keys)
     {
         if(keys.Any() is false)
@@ -1583,6 +1539,7 @@ internal class UserService : RepositoryService, IUserService
         return UserOperationStatus.Success;
     }
 
+    /// <inheritdoc/>
     public async Task<UserOperationStatus> ClearAvatarAsync(Guid userKey)
     {
         IUser? user = await GetAsync(userKey);
@@ -1618,6 +1575,7 @@ internal class UserService : RepositoryService, IUserService
         return UserOperationStatus.Success;
     }
 
+    /// <inheritdoc/>
     public async Task<Attempt<UserUnlockResult, UserOperationStatus>> UnlockAsync(Guid performingUserKey, params Guid[] keys)
     {
         if (keys.Length == 0)
@@ -1652,6 +1610,7 @@ internal class UserService : RepositoryService, IUserService
         return Attempt.SucceedWithStatus(UserOperationStatus.Success, new UserUnlockResult());
     }
 
+    /// <inheritdoc/>
     public IEnumerable<IUser> GetAll(long pageIndex, int pageSize, out long totalRecords, string orderBy, Direction orderDirection, UserState[]? userState = null, string[]? userGroups = null, string? filter = null)
     {
         IQuery<IUser>? filterQuery = null;
@@ -1664,6 +1623,7 @@ internal class UserService : RepositoryService, IUserService
         return GetAll(pageIndex, pageSize, out totalRecords, orderBy, orderDirection, userState, userGroups, null, filterQuery);
     }
 
+    /// <inheritdoc/>
     public IEnumerable<IUser> GetAll(
         long pageIndex,
         int pageSize,
@@ -1718,15 +1678,7 @@ internal class UserService : RepositoryService, IUserService
         }
     }
 
-    /// <summary>
-    ///     Gets a list of paged <see cref="IUser" /> objects
-    /// </summary>
-    /// <param name="pageIndex">Current page index</param>
-    /// <param name="pageSize">Size of the page</param>
-    /// <param name="totalRecords">Total number of records found (out)</param>
-    /// <returns>
-    ///     <see cref="IEnumerable{IMember}" />
-    /// </returns>
+    /// <inheritdoc/>
     public IEnumerable<IUser> GetAll(long pageIndex, int pageSize, out long totalRecords)
     {
         using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
@@ -1735,13 +1687,7 @@ internal class UserService : RepositoryService, IUserService
         }
     }
 
-    /// <summary>
-    ///     Gets a list of <see cref="IUser" /> objects associated with a given group
-    /// </summary>
-    /// <param name="groupId">Id of group</param>
-    /// <returns>
-    ///     <see cref="IEnumerable{IUser}" />
-    /// </returns>
+    /// <inheritdoc/>
     public IEnumerable<IUser> GetAllInGroup(int? groupId)
     {
         if (groupId is null)
@@ -1755,13 +1701,7 @@ internal class UserService : RepositoryService, IUserService
         return backOfficeUserStore.GetAllInGroupAsync(groupId.Value).GetAwaiter().GetResult();
     }
 
-    /// <summary>
-    ///     Gets a list of <see cref="IUser" /> objects not associated with a given group
-    /// </summary>
-    /// <param name="groupId">Id of group</param>
-    /// <returns>
-    ///     <see cref="IEnumerable{IUser}" />
-    /// </returns>
+    /// <inheritdoc/>
     public IEnumerable<IUser> GetAllNotInGroup(int groupId)
     {
         using (ICoreScope scope = ScopeProvider.CreateCoreScope())
@@ -1774,13 +1714,7 @@ internal class UserService : RepositoryService, IUserService
 
     #region Implementation of IUserService
 
-    /// <summary>
-    ///     Gets an IProfile by User Id.
-    /// </summary>
-    /// <param name="id">Id of the User to retrieve</param>
-    /// <returns>
-    ///     <see cref="IProfile" />
-    /// </returns>
+    /// <inheritdoc/>
     public IProfile? GetProfileById(int id)
     {
         // This is called a TON. Go get the full user from cache which should already be IProfile
@@ -1794,13 +1728,7 @@ internal class UserService : RepositoryService, IUserService
         return asProfile ?? new UserProfile(fullUser.Id, fullUser.Name);
     }
 
-    /// <summary>
-    ///     Gets a profile by username
-    /// </summary>
-    /// <param name="username">Username</param>
-    /// <returns>
-    ///     <see cref="IProfile" />
-    /// </returns>
+    /// <inheritdoc/>
     public IProfile? GetProfileByUserName(string username)
     {
         using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
@@ -1809,13 +1737,7 @@ internal class UserService : RepositoryService, IUserService
         }
     }
 
-    /// <summary>
-    ///     Gets a user by Id
-    /// </summary>
-    /// <param name="id">Id of the user to retrieve.</param>
-    /// <returns>
-    ///     <see cref="IUser" />
-    /// </returns>
+    /// <inheritdoc/>
     public IUser? GetUserById(int id)
     {
         using IServiceScope scope = _serviceScopeFactory.CreateScope();
@@ -1824,11 +1746,7 @@ internal class UserService : RepositoryService, IUserService
         return backOfficeUserStore.GetAsync(id).GetAwaiter().GetResult();
     }
 
-    /// <summary>
-    ///     Gets a user by it's key.
-    /// </summary>
-    /// <param name="key">Key of the user to retrieve.</param>
-    /// <returns>Task resolving into an <see cref="IUser"/>.</returns>
+    /// <inheritdoc/>
     public Task<IUser?> GetAsync(Guid key)
     {
         using IServiceScope scope = _serviceScopeFactory.CreateScope();
@@ -1837,6 +1755,7 @@ internal class UserService : RepositoryService, IUserService
         return backOfficeUserStore.GetAsync(key);
     }
 
+    /// <inheritdoc/>
     public Task<IEnumerable<IUser>> GetAsync(IEnumerable<Guid> keys)
     {
         using IServiceScope scope = _serviceScopeFactory.CreateScope();
@@ -1845,6 +1764,7 @@ internal class UserService : RepositoryService, IUserService
         return backOfficeUserStore.GetUsersAsync(keys.ToArray());
     }
 
+    /// <inheritdoc/>
     public async Task<Attempt<ICollection<IIdentityUserLogin>, UserOperationStatus>> GetLinkedLoginsAsync(Guid userKey)
     {
         using IServiceScope scope = _serviceScopeFactory.CreateScope();
@@ -1865,6 +1785,7 @@ internal class UserService : RepositoryService, IUserService
             : Attempt.SucceedWithStatus(UserOperationStatus.Success, loginsAttempt.Result);
     }
 
+    /// <inheritdoc/>
     public IEnumerable<IUser> GetUsersById(params int[]? ids)
     {
         using IServiceScope scope = _serviceScopeFactory.CreateScope();
@@ -1873,16 +1794,7 @@ internal class UserService : RepositoryService, IUserService
         return backOfficeUserStore.GetUsersAsync(ids).GetAwaiter().GetResult();
     }
 
-    /// <summary>
-    ///     Replaces the same permission set for a single group to any number of entities
-    /// </summary>
-    /// <remarks>If no 'entityIds' are specified all permissions will be removed for the specified group.</remarks>
-    /// <param name="groupId">Id of the group</param>
-    /// <param name="permissions">
-    ///     Permissions as enumerable list of <see cref="char" /> If nothing is specified all permissions
-    ///     are removed.
-    /// </param>
-    /// <param name="entityIds">Specify the nodes to replace permissions for. </param>
+    /// <inheritdoc/>
     public void ReplaceUserGroupPermissions(int groupId, ISet<string> permissions, params int[] entityIds)
     {
         if (entityIds.Length == 0)
@@ -1906,12 +1818,7 @@ internal class UserService : RepositoryService, IUserService
         }
     }
 
-    /// <summary>
-    ///     Assigns the same permission set for a single user group to any number of entities
-    /// </summary>
-    /// <param name="groupId">Id of the user group</param>
-    /// <param name="permission"></param>
-    /// <param name="entityIds">Specify the nodes to replace permissions for</param>
+    /// <inheritdoc/>
     public void AssignUserGroupPermission(int groupId, string permission, params int[] entityIds)
     {
         if (entityIds.Length == 0)
@@ -1933,173 +1840,7 @@ internal class UserService : RepositoryService, IUserService
         }
     }
 
-    /// <summary>
-    ///     Gets all UserGroups or those specified as parameters
-    /// </summary>
-    /// <param name="ids">Optional Ids of UserGroups to retrieve</param>
-    /// <returns>An enumerable list of <see cref="IUserGroup" /></returns>
-    [Obsolete("Use IUserGroupService.GetAsync instead, scheduled for removal in V15.")]
-    public IEnumerable<IUserGroup> GetAllUserGroups(params int[] ids)
-    {
-        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
-        {
-            return _userGroupRepository.GetMany(ids).OrderBy(x => x.Name);
-        }
-    }
-
-    [Obsolete("Use IUserGroupService.GetAsync instead, scheduled for removal in V15.")]
-    public IEnumerable<IUserGroup> GetUserGroupsByAlias(params string[] aliases)
-    {
-        if (aliases.Length == 0)
-        {
-            return Enumerable.Empty<IUserGroup>();
-        }
-
-        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
-        {
-            IQuery<IUserGroup> query = Query<IUserGroup>().Where(x => aliases.SqlIn(x.Alias));
-            IEnumerable<IUserGroup> contents = _userGroupRepository.Get(query);
-            return contents?.WhereNotNull().ToArray() ?? Enumerable.Empty<IUserGroup>();
-        }
-    }
-
-    /// <summary>
-    ///     Gets a UserGroup by its Alias
-    /// </summary>
-    /// <param name="alias">Alias of the UserGroup to retrieve</param>
-    /// <returns>
-    ///     <see cref="IUserGroup" />
-    /// </returns>
-    [Obsolete("Use IUserGroupService.GetAsync instead, scheduled for removal in V15.")]
-    public IUserGroup? GetUserGroupByAlias(string alias)
-    {
-        if (string.IsNullOrWhiteSpace(alias))
-        {
-            throw new ArgumentException("Value cannot be null or whitespace.", "alias");
-        }
-
-        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
-        {
-            IQuery<IUserGroup> query = Query<IUserGroup>().Where(x => x.Alias == alias);
-            IEnumerable<IUserGroup> contents = _userGroupRepository.Get(query);
-            return contents?.FirstOrDefault();
-        }
-    }
-
-    /// <summary>
-    ///     Gets a UserGroup by its Id
-    /// </summary>
-    /// <param name="id">Id of the UserGroup to retrieve</param>
-    /// <returns>
-    ///     <see cref="IUserGroup" />
-    /// </returns>
-    [Obsolete("Use IUserGroupService.GetAsync instead, scheduled for removal in V15.")]
-    public IUserGroup? GetUserGroupById(int id)
-    {
-        using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
-        {
-            return _userGroupRepository.Get(id);
-        }
-    }
-
-    /// <summary>
-    ///     Saves a UserGroup.
-    /// </summary>
-    /// <param name="userGroup">UserGroup to save.</param>
-    /// <param name="userIds">
-    ///     If null than no changes are made to the users who are assigned to this group, however if a value is passed in
-    ///     than all users will be removed from this group and only these users will be added.</param>
-    [Obsolete("Use IUserGroupService.CreateAsync and IUserGroupService.UpdateAsync instead, scheduled for removal in V15.")]
-    public void Save(IUserGroup userGroup, int[]? userIds = null)
-    {
-        EventMessages evtMsgs = EventMessagesFactory.Get();
-
-        using (ICoreScope scope = ScopeProvider.CreateCoreScope())
-        {
-            // we need to figure out which users have been added / removed, for audit purposes
-            IUser[] empty = Array.Empty<IUser>();
-            IUser[] addedUsers = empty;
-            IUser[] removedUsers = empty;
-
-            if (userIds != null)
-            {
-                IUser[] groupUsers =
-                    userGroup.HasIdentity ? _userRepository.GetAllInGroup(userGroup.Id).ToArray() : empty;
-                var xGroupUsers = groupUsers.ToDictionary(x => x.Id, x => x);
-                var groupIds = groupUsers.Select(x => x.Id).ToArray();
-                var addedUserKeys = new List<Guid>();
-                foreach (var userId in userIds.Except(groupIds))
-                {
-                    Guid userKey = _userIdKeyResolver.GetAsync(userId).GetAwaiter().GetResult();
-                    addedUserKeys.Add(userKey);
-                }
-
-                IEnumerable<int> addedUserIds = userIds.Except(groupIds);
-
-                addedUsers = addedUserIds.Count() > 0
-                    ? _userRepository.GetMany(addedUserKeys.ToArray()).Where(x => x.Id != 0).ToArray()
-                    : new IUser[] { };
-                removedUsers = groupIds.Except(userIds).Select(x => xGroupUsers[x]).Where(x => x.Id != 0).ToArray();
-            }
-
-            var userGroupWithUsers = new UserGroupWithUsers(userGroup, addedUsers, removedUsers);
-
-            // this is the default/expected notification for the IUserGroup entity being saved
-            var savingNotification = new UserGroupSavingNotification(userGroup, evtMsgs);
-            if (scope.Notifications.PublishCancelable(savingNotification))
-            {
-                scope.Complete();
-                return;
-            }
-
-            // this is an additional notification for special auditing
-            var savingUserGroupWithUsersNotification =
-                new UserGroupWithUsersSavingNotification(userGroupWithUsers, evtMsgs);
-            if (scope.Notifications.PublishCancelable(savingUserGroupWithUsersNotification))
-            {
-                scope.Complete();
-                return;
-            }
-
-            _userGroupRepository.AddOrUpdateGroupWithUsers(userGroup, userIds);
-
-            scope.Notifications.Publish(
-                new UserGroupSavedNotification(userGroup, evtMsgs).WithStateFrom(savingNotification));
-            scope.Notifications.Publish(
-                new UserGroupWithUsersSavedNotification(userGroupWithUsers, evtMsgs).WithStateFrom(
-                    savingUserGroupWithUsersNotification));
-
-            scope.Complete();
-        }
-    }
-
-    /// <summary>
-    ///     Deletes a UserGroup
-    /// </summary>
-    /// <param name="userGroup">UserGroup to delete</param>
-    [Obsolete("Use IUserGroupService.DeleteAsync instead, scheduled for removal in V15.")]
-    public void DeleteUserGroup(IUserGroup userGroup)
-    {
-        EventMessages evtMsgs = EventMessagesFactory.Get();
-
-        using (ICoreScope scope = ScopeProvider.CreateCoreScope())
-        {
-            var deletingNotification = new UserGroupDeletingNotification(userGroup, evtMsgs);
-            if (scope.Notifications.PublishCancelable(deletingNotification))
-            {
-                scope.Complete();
-                return;
-            }
-
-            _userGroupRepository.Delete(userGroup);
-
-            scope.Notifications.Publish(
-                new UserGroupDeletedNotification(userGroup, evtMsgs).WithStateFrom(deletingNotification));
-
-            scope.Complete();
-        }
-    }
-
+    /// <inheritdoc/>
     public async Task<Attempt<UserOperationStatus>> VerifyPasswordResetAsync(Guid userKey, string token)
     {
         var decoded = token.FromUrlBase64();
@@ -2126,6 +1867,7 @@ internal class UserService : RepositoryService, IUserService
             : Attempt.Fail(UserOperationStatus.InvalidPasswordResetToken);
     }
 
+    /// <inheritdoc/>
     public async Task<Attempt<UserOperationStatus>> VerifyInviteAsync(Guid userKey, string token)
     {
         var decoded = token.FromUrlBase64();
@@ -2152,6 +1894,7 @@ internal class UserService : RepositoryService, IUserService
             : Attempt.Fail(UserOperationStatus.InvalidInviteToken);
     }
 
+    /// <inheritdoc/>
     public async Task<Attempt<PasswordChangedModel, UserOperationStatus>> CreateInitialPasswordAsync(Guid userKey, string token, string password)
     {
         using ICoreScope scope = ScopeProvider.CreateCoreScope();
@@ -2175,12 +1918,30 @@ internal class UserService : RepositoryService, IUserService
         return changePasswordAttempt;
     }
 
+    /// <inheritdoc/>
     public async Task<Attempt<PasswordChangedModel, UserOperationStatus>> ResetPasswordAsync(Guid userKey, string token, string password)
     {
         using ICoreScope scope = ScopeProvider.CreateCoreScope();
+        IServiceScope serviceScope = _serviceScopeFactory.CreateScope();
+
+        EventMessages evtMsgs = EventMessagesFactory.Get();
+        IBackOfficeUserStore userStore = serviceScope.ServiceProvider.GetRequiredService<IBackOfficeUserStore>();
+
+        IUser? user = await userStore.GetAsync(userKey);
+        if (user is null)
+        {
+            return Attempt.FailWithStatus(UserOperationStatus.UserNotFound, new PasswordChangedModel());
+        }
+
+        var savingNotification = new UserPasswordResettingNotification(user, evtMsgs);
+        if (await scope.Notifications.PublishCancelableAsync(savingNotification))
+        {
+            scope.Complete();
+            return Attempt.FailWithStatus(UserOperationStatus.CancelledByNotification, new PasswordChangedModel());
+        }
 
         Attempt<PasswordChangedModel, UserOperationStatus> changePasswordAttempt =
-            await ChangePasswordAsync(userKey, new ChangeUserPasswordModel
+            await ChangePasswordAsync(user, new ChangeUserPasswordModel
             {
                 NewPassword = password,
                 UserKey = userKey,
@@ -2191,6 +1952,7 @@ internal class UserService : RepositoryService, IUserService
         return changePasswordAttempt;
     }
 
+    /// <inheritdoc/>
     public async Task<Attempt<PasswordChangedModel, UserOperationStatus>> ResetPasswordAsync(Guid performingUserKey, Guid userKey)
     {
         if (performingUserKey.Equals(userKey))
@@ -2227,11 +1989,7 @@ internal class UserService : RepositoryService, IUserService
     }
 
 
-    /// <summary>
-    ///     Removes a specific section from all users
-    /// </summary>
-    /// <remarks>This is useful when an entire section is removed from config</remarks>
-    /// <param name="sectionAlias">Alias of the section to remove</param>
+    /// <inheritdoc/>
     public void DeleteSectionFromAllUserGroups(string sectionAlias)
     {
         using (ICoreScope scope = ScopeProvider.CreateCoreScope())
@@ -2283,7 +2041,12 @@ internal class UserService : RepositoryService, IUserService
         return permissions;
     }
 
-
+    /// <summary>
+    ///     Gets permissions for a user and a set of nodes.
+    /// </summary>
+    /// <param name="userKey">The key of the user to get permissions for.</param>
+    /// <param name="nodes">A dictionary mapping node keys to node IDs.</param>
+    /// <returns>An attempt containing the permissions or an error status.</returns>
     private async Task<Attempt<IEnumerable<NodePermissions>, UserOperationStatus>> GetPermissionsAsync(Guid userKey, Dictionary<Guid, int> nodes)
     {
         IUser? user = await GetAsync(userKey);
@@ -2308,6 +2071,12 @@ internal class UserService : RepositoryService, IUserService
         return Attempt.SucceedWithStatus<IEnumerable<NodePermissions>, UserOperationStatus>(UserOperationStatus.Success, results);
     }
 
+    /// <summary>
+    ///     Creates a mapping between node keys and their IDs.
+    /// </summary>
+    /// <param name="nodeKeys">The keys of the nodes.</param>
+    /// <param name="objectType">The type of Umbraco object.</param>
+    /// <returns>An attempt containing the key-to-ID mapping or <c>null</c> if any key was not found.</returns>
     private Attempt<Dictionary<Guid, int>?> CreateIdKeyMap(IEnumerable<Guid> nodeKeys, UmbracoObjectTypes objectType)
     {
         // We'll return this as a dictionary we can link the id and key again later.
@@ -2371,12 +2140,7 @@ internal class UserService : RepositoryService, IUserService
         return Attempt.SucceedWithStatus<IEnumerable<NodePermissions>, UserOperationStatus>(UserOperationStatus.Success, results);
     }
 
-    /// <summary>
-    ///     Get explicitly assigned permissions for a user and optional node ids
-    /// </summary>
-    /// <param name="user">User to retrieve permissions for</param>
-    /// <param name="nodeIds">Specifying nothing will return all permissions for all nodes</param>
-    /// <returns>An enumerable list of <see cref="EntityPermission" /></returns>
+    /// <inheritdoc/>
     public EntityPermissionCollection GetPermissions(IUser? user, params int[] nodeIds)
     {
         using (ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true))
@@ -2385,16 +2149,7 @@ internal class UserService : RepositoryService, IUserService
         }
     }
 
-    /// <summary>
-    ///     Get explicitly assigned permissions for a group and optional node Ids
-    /// </summary>
-    /// <param name="groups"></param>
-    /// <param name="fallbackToDefaultPermissions">
-    ///     Flag indicating if we want to include the default group permissions for each result if there are not explicit
-    ///     permissions set
-    /// </param>
-    /// <param name="nodeIds">Specifying nothing will return all permissions for all nodes</param>
-    /// <returns>An enumerable list of <see cref="EntityPermission" /></returns>
+    /// <inheritdoc/>
     public EntityPermissionCollection GetPermissions(IUserGroup?[] groups, bool fallbackToDefaultPermissions, params int[] nodeIds)
     {
         if (groups == null)
@@ -2412,15 +2167,15 @@ internal class UserService : RepositoryService, IUserService
     }
 
     /// <summary>
-    ///     Get explicitly assigned permissions for a group and optional node Ids
+    ///     Gets explicitly assigned permissions for read-only user groups and optional node IDs.
     /// </summary>
-    /// <param name="groups">Groups to retrieve permissions for</param>
+    /// <param name="groups">The read-only user groups to retrieve permissions for.</param>
     /// <param name="fallbackToDefaultPermissions">
-    ///     Flag indicating if we want to include the default group permissions for each result if there are not explicit
-    ///     permissions set
+    ///     Flag indicating if we want to include the default group permissions for each result if there are no explicit
+    ///     permissions set.
     /// </param>
-    /// <param name="nodeIds">Specifying nothing will return all permissions for all nodes</param>
-    /// <returns>An enumerable list of <see cref="EntityPermission" /></returns>
+    /// <param name="nodeIds">Specifying nothing will return all permissions for all nodes.</param>
+    /// <returns>An enumerable list of <see cref="EntityPermission" />.</returns>
     private IEnumerable<EntityPermission> GetPermissions(IReadOnlyUserGroup[] groups, bool fallbackToDefaultPermissions, params int[] nodeIds)
     {
         if (groups == null)
@@ -2434,11 +2189,7 @@ internal class UserService : RepositoryService, IUserService
         }
     }
 
-    /// <summary>
-    ///     Gets the implicit/inherited permissions for the user for the given path
-    /// </summary>
-    /// <param name="user">User to check permissions for</param>
-    /// <param name="path">Path to check permissions for</param>
+    /// <inheritdoc/>
     public EntityPermissionSet GetPermissionsForPath(IUser? user, string? path)
     {
         var nodeIds = path?.GetIdsFromPathReversed();
@@ -2455,16 +2206,7 @@ internal class UserService : RepositoryService, IUserService
 
     }
 
-    /// <summary>
-    ///     Gets the permissions for the provided group and path
-    /// </summary>
-    /// <param name="groups"></param>
-    /// <param name="path">Path to check permissions for</param>
-    /// <param name="fallbackToDefaultPermissions">
-    ///     Flag indicating if we want to include the default group permissions for each result if there are not explicit
-    ///     permissions set
-    /// </param>
-    /// <returns>String indicating permissions for provided user and path</returns>
+    /// <inheritdoc/>
     public EntityPermissionSet GetPermissionsForPath(IUserGroup[] groups, string path, bool fallbackToDefaultPermissions = false)
     {
         var nodeIds = path.GetIdsFromPathReversed();
@@ -2481,8 +2223,14 @@ internal class UserService : RepositoryService, IUserService
         return CalculatePermissionsForPathForUser(groupPermissions, nodeIds);
     }
 
+    /// <inheritdoc/>
     public async Task<UserClientCredentialsOperationStatus> AddClientIdAsync(Guid userKey, string clientId)
     {
+        if (ValidClientId().IsMatch(clientId) is false)
+        {
+            return UserClientCredentialsOperationStatus.InvalidClientId;
+        }
+
         using ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true);
 
         IEnumerable<string> currentClientIds = _userRepository.GetAllClientIds();
@@ -2502,6 +2250,7 @@ internal class UserService : RepositoryService, IUserService
         return UserClientCredentialsOperationStatus.Success;
     }
 
+    /// <inheritdoc/>
     public async Task<bool> RemoveClientIdAsync(Guid userKey, string clientId)
     {
         using ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true);
@@ -2510,6 +2259,7 @@ internal class UserService : RepositoryService, IUserService
         return _userRepository.RemoveClientId(userId, clientId);
     }
 
+    /// <inheritdoc/>
     public Task<IUser?> FindByClientIdAsync(string clientId)
     {
         using ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true);
@@ -2518,6 +2268,7 @@ internal class UserService : RepositoryService, IUserService
         return Task.FromResult(user?.Kind == UserKind.Api ? user : null);
     }
 
+    /// <inheritdoc/>
     public async Task<IEnumerable<string>> GetClientIdsAsync(Guid userKey)
     {
         using ICoreScope scope = ScopeProvider.CreateCoreScope(autoComplete: true);
@@ -2602,11 +2353,21 @@ internal class UserService : RepositoryService, IUserService
         return permissionSet;
     }
 
+    /// <summary>
+    ///     Gets permissions for a path for the specified user groups.
+    /// </summary>
+    /// <param name="groups">The user groups to get permissions for.</param>
+    /// <param name="pathIds">The path IDs ordered from deepest to shallowest.</param>
+    /// <param name="fallbackToDefaultPermissions">
+    ///     Flag indicating if we want to include the default group permissions for each result if there are no explicit
+    ///     permissions set.
+    /// </param>
+    /// <returns>A collection of <see cref="EntityPermission" />.</returns>
     private EntityPermissionCollection GetPermissionsForPath(IReadOnlyUserGroup[] groups, int[] pathIds, bool fallbackToDefaultPermissions = false)
     {
         if (pathIds.Length == 0)
         {
-            return new EntityPermissionCollection(Enumerable.Empty<EntityPermission>());
+            return new EntityPermissionCollection([]);
         }
 
         // get permissions for all nodes in the path by group
@@ -2662,6 +2423,11 @@ internal class UserService : RepositoryService, IUserService
         return permissionsByEntityId[pathIds[0]];
     }
 
+    /// <summary>
+    ///     Adds additional permissions to an existing permission set.
+    /// </summary>
+    /// <param name="assignedPermissions">The existing permission set to add to.</param>
+    /// <param name="additionalPermissions">The additional permissions to add.</param>
     private static void AddAdditionalPermissions(ISet<string> assignedPermissions, ISet<string> additionalPermissions)
     {
         foreach (var additionalPermission in additionalPermissions)
@@ -2669,6 +2435,13 @@ internal class UserService : RepositoryService, IUserService
             assignedPermissions.Add(additionalPermission);
         }
     }
+
+    /// <summary>
+    ///     Gets a regex pattern for validating client IDs.
+    /// </summary>
+    /// <returns>A <see cref="Regex" /> for validating client IDs.</returns>
+    [GeneratedRegex(@"^[\w\d\-\._~]{1,100}$")]
+    private static partial Regex ValidClientId();
 
     #endregion
 }

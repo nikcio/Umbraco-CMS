@@ -10,6 +10,10 @@ using IScope = Umbraco.Cms.Infrastructure.Scoping.IScope;
 
 namespace Umbraco.Cms.Persistence.EFCore.Scoping;
 
+/// <summary>
+/// Represents an EF Core scope that provides database context access and transaction management.
+/// </summary>
+/// <typeparam name="TDbContext">The type of DbContext.</typeparam>
 internal class EFCoreScope<TDbContext> : CoreScope, IEfCoreScope<TDbContext>
     where TDbContext : DbContext
 {
@@ -20,6 +24,19 @@ internal class EFCoreScope<TDbContext> : CoreScope, IEfCoreScope<TDbContext>
     private TDbContext? _dbContext;
     private IDbContextFactory<TDbContext> _dbContextFactory;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="EFCoreScope{TDbContext}"/> class.
+    /// </summary>
+    /// <param name="distributedLockingMechanismFactory">The distributed locking mechanism factory.</param>
+    /// <param name="loggerFactory">The logger factory.</param>
+    /// <param name="efCoreScopeAccessor">The EF Core scope accessor.</param>
+    /// <param name="scopedFileSystem">The scoped file system.</param>
+    /// <param name="iefCoreScopeProvider">The EF Core scope provider.</param>
+    /// <param name="scopeContext">The scope context.</param>
+    /// <param name="eventAggregator">The event aggregator.</param>
+    /// <param name="dbContextFactory">The DbContext factory.</param>
+    /// <param name="repositoryCacheMode">The repository cache mode.</param>
+    /// <param name="scopeFileSystems">Whether to scope file systems.</param>
     protected EFCoreScope(
         IDistributedLockingMechanismFactory distributedLockingMechanismFactory,
         ILoggerFactory loggerFactory,
@@ -39,6 +56,20 @@ internal class EFCoreScope<TDbContext> : CoreScope, IEfCoreScope<TDbContext>
         _dbContextFactory = dbContextFactory;
     }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="EFCoreScope{TDbContext}"/> class with an IScope parent.
+    /// </summary>
+    /// <param name="parentScope">The parent scope.</param>
+    /// <param name="distributedLockingMechanismFactory">The distributed locking mechanism factory.</param>
+    /// <param name="loggerFactory">The logger factory.</param>
+    /// <param name="efCoreScopeAccessor">The EF Core scope accessor.</param>
+    /// <param name="scopedFileSystem">The scoped file system.</param>
+    /// <param name="iefCoreScopeProvider">The EF Core scope provider.</param>
+    /// <param name="scopeContext">The scope context.</param>
+    /// <param name="eventAggregator">The event aggregator.</param>
+    /// <param name="dbContextFactory">The DbContext factory.</param>
+    /// <param name="repositoryCacheMode">The repository cache mode.</param>
+    /// <param name="scopeFileSystems">Whether to scope file systems.</param>
     public EFCoreScope(
         IScope parentScope,
         IDistributedLockingMechanismFactory distributedLockingMechanismFactory,
@@ -60,6 +91,20 @@ internal class EFCoreScope<TDbContext> : CoreScope, IEfCoreScope<TDbContext>
         _dbContextFactory = dbContextFactory;
     }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="EFCoreScope{TDbContext}"/> class with an EFCoreScope parent.
+    /// </summary>
+    /// <param name="parentScope">The parent EF Core scope.</param>
+    /// <param name="distributedLockingMechanismFactory">The distributed locking mechanism factory.</param>
+    /// <param name="loggerFactory">The logger factory.</param>
+    /// <param name="efCoreScopeAccessor">The EF Core scope accessor.</param>
+    /// <param name="scopedFileSystem">The scoped file system.</param>
+    /// <param name="iefCoreScopeProvider">The EF Core scope provider.</param>
+    /// <param name="scopeContext">The scope context.</param>
+    /// <param name="eventAggregator">The event aggregator.</param>
+    /// <param name="dbContextFactory">The DbContext factory.</param>
+    /// <param name="repositoryCacheMode">The repository cache mode.</param>
+    /// <param name="scopeFileSystems">Whether to scope file systems.</param>
     public EFCoreScope(
         EFCoreScope<TDbContext> parentScope,
         IDistributedLockingMechanismFactory distributedLockingMechanismFactory,
@@ -82,10 +127,15 @@ internal class EFCoreScope<TDbContext> : CoreScope, IEfCoreScope<TDbContext>
     }
 
 
+    /// <summary>
+    /// Gets the parent EF Core scope, if any.
+    /// </summary>
     public EFCoreScope<TDbContext>? ParentScope { get; }
 
+    /// <inheritdoc />
     public IScopeContext? ScopeContext { get; set; }
 
+    /// <inheritdoc />
     public async Task<T> ExecuteWithContextAsync<T>(Func<TDbContext, Task<T>> method)
     {
         if (_disposed)
@@ -102,6 +152,7 @@ internal class EFCoreScope<TDbContext> : CoreScope, IEfCoreScope<TDbContext>
         return await method(_dbContext!);
     }
 
+    /// <inheritdoc />
     public async Task ExecuteWithContextAsync<T>(Func<TDbContext, Task> method) =>
         await ExecuteWithContextAsync(async db =>
         {
@@ -109,8 +160,12 @@ internal class EFCoreScope<TDbContext> : CoreScope, IEfCoreScope<TDbContext>
             return true; // Do nothing
         });
 
+    /// <summary>
+    /// Resets the scope's completion state.
+    /// </summary>
     public void Reset() => Completed = null;
 
+    /// <inheritdoc />
     public override void Dispose()
     {
         if (this != _efCoreScopeAccessor.AmbientScope)
@@ -127,10 +182,16 @@ internal class EFCoreScope<TDbContext> : CoreScope, IEfCoreScope<TDbContext>
 
         Locks.ClearLocks(InstanceId);
 
-        if (ParentScope is null)
+        // Since we can nest EFCoreScopes in other scopes derived from CoreScope, we should check whether our ParentScope OR the base ParentScope exists.
+        // Only if neither do do we take responsibility for ensuring the locks are cleared.
+        // Eventually the highest parent will clear the locks.
+        // Further, these locks are a reference to the locks of the highest parent anyway (see the constructor of CoreScope).
+#pragma warning disable SA1100 // Do not prefix calls with base unless local implementation exists (justification: provides additional clarify here that this is defined on the base class).
+        if (ParentScope is null && base.HasParentScope is false)
         {
             Locks.EnsureLocksCleared(InstanceId);
         }
+#pragma warning restore SA1100 // Do not prefix calls with base unless local implementation exists
 
         _efCoreScopeProvider.PopAmbientScope();
 

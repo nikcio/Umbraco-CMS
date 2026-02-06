@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -9,7 +9,7 @@ namespace Umbraco.Cms.Tests.Integration.Umbraco.Persistence.EFCore.DbContext;
 
 [TestFixture]
 [UmbracoTest(Database = UmbracoTestOptions.Database.NewSchemaPerTest, Logger = UmbracoTestOptions.Logger.Console)]
-public class CustomDbContextUmbracoProviderTests : UmbracoIntegrationTest
+internal sealed class CustomDbContextUmbracoProviderTests : UmbracoIntegrationTest
 {
     [Test]
     public void Can_Register_Custom_DbContext_And_Resolve()
@@ -22,7 +22,7 @@ public class CustomDbContextUmbracoProviderTests : UmbracoIntegrationTest
 
     protected override void CustomTestSetup(IUmbracoBuilder builder)
     {
-        builder.Services.AddUmbracoDbContext<CustomDbContext>((serviceProvider, options) =>
+        builder.Services.AddUmbracoDbContext<CustomDbContext>((serviceProvider, options, connectionString, providerName) =>
         {
             options.UseUmbracoDatabaseProvider(serviceProvider);
         });
@@ -53,40 +53,9 @@ public class CustomDbContextCustomSqliteProviderTests : UmbracoIntegrationTest
 
     protected override void CustomTestSetup(IUmbracoBuilder builder)
     {
-        builder.Services.AddUmbracoDbContext<CustomDbContext>((serviceProvider, options) =>
+        builder.Services.AddUmbracoDbContext<CustomDbContext>((serviceProvider, options, connectionString, providerName) =>
         {
             options.UseSqlite("Data Source=:memory:;Version=3;New=True;");
-        });
-    }
-
-    internal class CustomDbContext : Microsoft.EntityFrameworkCore.DbContext
-    {
-        public CustomDbContext(DbContextOptions<CustomDbContext> options)
-            : base(options)
-        {
-        }
-    }
-}
-
-[Obsolete]
-[TestFixture]
-[UmbracoTest(Database = UmbracoTestOptions.Database.NewSchemaPerTest, Logger = UmbracoTestOptions.Logger.Console)]
-public class CustomDbContextLegacyExtensionProviderTests : UmbracoIntegrationTest
-{
-    [Test]
-    public void Can_Register_Custom_DbContext_And_Resolve()
-    {
-        var dbContext = Services.GetRequiredService<CustomDbContext>();
-
-        Assert.IsNotNull(dbContext);
-        Assert.IsNotEmpty(dbContext.Database.GetConnectionString());
-    }
-
-    protected override void CustomTestSetup(IUmbracoBuilder builder)
-    {
-        builder.Services.AddUmbracoEFCoreContext<CustomDbContext>("Data Source=:memory:;Version=3;New=True;", "Microsoft.Data.Sqlite", (options, connectionString, providerName) =>
-        {
-            options.UseSqlite(connectionString);
         });
     }
 

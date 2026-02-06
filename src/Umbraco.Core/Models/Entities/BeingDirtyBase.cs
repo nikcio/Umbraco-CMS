@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.ComponentModel;
 using System.Runtime.Serialization;
 
@@ -85,6 +85,9 @@ public abstract class BeingDirtyBase : IRememberBeingDirty
     /// </summary>
     public event PropertyChangedEventHandler? PropertyChanged;
 
+    /// <summary>
+    ///     Clears all event handlers attached to the <see cref="PropertyChanged" /> event.
+    /// </summary>
     protected void ClearPropertyChangedEvents() => PropertyChanged = null;
 
     /// <summary>
@@ -162,7 +165,8 @@ public abstract class BeingDirtyBase : IRememberBeingDirty
     /// <param name="propertyName">The property name.</param>
     /// <param name="comparer">A comparer to compare property values.</param>
     /// <param name="changed">A value indicating whether we know values have changed and no comparison is required.</param>
-    protected void DetectChanges<T>(T value, T orig, string propertyName, IEqualityComparer<T> comparer, bool changed)
+    /// <returns>True if a change was detected, false otherwise.</returns>
+    protected bool DetectChanges<T>(T value, T orig, string propertyName, IEqualityComparer<T> comparer, bool changed)
     {
         // compare values
         changed = _withChanges && (changed || !comparer.Equals(orig, value));
@@ -172,6 +176,8 @@ public abstract class BeingDirtyBase : IRememberBeingDirty
         {
             OnPropertyChanged(propertyName);
         }
+
+        return changed;
     }
 
     #endregion

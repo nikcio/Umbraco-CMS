@@ -5,23 +5,27 @@ using Umbraco.Cms.Infrastructure.Persistence.DatabaseAnnotations;
 namespace Umbraco.Cms.Infrastructure.Persistence.Dtos;
 
 [TableName(TableName)]
-[PrimaryKey("id")]
+[PrimaryKey(PrimaryKeyColumnName)]
 [ExplicitColumns]
-internal class LanguageDto
+internal sealed class LanguageDto
 {
     public const string TableName = Constants.DatabaseSchema.Tables.Language;
+    public const string PrimaryKeyColumnName = Constants.DatabaseSchema.Columns.PrimaryKeyNameId;
+
+    // Public constants to bind properties between DTOs
+    public const string IsoCodeColumnName = "languageISOCode";
 
     /// <summary>
     ///     Gets or sets the identifier of the language.
     /// </summary>
-    [Column("id")]
+    [Column(PrimaryKeyColumnName)]
     [PrimaryKeyColumn(IdentitySeed = 2)]
     public short Id { get; set; }
 
     /// <summary>
     ///     Gets or sets the ISO code of the language.
     /// </summary>
-    [Column("languageISOCode")]
+    [Column(IsoCodeColumnName)]
     [Index(IndexTypes.UniqueNonClustered)]
     [NullSetting(NullSetting = NullSettings.Null)]
     [Length(14)]

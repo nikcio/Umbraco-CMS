@@ -2,11 +2,9 @@ using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Actions;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Models.Membership;
-using Umbraco.Cms.Core.Persistence.Querying;
 using Umbraco.Cms.Core.Security.Authorization;
 using Umbraco.Cms.Core.Services;
 using Umbraco.Cms.Core.Services.OperationStatus;
-using Umbraco.Cms.Infrastructure.Persistence;
 
 namespace Umbraco.Cms.Infrastructure.Services.Implement;
 
@@ -21,9 +19,9 @@ internal sealed class ContentListViewService : ContentListViewServiceBase<IConte
         IContentService contentService,
         IContentTypeService contentTypeService,
         IDataTypeService dataTypeService,
-        ISqlContext sqlContext,
+        IContentSearchService contentSearchService,
         IContentPermissionAuthorizer contentPermissionAuthorizer)
-        : base(contentTypeService, dataTypeService, sqlContext)
+        : base(contentTypeService, dataTypeService, contentSearchService)
     {
         _contentService = contentService;
         _contentPermissionAuthorizer = contentPermissionAuthorizer;
@@ -49,35 +47,10 @@ internal sealed class ContentListViewService : ContentListViewServiceBase<IConte
         return await GetListViewResultAsync(user, content, dataTypeKey, orderBy, orderCulture, orderDirection, filter, skip, take);
     }
 
-    protected override async Task<PagedModel<IContent>> GetPagedChildrenAsync(
-        int id,
-        IQuery<IContent>? filter,
-        Ordering? ordering,
-        int skip,
-        int take)
-    {
-        PaginationHelper.ConvertSkipTakeToPaging(skip, take, out var pageNumber, out var pageSize);
-
-        IEnumerable<IContent> items = await Task.FromResult(_contentService.GetPagedChildren(
-            id,
-            pageNumber,
-            pageSize,
-            out var total,
-            filter,
-            ordering));
-
-        var pagedResult = new PagedModel<IContent>
-        {
-            Items = items,
-            Total = total,
-        };
-
-        return pagedResult;
-    }
-
     // We can use an authorizer here, as it already handles all the necessary checks for this filtering.
     // However, we cannot pass in all the items; we want only the ones that comply, as opposed to
     // a general response whether the user has access to all nodes.
+    [Obsolete("This is no longer used as we now authorize collection view items as a collection via FilterAuthorizedKeysAsync rather than one by one. Scheduled for removal in Umbraco 19.")]
     protected override async Task<bool> HasAccessToListViewItemAsync(IUser user, Guid key)
     {
         var isDenied = await _contentPermissionAuthorizer.IsDeniedAsync(
@@ -87,4 +60,11 @@ internal sealed class ContentListViewService : ContentListViewServiceBase<IConte
 
         return isDenied is false;
     }
+
+    /// <inheritdoc/>
+    protected override async Task<ISet<Guid>> FilterAuthorizedKeysAsync(IUser user, IEnumerable<Guid> keys) =>
+        await _contentPermissionAuthorizer.FilterAuthorizedAsync(
+            user,
+            keys,
+            new HashSet<string> { ActionBrowse.ActionLetter });
 }

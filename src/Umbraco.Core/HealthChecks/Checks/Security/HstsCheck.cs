@@ -33,7 +33,7 @@ public class HstsCheck : BaseHttpHeaderCheck
     ///     but then you should include subdomains and I wouldn't suggest to do that for Umbraco-sites.
     /// </remarks>
     public HstsCheck(IHostingEnvironment hostingEnvironment, ILocalizedTextService textService)
-        : base(hostingEnvironment, textService, "Strict-Transport-Security", LocalizationPrefix, true)
+        : base(hostingEnvironment, textService, "Strict-Transport-Security", LocalizationPrefix, true, false)
     {
         _hostingEnvironment = hostingEnvironment;
         _textService = textService;
@@ -43,13 +43,13 @@ public class HstsCheck : BaseHttpHeaderCheck
     protected override string ReadMoreLink => Constants.HealthChecks.DocumentationLinks.Security.HstsCheck;
 
     /// <inheritdoc />
-    public override async Task<IEnumerable<HealthCheckStatus>> GetStatus() =>
+    public override async Task<IEnumerable<HealthCheckStatus>> GetStatusAsync() =>
         new HealthCheckStatus[] { await CheckForHeader() };
 
     /// <summary>
-    /// The health check task.
+    ///     The health check task that verifies the HSTS header.
     /// </summary>
-    /// <returns>A <see cref="Task{HealthCheckStatus}"/> with the result type reversed on localhost.</returns>
+    /// <returns>A <see cref="Task{HealthCheckStatus}" /> with the result type reversed on localhost.</returns>
     protected new async Task<HealthCheckStatus> CheckForHeader()
     {
         HealthCheckStatus checkHeaderResult = await base.CheckForHeader();

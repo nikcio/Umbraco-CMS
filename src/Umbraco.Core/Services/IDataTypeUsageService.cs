@@ -2,12 +2,11 @@ using Umbraco.Cms.Core.Services.OperationStatus;
 
 namespace Umbraco.Cms.Core.Services;
 
+/// <summary>
+///     Provides methods for querying data type usage across the application.
+/// </summary>
 public interface IDataTypeUsageService
 {
-
-    [Obsolete("Please use HasSavedValuesAsync. Scheduled for removable in Umbraco 15.")]
-    bool HasSavedValues(int dataTypeId);
-
     /// <summary>
     /// Checks if there are any saved property values using a given data type.
     /// </summary>
