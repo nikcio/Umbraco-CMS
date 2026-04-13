@@ -279,7 +279,8 @@ export default {
 		openBackofficeSearch: 'Öppna sökfunktion (backoffice)',
 		openCloseBackofficeHelp: 'Öppna/stäng hjälpfunktion',
 		openCloseBackofficeProfileOptions: 'Öppna/stäng personliga inställningar',
-		profileOptions: 'Personliga inställningar',
+		profileOptions: 'Användarprofil för %0% (%1%)',
+		profileOptionsDefault: 'Användarprofil',
 		assignDomainDescription: 'Redigera språk och värdnamn för %0%',
 		createDescription: 'Skapa en ny nod under %0%',
 		protectDescription: 'Ändra behörigheter för %0%',
@@ -1075,6 +1076,7 @@ export default {
 		changePassword: 'Ändra lösenord',
 		changePhoto: 'Ändra bild',
 		confirmNewPassword: 'Bekräfta det nya lösenordet',
+		confirmPassword: 'Bekräfta lösenord',
 		changePasswordDescription:
 			'Du kan byta ditt lösenord för Umbraco backoffice genom att fylla i nedanstående formulär och klicka på knappen "Ändra lösenord".',
 		contentChannel: 'Innehållskanal',

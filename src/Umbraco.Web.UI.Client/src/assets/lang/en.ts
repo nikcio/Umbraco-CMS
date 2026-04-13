@@ -236,6 +236,8 @@ export default {
 	collection: {
 		noItemsTitle: 'No items',
 		addCollectionConfiguration: 'Add collection',
+		cardViewLabel: 'Cards',
+		tableViewLabel: 'Table',
 	},
 	content: {
 		isPublished: 'Is Published',
@@ -403,6 +405,12 @@ export default {
 		clickToUpload: 'Click to upload',
 		orClickHereToUpload: 'or click here to choose files',
 		disallowedFileType: 'Cannot upload this file, it does not have an approved file type',
+		disallowedFileExtension: (extension: string) =>
+			`Cannot upload .${extension} files as no media type supports this file type`,
+		disallowedMediaTypeNotAllowedHere: (extension: string, mediaTypeName: string) =>
+			`Cannot upload .${extension} files here as the associated ${mediaTypeName} media type is not allowed at this location`,
+		disallowedMediaTypesNotAllowedHere: (extension: string, mediaTypeNames: string) =>
+			`Cannot upload .${extension} files here as the associated media types (${mediaTypeNames}) are not allowed at this location`,
 		disallowedMediaType: "Cannot upload this file, the media type with alias '%0%' is not allowed here",
 		invalidFileName: 'Cannot upload this file, it does not have a valid file name',
 		invalidFileSize: 'Cannot upload this file, it is too large',
@@ -414,6 +422,8 @@ export default {
 		fileSecurityValidationFailure: 'One or more file security validations have failed',
 		moveToSameFolderFailed: 'Parent and destination folders cannot be the same',
 		uploadNotAllowed: 'Upload is not allowed in this location.',
+		uploadValidationFailed: (mediaTypeName: string) =>
+			`The ${mediaTypeName} media type has one or more required properties. It will need to be uploaded individually via the 'Create' menu`,
 	},
 	member: {
 		'2fa': 'Two-Factor Authentication',
@@ -547,7 +557,11 @@ export default {
 		confirmremoveusageof: 'Are you sure you want to remove the usage of <strong>%0%</strong>',
 		confirmlogout: 'Are you sure?',
 		confirmSure: 'Are you sure?',
+		cannotTrashWhenReferenced: (name: string) =>
+			`<strong>${name}</strong> cannot be moved to the Recycle Bin because it is referenced by other items.`,
 		confirmTrash: (name: string) => `Are you sure you want to move <strong>${name}</strong> to the Recycle Bin?`,
+		cannotBulkTrashWhenReferenced: (total: number) =>
+			`The selected <strong>${total} ${total === 1 ? 'item' : 'items'}</strong> cannot be moved to the Recycle Bin because at least one item is referenced by other content.`,
 		confirmBulkTrash: (total: number) =>
 			`Are you sure you want to move <strong>${total} ${total === 1 ? 'item' : 'items'}</strong> to the Recycle Bin?`,
 		confirmBulkDelete: (total: number) =>
@@ -655,7 +669,7 @@ export default {
 		deleteLayout: 'You are deleting the layout',
 		deletingALayout:
 			'Modifying layout will result in loss of data for any existing content that is based on this configuration.',
-		seeErrorAction: 'See error',
+		seeErrorAction: 'Full Error Message',
 		seeErrorDialogHeadline: 'Error details',
 	},
 	dictionary: {
@@ -944,6 +958,7 @@ export default {
 		rename: 'Rename',
 		renew: 'Renew',
 		required: 'Required',
+		reset: 'Reset',
 		retrieve: 'Retrieve',
 		retry: 'Retry',
 		rights: 'Permissions',
@@ -952,6 +967,8 @@ export default {
 		search: 'Search',
 		searchNoResult: 'Sorry, we can not find what you are looking for.',
 		noItemsInList: 'No items have been added',
+		scrollLeft: 'Scroll left',
+		scrollRight: 'Scroll right',
 		server: 'Server',
 		settings: 'Settings',
 		shared: 'Shared',
@@ -1295,6 +1312,11 @@ export default {
 		paSelectMembers: 'Select the members who have access to the page <strong>%0%</strong>',
 		paMembers: 'Specific members protection',
 		paMembersHelp: 'If you wish to grant access to specific members',
+		paProtectedByAncestor: 'Public Access settings are inherited from an ancestor page.',
+		psHeadlineSetup: 'Setup Public Access',
+		psHeadlineEdit: 'Edit Public Access',
+		psActionSetup: 'Setup',
+		psActionEdit: 'Edit',
 	},
 	publish: {
 		contentPublishedFailedIsTrashed: '%0% could not be published because the item is in the recycle bin.',
@@ -1458,6 +1480,7 @@ export default {
 		tab: 'Tab',
 		tabname: 'Tab Title',
 		tabs: 'Tabs',
+		changeIcon: 'Change icon',
 		contentTypeEnabled: 'Master Content Type enabled',
 		contentTypeUses: 'This Content Type uses',
 		noPropertiesDefinedOnTab:
@@ -1616,6 +1639,7 @@ export default {
 		tabRules: 'Editor',
 	},
 	template: {
+		productionMode: 'Production Mode',
 		runtimeModeProduction: 'Content is not editable when using runtime mode <code>Production</code>.',
 		deleteByIdFailed: 'Failed to delete template with ID %0%',
 		edittemplate: 'Edit template',
@@ -1826,6 +1850,7 @@ export default {
 		confirmDeleteTabNotice: 'This will also delete all items below this tab.',
 		confirmDeleteGroupNotice: 'This will also delete all items below this group.',
 		addTab: 'Add tab',
+		deleteTab: 'Delete tab',
 		convertToTab: 'Convert to tab',
 		tabDirectPropertiesDropZone: 'Drag properties here to place directly on the tab',
 		removeChildNode: 'You are removing the child node',
@@ -2034,7 +2059,7 @@ export default {
 		},
 		changePassword: 'Change your password',
 		changePhoto: 'Change photo',
-		configureMfa: 'Configure MFA',
+		configureMfa: 'Configure 2FA',
 		emailRequired: 'Required - enter an email address for this user',
 		emailDescription: (usernameIsEmail: boolean) => {
 			return usernameIsEmail
@@ -2048,6 +2073,7 @@ export default {
 		noLockouts: "hasn't been locked out",
 		noPasswordChange: "The password hasn't been changed",
 		confirmNewPassword: 'Confirm new password',
+		confirmPassword: 'Confirm password',
 		changePasswordDescription:
 			"You can change your password for accessing the Umbraco backoffice by filling out the form below and click the 'Change Password' button",
 		contentChannel: 'Content Channel',
@@ -2152,7 +2178,7 @@ export default {
 		userNotInGroup: "The user is not in group '%0%'",
 		userPermissions: 'User permissions',
 		usergroup: 'User group',
-		usergroups: 'User groups',
+		usergroups: 'User Groups',
 		userInvited: 'has been invited',
 		userInvitedSuccessHelp: 'An invitation has been sent to the new user with details about how to log in to Umbraco.',
 		userinviteWelcomeMessage:
@@ -2333,6 +2359,10 @@ export default {
 		enableError: 'Error enabling the URL tracker, more information can be found in your log file.',
 		culture: 'Culture',
 	},
+	embeddedMedia: {
+		dimensionsDescription:
+			'These values are passed as the maximum width and height to the embed provider. The provider may adjust the final dimensions to fit its own constraints.',
+	},
 	emptyStates: {
 		emptyDictionaryTree: 'No Dictionary items to choose from',
 	},
@@ -2394,7 +2424,8 @@ export default {
 		openBackofficeSearch: 'Open backoffice search',
 		openCloseBackofficeHelp: 'Open/Close backoffice help',
 		openCloseBackofficeProfileOptions: 'Open/Close your profile options',
-		profileOptions: 'Profile options',
+		profileOptions: 'User profile for %0% (%1%)',
+		profileOptionsDefault: 'User profile',
 		assignDomainDescription: 'Setup Culture and Hostnames for %0%',
 		createDescription: 'Create new node under %0%',
 		protectDescription: 'Setup access restrictions on %0%',
@@ -2822,6 +2853,9 @@ export default {
 	},
 	rte: {
 		label: 'Rich Text Editor',
+		config_allowedMediaTypes: 'Accepted media types',
+		config_allowedMediaTypes_description:
+			'Limit to specific media types for the media picker toolbar and drag-and-drop uploads.',
 		config_blocks: 'Available Blocks',
 		config_blocks_description: 'Define the available blocks.',
 		config_ignoreUserStartNodes: 'Ignore User Start Nodes',
@@ -2880,6 +2914,10 @@ export default {
 		resetUrlHeadline: 'Reset URL?',
 		resetUrlMessage: 'Are you sure you want to reset this URL?',
 		resetUrlLabel: 'Reset',
+		selectLanguageHint: 'Choose a language for the link',
+		selectLanguageDefault: "Auto (visitor's language)",
+		configCultureSpecificDocumentLinksLabel: 'Culture-specific document links',
+		configCultureSpecificDocumentLinksDescription: 'Enable specifying a culture when linking to documents.',
 	},
 	missingEditor: {
 		title: 'This property type is no longer available.',

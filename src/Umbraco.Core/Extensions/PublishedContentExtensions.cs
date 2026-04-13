@@ -72,7 +72,7 @@ public static class PublishedContentExtensions
     ///     The specific culture to get the URL segment for. If null is used the current culture is used
     ///     (Default is null).
     /// </param>
-    [Obsolete("Please use GetUrlSegment() on IDocumentUrlService instead. Scheduled for removal in V16.")]
+    [Obsolete("Please use GetUrlSegment() on IDocumentUrlService instead. Scheduled for removal in Umbraco 18.")]
     public static string? UrlSegment(this IPublishedContent content, IVariationContextAccessor? variationContextAccessor, string? culture = null)
     {
         if (content == null)
@@ -423,7 +423,7 @@ public static class PublishedContentExtensions
         // if we have a property, and it has a value, return that value
         if (property != null && property.HasValue(culture, segment))
         {
-            return property.Value<T>(publishedValueFallback, culture, segment);
+            return property.Value<T>(publishedValueFallback, culture, segment, fallback);
         }
 
         // else let fallback try to get a value
@@ -434,7 +434,7 @@ public static class PublishedContentExtensions
 
         // else... if we have a property, at least let the converter return its own
         // vision of 'no value' (could be an empty enumerable) - otherwise, default
-        return property == null ? default : property.Value<T>(publishedValueFallback, culture, segment);
+        return property == null ? default : property.Value<T>(publishedValueFallback, culture, segment, fallback);
     }
 
     #endregion

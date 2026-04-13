@@ -107,7 +107,7 @@ export class UmbBlockListEntriesContext extends UmbBlockEntriesContext<
 						data.originData as UmbBlockListWorkspaceOriginData,
 					);
 					if (created) {
-						this.insert(
+						await this.insert(
 							created.layout,
 							created.content,
 							created.settings,
@@ -167,7 +167,18 @@ export class UmbBlockListEntriesContext extends UmbBlockEntriesContext<
 	}
 
 	getPathForCreateBlock(index: number) {
-		return this._catalogueRouteBuilderState.getValue()?.({ view: 'create', index: index });
+		const pathBuilder = this._catalogueRouteBuilderState.getValue();
+		if (!pathBuilder) return undefined;
+
+		if (!this._manager) return undefined;
+		const blockTypes = this._manager.getBlockTypes();
+		if (blockTypes.length === 1) {
+			if (this._manager.getInlineEditingMode()) {
+				return undefined;
+			}
+		}
+
+		return pathBuilder?.({ view: 'create', index: index });
 	}
 
 	getPathForClipboard(index: number) {

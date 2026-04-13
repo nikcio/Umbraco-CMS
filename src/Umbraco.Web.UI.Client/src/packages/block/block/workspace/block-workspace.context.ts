@@ -84,6 +84,9 @@ export class UmbBlockWorkspaceContext<LayoutDataType extends UmbBlockLayoutBaseM
 
 		window.addEventListener('willchangestate', this.#onWillNavigate);
 
+		this.content.view.inheritFrom(this.view);
+		this.settings.view.inheritFrom(this.view);
+
 		this.addValidationContext(this.content.validation);
 		this.addValidationContext(this.settings.validation);
 
@@ -91,7 +94,7 @@ export class UmbBlockWorkspaceContext<LayoutDataType extends UmbBlockLayoutBaseM
 			this.#modalContext = context;
 			this.#originData = context?.data.originData;
 			context?.onSubmit().catch(this.#modalRejected);
-		}).asPromise({ preventTimeout: true });
+		});
 
 		this.#retrieveBlockManager = this.consumeContext(UMB_BLOCK_MANAGER_CONTEXT, (manager) => {
 			this.#blockManager = manager;
@@ -209,8 +212,12 @@ export class UmbBlockWorkspaceContext<LayoutDataType extends UmbBlockLayoutBaseM
 					};
 
 					this.readOnlyGuard?.addRule(rule);
+					this.content.propertyWriteGuard.addRule({ unique, permitted: false });
+					this.settings.propertyWriteGuard.addRule({ unique, permitted: false });
 				} else {
 					this.readOnlyGuard?.removeRule(unique);
+					this.content.propertyWriteGuard.removeRule(unique);
+					this.settings.propertyWriteGuard.removeRule(unique);
 				}
 			},
 			'observeIsReadOnly',
@@ -651,7 +658,7 @@ export class UmbBlockWorkspaceContext<LayoutDataType extends UmbBlockLayoutBaseM
 					this.#blockManager?.setOneContent(this.#initialContent);
 				}
 				if (this.#initialSettings) {
-					this.#blockManager?.setOneContent(this.#initialSettings);
+					this.#blockManager?.setOneSettings(this.#initialSettings);
 				}
 			}
 		}
